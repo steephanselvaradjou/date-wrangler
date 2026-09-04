@@ -1,4 +1,4 @@
-"""date-wrangler: parse dates, ranges and periods out of natural language.
+"""date-wrangler: wrangles messy human dates into clean ranges.
 
 Everything resolves to one type -- a half-open :class:`DateRange`, either end optionally
 unbounded. A single day, a week, a calendar month, a fiscal quarter and "since March" are
@@ -25,7 +25,7 @@ from .resolve import UnresolvableSpec
 from .types import Basis, DateMatch, DateRange, Grain, Mod
 from .wrangler import Diagnostic, diagnose, parse, parse_one, substitute
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0"
 
 __all__ = [
     # Values

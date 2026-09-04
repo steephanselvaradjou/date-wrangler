@@ -1,12 +1,13 @@
 # date-wrangler
 
-Parse dates, ranges and periods out of natural language.
+Wrangles messy human dates into clean ranges: parses `last quarter`, `since March`,
+`15 Jan 2024`.
 
-Absolute dates, relative expressions, open-ended ranges and fiscal periods all resolve to
-one type — a half-open `DateRange` that is safe to hand straight to a query.
+Whatever someone types — an absolute date, a relative expression, an open-ended range, a
+fiscal period — it comes back as one type: a half-open `DateRange` that is safe to hand
+straight to a query.
 
-> **Status: early development (0.1.0.dev0).** The API may still change before 1.0.
-> Not yet published to PyPI.
+> **Status: early development (0.1.0).** The API may still change before 1.0.
 
 ## Why another date library
 

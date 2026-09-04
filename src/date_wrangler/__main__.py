@@ -33,7 +33,7 @@ def _build_config(args: argparse.Namespace) -> WranglerConfig:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="date-wrangler",
-        description="Parse dates, ranges and periods out of natural language.",
+        description="Wrangles messy human dates into clean ranges.",
     )
     p.add_argument("text", nargs="+", help="text to parse")
     p.add_argument("--today", metavar="YYYY-MM-DD", help="resolve relative dates as of this day")
