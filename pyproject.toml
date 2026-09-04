@@ -55,6 +55,13 @@ date-wrangler = "date_wrangler.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/date_wrangler"]
 
+# Ship the source and the tests, nothing else. Without an explicit list hatchling sweeps
+# in whatever is lying around -- the Hypothesis example database alone added ~600 files,
+# and the superseded date_parser.py rode along at the sdist root.
+[tool.hatch.build.targets.sdist]
+only-include = ["src", "tests", "README.md", "LICENSE", "pyproject.toml"]
+exclude = ["**/.hypothesis", "**/__pycache__", "**/*.pyc"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
