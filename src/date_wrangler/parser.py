@@ -492,18 +492,36 @@ def _merge(
     # than triggering the wrap. An empty range contains nothing, so any query built from
     # it silently returns no rows.
     if ra.start is not None and rb.end is not None and rb.end <= ra.start:
-        # "Nov to Feb", "Q4 to Q1", "Q2 to Q1" cross a year boundary: retry the far end
-        # one year on. The year to bump is whatever resolve() would have defaulted to,
-        # which for a fiscal quarter is a fiscal label, not a calendar year in the result.
-        assumed = default_year_for(sb, day, cfg)
-        if assumed is not None:
-            try:
-                retried = resolve(sb.with_(year=assumed + 1), day, cfg)
-            except UnresolvableSpec:
-                retried = None
-            if retried is not None and retried.end is not None and retried.end > ra.start:
-                rb = retried
-        if rb.end is not None and rb.end <= ra.start:
+        # A range that does not move forwards crosses a year boundary, and which end to
+        # shift depends on which one the writer pinned. "Q4 2024 to Q1" means the Q1 after
+        # it, so the far end moves forward; "from H2 to H1 2025" means the H2 before it,
+        # so the near end moves back. Only an end whose year was *inferred* may move -- an
+        # explicit year is what the writer said, so "Mar 2024 to Jan 2024" stays rejected.
+        #
+        # The year to shift is taken from the unified spec rather than from
+        # default_year_for(), which returns None once _unify has supplied a year. Reading
+        # it from the resolved dates would not work either: for a fiscal quarter the year
+        # is a fiscal label, not any calendar year appearing in the result.
+        if not b.spec.has_explicit_year:
+            base = sb.year if sb.year is not None else default_year_for(sb, day, cfg)
+            if base is not None:
+                try:
+                    retried = resolve(sb.with_(year=base + 1), day, cfg)
+                except UnresolvableSpec:
+                    retried = None
+                if retried is not None and retried.end is not None and retried.end > ra.start:
+                    rb = retried
+        elif not a.spec.has_explicit_year:
+            base = sa.year if sa.year is not None else default_year_for(sa, day, cfg)
+            far_end = rb.end
+            if base is not None and far_end is not None:
+                try:
+                    retried = resolve(sa.with_(year=base - 1), day, cfg)
+                except UnresolvableSpec:
+                    retried = None
+                if retried is not None and retried.start is not None and far_end > retried.start:
+                    ra = retried
+        if ra.start is not None and rb.end is not None and rb.end <= ra.start:
             if diags is not None:
                 diags.append(
                     Diagnostic(

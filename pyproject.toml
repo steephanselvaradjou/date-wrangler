@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 # Name only, no email: author metadata is baked into every published wheel and PyPI does
 # not allow re-uploading a version to correct it. Add `email = "..."` here if you want a
 # contact address published; otherwise issues go through the repository.
-authors = [{ name = "Steephan Selvaraj" }]
+authors = [{ name = "Steephan Selvaradjou" }]
 keywords = [
     "date", "dates", "date-parser", "date-range", "datetime", "parsing",
     "natural-language", "nlp", "period", "quarter", "fiscal", "fiscal-year",
@@ -34,10 +34,15 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# No runtime dependencies. The one use of python-dateutil (relativedelta) is replaced by
-# ~15 lines of month arithmetic in calendars.py, which keeps installs fast and avoids
-# dragging a transitive version constraint into every consumer.
-dependencies = []
+# Effectively no runtime dependencies: the one use of python-dateutil (relativedelta) is
+# replaced by ~15 lines of month arithmetic in calendars.py, which keeps installs fast and
+# avoids dragging a transitive version constraint into every consumer.
+#
+# The exception is Windows, which ships no system timezone database, so the stdlib's
+# zoneinfo has nothing to read and `parse(..., tz=ZoneInfo("Asia/Kolkata"))` raises
+# ZoneInfoNotFoundError. CI caught this: every Linux and macOS job passed and every
+# Windows job failed. Making it conditional keeps Linux and macOS installs dependency-free.
+dependencies = ['tzdata; platform_system == "Windows"']
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "mypy>=1.11"]

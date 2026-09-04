@@ -464,6 +464,21 @@ def test_prefilter_never_hides_a_match():
 # ---------------------------------------------------------------------------
 
 
+def _zone(name: str):
+    """A ZoneInfo, or skip.
+
+    Windows ships no system timezone database, so `zoneinfo` needs the `tzdata` package
+    there. It is declared as a Windows-only dependency; this keeps the suite honest for
+    anyone running it without one installed rather than erroring out mid-assertion.
+    """
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:  # pragma: no cover - platform dependent
+        pytest.skip(f"no timezone database available for {name!r}; install tzdata")
+
+
 def test_today_is_optional():
     """Omitting it must keep working; only determinism is lost, not correctness."""
     assert parse("Q1") != []
@@ -475,11 +490,10 @@ def test_tz_picks_the_date_in_that_zone():
     after local midnight is still on the previous date, so "this month" quietly returns
     last month."""
     from datetime import datetime, timezone
-    from zoneinfo import ZoneInfo
 
     # 2025-08-31 22:00 UTC is already 2025-09-01 03:30 in Kolkata.
     instant = datetime(2025, 8, 31, 22, 0, tzinfo=timezone.utc)
-    kolkata = ZoneInfo("Asia/Kolkata")
+    kolkata = _zone("Asia/Kolkata")
 
     utc_month = parse_one("this month", today=instant).range
     ist_month = parse_one("this month", today=instant, tz=kolkata).range
@@ -497,18 +511,16 @@ def test_datetime_is_accepted_wherever_a_date_is():
 
 
 def test_explicit_today_wins_over_tz():
-    from zoneinfo import ZoneInfo
-
-    r = parse_one("this month", today=TODAY, tz=ZoneInfo("Pacific/Kiritimati")).range
+    r = parse_one("this month", today=TODAY, tz=_zone("Pacific/Kiritimati")).range
     assert r.start == date(2025, 9, 1)
 
 
 def test_naive_datetime_with_tz_is_refused_not_guessed():
     from datetime import datetime
-    from zoneinfo import ZoneInfo
 
+    kolkata = _zone("Asia/Kolkata")
     with pytest.raises(ValueError, match="naive datetime"):
-        parse("Q1", today=datetime(2025, 9, 4), tz=ZoneInfo("Asia/Kolkata"))
+        parse("Q1", today=datetime(2025, 9, 4), tz=kolkata)
 
 
 def test_bad_today_type_is_rejected():

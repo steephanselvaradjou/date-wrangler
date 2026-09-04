@@ -25,7 +25,8 @@ instead of each needing their own.
 pip install date-wrangler
 ```
 
-No runtime dependencies. Python 3.10+.
+Python 3.10+. No runtime dependencies, except `tzdata` on Windows — which ships no system
+timezone database, so the standard library needs it for the optional `tz=` argument.
 
 ## The core model
 
@@ -247,4 +248,4 @@ pytest
 
 ## License
 
-MIT © 2026 Steephan Selvaraj — see [LICENSE](LICENSE).
+MIT © 2026 Steephan Selvaradjou — see [LICENSE](LICENSE).

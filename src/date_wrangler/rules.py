@@ -90,6 +90,12 @@ _YEAR_SUFFIX = rf"(?:\s*{_MARKED_YEAR}|\s+(?:of\s+)?{_YEAR})?"
 _QWORD = r"(?:quarters?|qtrs?\.?|q)"
 _HWORD = r"(?:halves|half|h)"
 
+#: Words that place a count relative to now: "3 months ago", "5 years after". Defined once
+#: because the scanning pattern and the parse function must agree -- when they drifted
+#: apart, the scanner matched "6 month before" and the parser then refused to read it.
+_AGO_WORDS = r"ago|back|earlier|prior|before|later|hence|after|ahead|out"
+_AGO_FUTURE = frozenset({"later", "hence", "after", "ahead", "out"})
+
 
 @dataclass(frozen=True, slots=True)
 class Rule:
@@ -361,14 +367,17 @@ def _p_bare_year(text: str, cfg: ParserConfig) -> Spec | None:
 
 
 def _p_ago(text: str, cfg: ParserConfig) -> Spec | None:
-    m = re.match(rf"\s*({_NUM})\s+({_UNIT})\s+(ago|back|earlier|prior|later|hence)", text, re.I)
+    m = re.match(rf"\s*({_NUM})\s+({_UNIT})\s+({_AGO_WORDS})", text, re.IGNORECASE)
     if not m:
         return None
     count = word_to_int(m.group(1))
     unit = _unit_of(m.group(2))
     if count is None or unit is None:
         return None
-    direction = 1 if m.group(3).lower() in ("later", "hence") else -1
+    # "before" and "after" have to be here, not only among the modifier prefixes. Without
+    # them "6 month before" fell through to the fiscal-month rule, which happily read
+    # "6 month" as the sixth month of the fiscal year and answered September.
+    direction = 1 if m.group(3).lower() in _AGO_FUTURE else -1
     return Spec(Kind.AGO, count=count, unit=unit, direction=direction)
 
 
@@ -455,7 +464,7 @@ RULES: tuple[Rule, ...] = (
     ),
     # "ago" must precede "fiscal_month": both can open with a bare number, and
     # "3 months ago" would otherwise be read as "the 3rd month".
-    Rule("ago", rf"\b{_NUM}\s+{_UNIT}\s+(?:ago|back|earlier|prior|later|hence)\b", _p_ago),
+    Rule("ago", rf"\b{_NUM}\s+{_UNIT}\s+(?:{_AGO_WORDS})\b", _p_ago),
     # Singular "month" only -- an ordinal position is "the third month", never "months".
     Rule("fiscal_month", rf"\b(?:the\s+)?{_ORD}\s+month\b{_YEAR_SUFFIX}", _p_fiscal_month),
     Rule(
