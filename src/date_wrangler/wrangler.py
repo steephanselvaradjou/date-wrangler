@@ -101,13 +101,79 @@ _RANGE_LEAD = re.compile(r"\b(?:from|between|betwn|b/w)\s+$", re.IGNORECASE)
 #: Words that make a bare month or year read as a date rather than a noun.
 _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|between|before|after|"
+    r"vs|versus|compared\s+(?:to|with)|"
     r"sales|revenue|profit|data|report|numbers|figures|results|performance|growth|"
     r"spend|cost|budget|forecast|actuals)\W*$",
     re.IGNORECASE,
 )
 
+#: Nouns that make a *preceding* month read as a date -- "the March figures", where "the"
+#: is no cue at all. Only honoured for a capitalised month, because "it may report a loss"
+#: is a modal verb and "they march to the capitol" is a march.
+_TRAILING_CUE = re.compile(
+    r"^(?:'s)?\W*(?:sales|revenue|revenues|profit|profits|data|report|reports|numbers|figures|"
+    r"results|performance|growth|spend|costs?|budget|forecast|actuals|earnings|totals?|"
+    r"quarter|close|invoices?|statements?|cohort|intake|targets?|releases?|launch|"
+    r"deadline|payroll|salary|rent|billing|renewals?)\b",
+    re.IGNORECASE,
+)
+
+#: Titles that make whatever follows a person: "Dr. June Patel".
+_NAME_TITLE = re.compile(
+    r"\b(?:mr|mrs|ms|miss|dr|prof|professor|sir|madam|rev)\.?\s+$", re.IGNORECASE
+)
+
+#: Things a person does and a month does not. Deliberately excludes "is"/"was"/"will",
+#: which read fine either way -- "sales in June was strong" must stay a date.
+_PERSON_VERB = re.compile(
+    r"^\s+(?:said|says|told|tells|asked|asks|thinks|thought|wants|wanted|joined|joins|"
+    r"resigned|wrote|writes|replied|replies|emailed|emails|phoned|signed|signs|agreed|"
+    r"agrees|mentioned|mentions|confirmed|confirms|approved|approves|reviewed|reviews|"
+    r"suggested|suggests|recommended|recommends|complained|apologised|apologized)\b",
+    re.IGNORECASE,
+)
+
+#: A capitalised word straight after a capitalised month -- "June Patel" -- unless it is
+#: one of the nouns a month legitimately qualifies ("June Quarter").
+_SURNAME = re.compile(r"^\s+([A-Z][a-z]+)")
+
+#: "June's laptop" is a person; "March's figures" is a month. The noun decides.
+_POSSESSIVE = re.compile(r"^'s\s+([A-Za-z]+)")
+
+#: Nouns a month can own or qualify, so they are never surname or possessive evidence.
+_MONTH_NOUNS = frozenset({
+    "quarter", "month", "year", "half", "period", "results", "figures", "numbers",
+    "revenue", "revenues", "sales", "report", "reports", "data", "total", "totals",
+    "earnings", "close", "forecast", "budget", "actuals", "performance", "growth",
+    "spend", "cost", "costs", "invoice", "invoices", "statement", "statements",
+    "onwards", "quarterly", "monthly", "target", "targets", "run", "intake", "cohort",
+})
+
 #: Rules whose matches are weak enough to need a cue in "balanced" mode.
 _WEAK_RULES = frozenset({"month", "bare_year", "weekday"})
+
+
+def _looks_like_a_person(text: str, start: int, end: int) -> bool:
+    """Whether a month word is being used as somebody's name.
+
+    Four signals, each on its own enough: a title in front, a surname behind, a possessive
+    over a noun no month owns, or a verb only people perform. None of them needs a name
+    list, which is the point -- June, May, April and August are all common names and no
+    list would ever be complete.
+
+    This is shape, not meaning: "June saw record sales" is genuinely ambiguous and stays a
+    month. The aim is only to stop the confident errors.
+    """
+    before = text[max(0, start - 24) : start]
+    after = text[end : end + 24]
+    if _NAME_TITLE.search(before) or _PERSON_VERB.match(after):
+        return True
+    if text[start].isupper():
+        surname = _SURNAME.match(after)
+        if surname and surname.group(1).lower() not in _MONTH_NOUNS:
+            return True
+    owned = _POSSESSIVE.match(after)
+    return bool(owned and owned.group(1).lower() not in _MONTH_NOUNS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,14 +238,23 @@ def _passes_strictness(
     The cue is looked for before the whole chain so "from Jan to Mar" passes on its
     "from". Being joined is not enough on its own: "a may-december romance" is two month
     names either side of a dash.
+
+    A name beats every cue. "sales by June Patel" has a perfectly good cue in "by", and is
+    still a person, so :func:`_looks_like_a_person` is checked first and vetoes outright.
     """
     if cfg.strictness == "greedy" or raw.rule not in _WEAK_RULES:
         return True
     if cfg.strictness == "strict":
         return False
+    if raw.rule == "month" and _looks_like_a_person(text, raw.start, raw.end):
+        return False
     if chain_start == 0 and chain_end >= len(text.rstrip()):
         return True  # the whole input is the date
-    return bool(_CUE.search(text[max(0, chain_start - 32) : chain_start]))
+    if _CUE.search(text[max(0, chain_start - 32) : chain_start]):
+        return True
+    # "the March figures" -- no cue in front, but the noun behind settles it. Capitalised
+    # only, so "it may report a loss" stays a modal verb.
+    return bool(text[chain_start].isupper() and _TRAILING_CUE.match(text[chain_end:]))
 
 
 # ---------------------------------------------------------------------------

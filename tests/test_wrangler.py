@@ -353,6 +353,86 @@ def test_strictness_settings():
 
 
 # ---------------------------------------------------------------------------
+# Month words used as people's names
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A title in front.
+        "sales for Dr. June Patel",
+        "the report of Ms May Chen",
+        # A surname behind. These all carry a cue, which a name has to beat.
+        "sales by June Patel",
+        "revenue for May Chen",
+        "the numbers from April Okonkwo",
+        # A possessive over a noun no month owns.
+        "in June's laptop",
+        "for May's handover notes",
+        # A verb only people perform.
+        "for June said otherwise",
+        "of April joined the team",
+    ],
+)
+def test_names_beat_cues(text):
+    assert parse(text, today=TODAY) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The same shapes, but the noun belongs to a month.
+        "March's figures",
+        "June's revenue",
+        "the June Quarter results",
+        # Copulas read fine either way and must not be treated as person verbs.
+        "sales in June was strong",
+        "revenue for March is up",
+        "spend in May will rise",
+        # An ordinary cued month, unchanged.
+        "sales in March",
+        "revenue for June",
+    ],
+)
+def test_months_survive_the_name_heuristic(text):
+    assert parse(text, today=TODAY) != []
+
+
+@pytest.mark.parametrize(
+    "text,start",
+    [
+        ("the March figures", date(2025, 3, 1)),
+        ("the June numbers were late", date(2025, 6, 1)),
+        ("May results", date(2025, 5, 1)),
+        ("April revenue", date(2025, 4, 1)),
+    ],
+)
+def test_trailing_noun_is_a_cue(text, start):
+    """REGRESSION: "the March figures" found nothing -- "the" is no cue, but "figures" is."""
+    found = parse(text, today=TODAY)
+    assert found and found[0].range.start == start
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "it may report a loss",         # modal verb, not May
+        "they may forecast a rise",
+        "we march numbers up the hill",  # nonsense, but lowercase and so not a date
+    ],
+)
+def test_trailing_cue_requires_a_capital(text):
+    assert parse(text, today=TODAY) == []
+
+
+def test_greedy_ignores_the_name_heuristic():
+    """greedy means "every month name is a date" -- the escape hatch stays absolute."""
+    greedy = WranglerConfig(strictness="greedy")
+    assert parse("sales by June Patel", today=TODAY, config=greedy) != []
+
+
+# ---------------------------------------------------------------------------
 # Spans, substitution and robustness
 # ---------------------------------------------------------------------------
 

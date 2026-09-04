@@ -7,7 +7,7 @@ Whatever someone types — an absolute date, a relative expression, an open-ende
 fiscal period — it comes back as one type: a half-open `DateRange` that is safe to hand
 straight to a query.
 
-> **Status: early development (0.1.0).** The API may still change before 1.0.
+> **Status: early development (0.2.0).** The API may still change before 1.0.
 
 ## Why another date library
 
@@ -186,9 +186,32 @@ controls how eagerly they are claimed:
 ```python
 parse("the march on Washington")        # [] — no cue, so "march" is a noun
 parse("sales in March")                 # matched — "in" is a cue
+parse("the March figures")              # matched — the cue can follow, too
 WranglerConfig(strictness="greedy")       # match any month name anywhere
 WranglerConfig(strictness="strict")       # require a year or explicit period marker
 ```
+
+### June, May and April are also people
+
+Four month names are common given names, so a cue alone is not enough — `sales by June
+Patel` has a perfectly good cue in `by`. Four signals override it, each sufficient on its
+own:
+
+```python
+parse("sales by June Patel")     # [] — a capitalised surname follows
+parse("for Dr. May Chen")        # [] — a title precedes
+parse("in June's laptop")        # [] — possessive over a noun no month owns
+parse("for April said otherwise")  # [] — a verb only people perform
+```
+
+The possessive test turns on the noun, so `March's figures` and `June's revenue` stay
+dates. Copulas are deliberately excluded from the verb list — `sales in June was strong`
+has to keep working — and `June Quarter` is not read as a surname.
+
+This is shape, not meaning: there is no name list and no grammar model, so a genuinely
+ambiguous sentence like `June saw record sales` still reads as the month. The aim is to
+stop the confident errors, not to resolve English. `strictness="greedy"` bypasses all of
+it; `strict` needs an explicit year or period marker and never guesses.
 
 ### Rewriting text
 
