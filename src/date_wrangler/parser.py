@@ -428,6 +428,17 @@ def _emit(
     return DateMatch(range=r, text=norm.original[lo:hi], span=(lo, hi), confidence=confidence)
 
 
+def _usable(r: DateRange) -> bool:
+    """Whether a resolved range is worth handing back.
+
+    A zero-width range is not an answer. ``DateRange`` still permits one -- ``clamp`` can
+    legitimately produce one when the window excludes the period entirely -- but the
+    parser must never invent one, because it reads as a valid result and quietly matches
+    no rows.
+    """
+    return not r.is_empty
+
+
 def _single(
     raw: _Raw,
     day: date,
@@ -443,6 +454,15 @@ def _single(
         if diags is not None:
             diags.append(
                 Diagnostic(body[raw.start : raw.end], (raw.start, raw.end), raw.rule, str(exc))
+            )
+        return None
+    if not _usable(r):
+        if diags is not None:
+            diags.append(
+                Diagnostic(
+                    body[raw.start : raw.end], (raw.start, raw.end), raw.rule,
+                    "resolved to an empty period",
+                )
             )
         return None
     return _emit(r, raw.start, raw.end, norm, raw.spec.confidence)
@@ -466,32 +486,46 @@ def _merge(
             diags.append(Diagnostic(body[a.start : b.end], (a.start, b.end), "range", str(exc)))
         return None
 
-    if ra.start is not None and rb.end is not None and rb.end < ra.start:
-        # "Nov to Feb" and "Q4 to Q1" cross a year boundary: retry the far end one year on.
-        # The year to bump is whatever resolve() would have defaulted to, which for a
-        # fiscal quarter is a fiscal label rather than any calendar year in the result.
+    # The far end must finish strictly *after* the near end begins. Testing only for
+    # "ends before it starts" misses the adjacent case: in "Q2 to Q1" the end of Q1 is
+    # exactly the start of Q2, which yields the zero-width range [Jul 1, Jul 1) rather
+    # than triggering the wrap. An empty range contains nothing, so any query built from
+    # it silently returns no rows.
+    if ra.start is not None and rb.end is not None and rb.end <= ra.start:
+        # "Nov to Feb", "Q4 to Q1", "Q2 to Q1" cross a year boundary: retry the far end
+        # one year on. The year to bump is whatever resolve() would have defaulted to,
+        # which for a fiscal quarter is a fiscal label, not a calendar year in the result.
         assumed = default_year_for(sb, day, cfg)
         if assumed is not None:
             try:
                 retried = resolve(sb.with_(year=assumed + 1), day, cfg)
             except UnresolvableSpec:
                 retried = None
-            if retried is not None and retried.end is not None and retried.end >= ra.start:
+            if retried is not None and retried.end is not None and retried.end > ra.start:
                 rb = retried
-        if rb.end is not None and rb.end < ra.start:
+        if rb.end is not None and rb.end <= ra.start:
             if diags is not None:
                 diags.append(
                     Diagnostic(
                         body[a.start : b.end],
                         (a.start, b.end),
                         "range",
-                        "range ends before it starts",
+                        "range does not end after it starts",
                     )
                 )
             return None
 
     grain = ra.grain if ra.grain == rb.grain else max(ra.grain, rb.grain, key=_grain_rank)
     merged = DateRange(ra.start, rb.end, grain, ra.basis)
+    if not _usable(merged):
+        if diags is not None:
+            diags.append(
+                Diagnostic(
+                    body[a.start : b.end], (a.start, b.end), "range",
+                    "resolved to an empty period",
+                )
+            )
+        return None
 
     start = a.start
     before = body[max(0, a.start - 12) : a.start]

@@ -172,8 +172,20 @@ substitute("sales report of Q1", today=today)
 # 'sales report of from April 2025 to June 2025'
 ```
 
-Only the matched phrase is replaced, and the output is a fixed point — running it again
-changes nothing.
+Only the matched phrase is replaced.
+
+**One limit worth knowing.** Substitution is textual, so an inserted phrase can fuse with a
+neighbouring token that was never part of a date:
+
+```python
+substitute("sales 15 Q1")   # 'sales 15 April 2025 to June 2025'
+```
+
+Read that back and `15 April 2025` is a perfectly good date, so a second pass gives a
+different answer. Repeated substitution always *converges* — it never grows without bound,
+which is the failure that matters — but it is not idempotent in one pass when a bare number
+abuts a date expression. When exactness matters, use `parse()` and render the ranges
+yourself; `substitute` is a convenience.
 
 ## Output format
 
