@@ -10,7 +10,7 @@ one type — a half-open `DateRange` that is safe to hand straight to a query.
 
 ## Why another date library
 
-Most date parsers answer "what instant is this?". `date-wrangler` answers **"what range is
+Most date libraries answer "what instant is this?". `date-wrangler` answers **"what range is
 this?"** — which is the question you actually have when a person types `last quarter`,
 `since March`, or `Q1 FY25` into a search box.
 

@@ -113,7 +113,7 @@ class FiscalCalendar:
 
 @dataclass(frozen=True, slots=True)
 class WranglerConfig:
-    """Everything the parser treats as policy."""
+    """Everything the wrangler treats as policy."""
 
     fiscal: FiscalCalendar = field(default_factory=FiscalCalendar)
 

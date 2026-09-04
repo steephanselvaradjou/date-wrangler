@@ -75,7 +75,7 @@ todays = st.dates(min_value=date(1970, 1, 1), max_value=date(2100, 12, 31))
 
 
 # ---------------------------------------------------------------------------
-# Parser invariants
+# Wrangler invariants
 # ---------------------------------------------------------------------------
 
 
@@ -265,7 +265,7 @@ def test_fiscal_months_tile_the_fiscal_year_exactly(cal, label):
 @given(cfg=configs)
 @SETTINGS
 def test_rendered_ranges_reparse_to_themselves(text, cfg):
-    """format_range must produce something this parser reads back identically.
+    """format_range must produce something the wrangler reads back identically.
 
     Without it, `substitute` corrupts text on a second pass -- the predecessor's output
     began "period from ...", which it then matched inside its own result.

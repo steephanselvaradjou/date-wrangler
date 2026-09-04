@@ -1,4 +1,4 @@
-"""Parser tests.
+"""Wrangler tests.
 
 ``today`` is pinned to 2025-09-04 throughout. With an April fiscal start that day sits in
 FY2026 (Apr 2025 - Mar 2026) and in the *second* fiscal quarter, which is what makes it a
@@ -381,7 +381,7 @@ def test_substitute_replaces_only_the_matched_phrase():
 
 
 def test_substitute_output_does_not_re_match_itself():
-    """REGRESSION: the output began "period from ...", which the parser then matched in
+    """REGRESSION: the output began "period from ...", which the wrangler then matched in
     its own result, so re-running grew "period period period from ..."."""
     once = substitute("q1 2024", today=TODAY)
     assert substitute(once, today=TODAY) == once

@@ -59,8 +59,7 @@ Source = "https://github.com/steephanselvaradjou/date-wrangler"
 packages = ["src/date_wrangler"]
 
 # Ship the source and the tests, nothing else. Without an explicit list hatchling sweeps
-# in whatever is lying around -- the Hypothesis example database alone added ~600 files,
-# and the superseded date_parser.py rode along at the sdist root.
+# in whatever is lying around -- the Hypothesis example database alone added ~600 files.
 [tool.hatch.build.targets.sdist]
 only-include = ["src", "tests", "README.md", "LICENSE", "pyproject.toml"]
 exclude = ["**/.hypothesis", "**/__pycache__", "**/*.pyc"]
