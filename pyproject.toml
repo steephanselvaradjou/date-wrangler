@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "date-wrangler"
+version = "0.1.0.dev0"
+description = "Parse dates, ranges and periods out of natural language — absolute dates, relative expressions, open-ended ranges, and fiscal quarters."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+# Name only, no email: author metadata is baked into every published wheel and PyPI does
+# not allow re-uploading a version to correct it. Add `email = "..."` here if you want a
+# contact address published; otherwise issues go through the repository.
+authors = [{ name = "Steephan Selvaraj" }]
+keywords = [
+    "date", "dates", "date-parser", "date-range", "datetime", "parsing",
+    "natural-language", "nlp", "period", "quarter", "fiscal", "fiscal-year",
+    "ytd", "analytics", "finance",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
+
+# No runtime dependencies. The one use of python-dateutil (relativedelta) is replaced by
+# ~15 lines of month arithmetic in calendars.py, which keeps installs fast and avoids
+# dragging a transitive version constraint into every consumer.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "mypy>=1.11"]
+
+[project.scripts]
+date-wrangler = "date_wrangler.__main__:main"
+
+# TODO(before first release): point these at a personal account. They pointed at the
+# ctdtechs org, which is wrong for a personal project, so they are removed rather than
+# left incorrect -- PyPI shows these prominently and they cannot be fixed in place.
+# [project.urls]
+# Homepage = "https://github.com/<username>/date-wrangler"
+# Issues = "https://github.com/<username>/date-wrangler/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/date_wrangler"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src/date_wrangler"]
