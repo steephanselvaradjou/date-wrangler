@@ -1,15 +1,7 @@
-"""Word lists and the small conversions that go with them.
+"""Word lists and the conversions that go with them.
 
-Two things here are deliberate corrections of the predecessor.
-
-Cardinals and ordinals are separate maps. The old module had a single ``NUMBER_WORDS``
-containing ``'twelfth': 12`` -- an ordinal filed among the cardinals -- and no ``'twelve'``
-at all, so "twelve months ago" did not parse while "twelfth months ago" would have.
-
-Month lookup is anchored, never substring. The old ``_normalize_month`` asked
-``if month_name in text``, which makes ``'may' in 'maybe'`` true and ``'mar' in 'market'``
-true. That was only ever held back by word boundaries in a regex several layers away.
-:func:`find_month` matches whole words or nothing.
+Cardinals and ordinals are separate maps on purpose, and :func:`find_month` matches whole
+words only -- substring matching makes ``'may' in 'maybe'`` true.
 """
 
 from __future__ import annotations

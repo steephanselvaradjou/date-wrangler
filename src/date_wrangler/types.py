@@ -1,16 +1,8 @@
 """Core value types.
 
-The central choice here is that :class:`DateRange` is **half-open**: ``end`` is the first
-instant *outside* the range, never the last one inside it. Three things fall out of that.
-
-Adjacent periods tile exactly -- Q1.end == Q2.start -- so ranges compose without the
-off-by-one that inclusive ends invite. SQL generated from a range is correct against a
-TIMESTAMP column, not just a DATE (``ts < '2024-03-01'`` keeps the whole of Feb 29th;
-``ts BETWEEN ... AND '2024-02-29'`` silently drops everything after midnight). And an
-absent bound has an obvious meaning: ``end=None`` is simply "no upper bound", which an
-inclusive end cannot express coherently.
-
-Callers who want the last day inside the range ask for :attr:`DateRange.end_inclusive`.
+:class:`DateRange` is half-open: ``end`` is the first day *outside* the range. That way
+periods tile exactly (Q1.end == Q2.start), generated SQL is safe against TIMESTAMP columns,
+and ``end=None`` has an obvious meaning. Use :attr:`DateRange.end_inclusive` for display.
 """
 
 from __future__ import annotations
@@ -24,12 +16,7 @@ __all__ = ["Grain", "Basis", "Mod", "DateRange", "DateMatch"]
 
 
 class Grain(str, Enum):
-    """Resolution the period was expressed at.
-
-    Kept alongside the dates because ``2024-01-01 .. 2024-04-01`` alone cannot tell a
-    caller whether the user asked for a quarter or for three months, which is exactly
-    what decides the ``GROUP BY`` bucket downstream.
-    """
+    """Resolution the period was expressed at. Decides the GROUP BY bucket."""
 
     DAY = "day"
     WEEK = "week"
@@ -49,10 +36,8 @@ class Basis(str, Enum):
 class Mod(str, Enum):
     """Open-ended and point-in-time qualifiers.
 
-    ``UNTIL`` includes the named period, ``BEFORE`` excludes it -- "until March" ends
-    April 1st, "before March" ends March 1st. Keeping the distinction on the range rather
-    than folding it into the dates lets a caller render the phrase back, or refuse an
-    unbounded query outright.
+    UNTIL includes the named period, BEFORE excludes it: "until March" ends April 1st,
+    "before March" ends March 1st.
     """
 
     SINCE = "since"
@@ -110,15 +95,10 @@ class DateRange:
         return not (below or above)
 
     def clamp(self, lo: date | None = None, hi: date | None = None) -> DateRange:
-        """Close off unbounded ends against a window the caller supplies.
+        """Close off unbounded ends against a window you supply.
 
-        This is the intended way to answer "since March" -- the parser refuses to guess
-        whether that means "up to today" or "for all time", so it leaves ``end`` as None
-        and the caller opts in::
-
-            r.clamp(hi=today + timedelta(days=1))   # through end of today
-
-        Bounds already present are tightened, never widened.
+        We never guess whether "since March" means "up to today" or "for all time", so
+        ``end`` stays None until you say. Existing bounds are tightened, never widened.
         """
         start, end = self.start, self.end
         if lo is not None:
@@ -139,11 +119,7 @@ class DateRange:
             day += timedelta(days=1)
 
     def sql(self, column: str) -> str:
-        """A SQL predicate for this range.
-
-        One code path covers all four bound states, and it is correct for DATE and
-        TIMESTAMP columns alike because the upper bound is exclusive.
-        """
+        """A SQL predicate for this range, covering all four bound states."""
         parts = []
         if self.start is not None:
             parts.append(f"{column} >= '{self.start.isoformat()}'")
@@ -159,11 +135,7 @@ class DateRange:
 
 @dataclass(frozen=True, slots=True)
 class DateMatch:
-    """A resolved range plus where it came from in the source text.
-
-    ``span`` indexes the *original* text, so a caller can highlight or replace the phrase
-    without re-searching. ``text`` is the phrase as written.
-    """
+    """A resolved range plus where it came from. ``span`` indexes the original text."""
 
     range: DateRange
     text: str

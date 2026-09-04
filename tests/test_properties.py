@@ -18,7 +18,7 @@ from date_wrangler import (
     Basis,
     DateOrder,
     FiscalCalendar,
-    ParserConfig,
+    WranglerConfig,
     YearLabel,
     diagnose,
     format_iso,
@@ -59,7 +59,7 @@ texts = st.one_of(
 )
 
 configs = st.builds(
-    ParserConfig,
+    WranglerConfig,
     fiscal=st.builds(
         FiscalCalendar,
         start_month=st.integers(min_value=1, max_value=12),

@@ -1,26 +1,13 @@
 """The recognisers: text in, :class:`Spec` out.
 
 Each rule is a scanning pattern plus a function that re-reads the matched fragment. The
-scanning patterns contain no capturing groups, so they can be concatenated into one
-alternation without group numbering colliding; the parse functions then run their own
-small capturing regex over the handful of characters that matched. Re-reading a twelve
-character fragment costs nothing and keeps the scanner readable.
+patterns hold no capturing groups, so they concatenate into one alternation without group
+numbers colliding; each parse function then runs its own small regex over the dozen or so
+characters that matched.
 
-Rule order is significant. Python alternation is leftmost-first, not longest-match, so
-specific rules must precede general ones -- ``PAT_MONTH_DAY_YEAR`` before ``PAT_MONTH``,
-or "January 15, 2024" is claimed by the bare month rule and the day is left behind.
-
-Two defects from the predecessor are designed out here rather than patched.
-
-A quarter index can no longer be taken from a year. The old code searched
-``q(?:tr)?\\s*(\\d)`` which happily matched the "2" of "qtr 2024", so "1st qtr 2024" and
-"3rd qtr 2019" both resolved to Q2. The pattern now requires the digit to be 1-4 *and* not
-be followed by another digit, and the ordinal form is a separate rule.
-
-A day can no longer be read as a year. The old year pattern accepted any two-to-four digit
-run, so "january 15, 2024" resolved to January **2015**. A bare number is only a year here
-when it has four digits or an apostrophe; two-digit years must be written ``'24`` or
-``FY24``.
+Order matters. Python alternation is leftmost-first, not longest-match, so specific rules
+must come before general ones -- month-day-year before bare month, or "January 15, 2024"
+is claimed by the month rule and the day is left behind.
 """
 
 from __future__ import annotations
@@ -29,7 +16,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .config import ParserConfig
+from .config import MonthNumber, WranglerConfig
 from .spec import Kind, Spec
 from .types import Basis, Grain
 from .vocab import (
@@ -66,33 +53,25 @@ _CY_WORD = r"(?:c\.?y\.?|calendar\s+year)"
 _YEAR_WORD = rf"(?:{_FY_WORD}|{_CY_WORD}|year)"
 _SEP = r"[\s-]*"
 
-#: What may be read as a year. Deliberately strict about *two* digit numbers: a bare
-#: two-digit number is never a year, because that is how a day-of-month became one.
+#: A bare two-digit number is never a year -- that is how a day-of-month becomes one.
 _MARKED_YEAR = rf"(?:{_FY_WORD}|{_CY_WORD}){_SEP}'?\d{{2,4}}"
 
-#: A year in a position where nothing else can be meant -- after a month name, a quarter
-#: or a half. Any four digits are accepted here, because "January 2100" is not ambiguous.
-#:
-#: Restricting this to 19xx/20xx caused unbounded growth in :func:`substitute`: parsing
-#: "1 January 2100" matched only "1 January", so the replacement re-emitted the year and
-#: the orphaned "2100" accumulated on every pass. A library that cannot read back its own
-#: output has the exact defect this one was written to fix.
+#: A year where nothing else can be meant -- after a month, quarter or half. Any four
+#: digits, since "January 2100" is unambiguous. Restricting this to 19xx/20xx meant we
+#: could not read back our own output, and substitute() grew the text on every pass.
 _YEAR = rf"(?:{_YEAR_WORD}{_SEP}'?\d{{2,4}}|'\d{{2}}|\d{{4}})"
 
-#: A year standing entirely on its own, with no month or period beside it. Here the
-#: century *is* the only thing separating a date from a quantity, so "5000" stays a
-#: number and only a plausible year is claimed.
+#: A year standing alone. Here the century is all that separates a date from a
+#: quantity, so "5000" stays a number.
 _BARE_YEAR = r"(?:19|20|21)\d{2}"
-#: A marked year may follow with no space at all ("Q1FY24"); an unmarked one may not,
-#: since "Q12024" would then be read as a quarter plus a year.
+#: A marked year may abut ("Q1FY24"); an unmarked one may not, or "Q12024" splits.
 _YEAR_SUFFIX = rf"(?:\s*{_MARKED_YEAR}|\s+(?:of\s+)?{_YEAR})?"
 
 _QWORD = r"(?:quarters?|qtrs?\.?|q)"
 _HWORD = r"(?:halves|half|h)"
 
-#: Words that place a count relative to now: "3 months ago", "5 years after". Defined once
-#: because the scanning pattern and the parse function must agree -- when they drifted
-#: apart, the scanner matched "6 month before" and the parser then refused to read it.
+#: Words placing a count relative to now: "3 months ago", "5 years after". Defined once
+#: because the scanning pattern and the parse function have to agree.
 _AGO_WORDS = r"ago|back|earlier|prior|before|later|hence|after|ahead|out"
 _AGO_FUTURE = frozenset({"later", "hence", "after", "ahead", "out"})
 
@@ -103,7 +82,7 @@ class Rule:
 
     name: str
     pattern: str
-    parse: Callable[[str, ParserConfig], Spec | None]
+    parse: Callable[[str, WranglerConfig], Spec | None]
 
 
 # ---------------------------------------------------------------------------
@@ -113,25 +92,20 @@ class Rule:
 _YEAR_DIGITS = re.compile(r"'?(\d{2,4})")
 
 
-def _pivot_year(digits: str, cfg: ParserConfig) -> int:
-    """Expand a written year, applying the two-digit pivot.
-
-    The predecessor mapped every two-digit year to 20xx, so "FY99" meant 2099 and there was
-    no way to write 1999 at all.
-    """
+def _pivot_year(digits: str, cfg: WranglerConfig) -> int:
+    """Expand a written year, applying the two-digit pivot."""
     value = int(digits)
     if len(digits.lstrip("0")) <= 2 and value < 100:
         return 2000 + value if value <= cfg.two_digit_pivot else 1900 + value
     return value
 
 
-def parse_year_token(token: str, cfg: ParserConfig) -> tuple[int | None, Basis | None]:
+def parse_year_token(token: str, cfg: WranglerConfig) -> tuple[int | None, Basis | None]:
     """Read a year fragment, returning the year and any basis it declared."""
     low = token.lower()
     basis: Basis | None = None
-    # No trailing \b: "cy2024" has no boundary between the marker and the digits, and
-    # requiring one made every CY token fall through to the configured default -- so
-    # "CY2024" resolved fiscally, which is exactly what writing CY is meant to prevent.
+    # No trailing \b -- "cy2024" has no boundary between marker and digits, and
+    # requiring one silently drops the CY the writer went out of their way to give.
     if re.search(rf"\bc\.?y\.?(?={_SEP}'?\d)|\bcalendar\s+year\b", low):
         basis = Basis.CALENDAR
     elif re.search(rf"\bf\.?y\.?(?={_SEP}'?\d)|\b(?:fiscal|financial)\s+year\b", low):
@@ -140,7 +114,7 @@ def parse_year_token(token: str, cfg: ParserConfig) -> tuple[int | None, Basis |
     return (_pivot_year(m.group(1), cfg) if m else None), basis
 
 
-def _year_from_suffix(text: str, cfg: ParserConfig) -> tuple[int | None, Basis | None]:
+def _year_from_suffix(text: str, cfg: WranglerConfig) -> tuple[int | None, Basis | None]:
     """Pull a trailing year off a period phrase, if one is there."""
     m = re.search(rf"\s*(?:of\s+)?({_YEAR})\s*$", text, re.IGNORECASE)
     if not m:
@@ -165,18 +139,17 @@ def _direction_of(word: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _p_iso(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_iso(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", text.strip())
     if not m:
         return None
     return Spec(Kind.ABS_DAY, year=int(m.group(1)), month=int(m.group(2)), day=int(m.group(3)))
 
 
-def _p_numeric(text: str, cfg: ParserConfig) -> Spec | None:
-    """An all-numeric date, read according to :attr:`ParserConfig.date_order`.
+def _p_numeric(text: str, cfg: WranglerConfig) -> Spec | None:
+    """An all-numeric date, read per :attr:`WranglerConfig.date_order`.
 
-    A component above 12 can only be a day, so unambiguous input is read correctly no
-    matter how the parser is configured.
+    A component above 12 can only be a day, so unambiguous input reads right regardless.
     """
     m = re.fullmatch(r"(\d{1,4})[/.-](\d{1,2})[/.-](\d{1,4})", text.strip())
     if not m:
@@ -197,7 +170,7 @@ def _p_numeric(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.ABS_DAY, year=year, month=month, day=day, confidence=0.9)
 
 
-def _p_day_month_year(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_day_month_year(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.match(r"\s*(\d{1,2})(?:st|nd|rd|th)?\s+", text, re.IGNORECASE)
     if not m:
         return None
@@ -208,26 +181,38 @@ def _p_day_month_year(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.ABS_DAY, year=year, month=month, day=int(m.group(1)))
 
 
-def _p_month_day_year(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_month_day_year(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"January 15, 2024", "march 3" -- and the ambiguous "jan 24".
+
+    Only a bare two-digit number with no year beside it is actually in doubt. Everything
+    else settles itself: an ordinal suffix or a single digit is a day, an explicit year
+    means the number beside it is a day, and anything above 31 can only be a year.
+    """
     month = find_month(text)
     if month is None:
         return None
-    m = re.search(rf"{_MONTH}\s+(\d{{1,2}})(?:st|nd|rd|th)?", text, re.IGNORECASE)
+    m = re.search(rf"{_MONTH}\s+(\d{{1,2}})(st|nd|rd|th)?", text, re.IGNORECASE)
     if not m:
         return None
+    digits, suffix = m.group(1), m.group(2)
     year, _ = _year_from_suffix(text, cfg)
-    return Spec(Kind.ABS_DAY, year=year, month=month, day=int(m.group(1)))
+    if year is not None or suffix or len(digits) == 1:
+        return Spec(Kind.ABS_DAY, year=year, month=month, day=int(digits))
+    value = int(digits)
+    if value > 31 or cfg.month_number is MonthNumber.YEAR:
+        return Spec(Kind.ABS_MONTH, month=month, year=_pivot_year(digits, cfg))
+    return Spec(Kind.ABS_DAY, month=month, day=value)
 
 
-def _p_fy_range(text: str, cfg: ParserConfig) -> Spec | None:
-    """"FY2024-25" -- one fiscal year written with both of its calendar years."""
+def _p_fy_range(text: str, cfg: WranglerConfig) -> Spec | None:
+    """One fiscal year written with both its calendar years: "FY2024-25"."""
     m = re.search(r"'?(\d{2,4})\s*[-/]\s*'?(\d{2,4})", text)
     if not m:
         return None
     return Spec(Kind.ABS_YEAR, year=_pivot_year(m.group(2), cfg), basis=Basis.FISCAL)
 
 
-def _p_to_date(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_to_date(text: str, cfg: WranglerConfig) -> Spec | None:
     low = text.lower()
     if re.search(r"\b(?:mtd|month\s*to\s*date)\b", low):
         unit = Grain.MONTH
@@ -247,7 +232,7 @@ def _p_to_date(text: str, cfg: ParserConfig) -> Spec | None:
     return spec
 
 
-def _p_trailing_months(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_trailing_months(text: str, cfg: WranglerConfig) -> Spec | None:
     """Reporting shorthand: TTM, LTM, T12M, L3M."""
     low = text.strip().lower()
     if low in ("ttm", "ltm"):
@@ -262,7 +247,7 @@ def _p_trailing_months(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.RELATIVE, count=count, unit=Grain.MONTH, direction=-1)
 
 
-def _p_period_ending(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_period_ending(text: str, cfg: WranglerConfig) -> Spec | None:
     """"quarter ending June 2024", "year ended March 2024"."""
     m = re.match(rf"\s*(?:the\s+)?({_UNIT})\s+end", text, re.IGNORECASE)
     if not m:
@@ -277,7 +262,7 @@ def _p_period_ending(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.PERIOD_ENDING, unit=unit, month=month, year=year, basis=basis)
 
 
-def _p_weekday(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_weekday(text: str, cfg: WranglerConfig) -> Spec | None:
     low = text.strip().lower()
     m = re.search(rf"\b({alt(WEEKDAY_NAMES)})\b", low)
     if not m:
@@ -293,8 +278,8 @@ def _p_weekday(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.WEEKDAY, index=index, direction=direction, confidence=confidence)
 
 
-def _p_fiscal_month(text: str, cfg: ParserConfig) -> Spec | None:
-    """"the third month of FY24" -- an index into a fiscal year, not a calendar month."""
+def _p_fiscal_month(text: str, cfg: WranglerConfig) -> Spec | None:
+    """An index into a fiscal year, not a calendar month: "the third month of FY24"."""
     m = re.match(rf"\s*(?:the\s+)?({_ORD})\s+month", text, re.IGNORECASE)
     if not m:
         return None
@@ -305,7 +290,7 @@ def _p_fiscal_month(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.FISCAL_MONTH, year=year, index=index, basis=basis or Basis.FISCAL)
 
 
-def _p_quarter(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_quarter(text: str, cfg: WranglerConfig) -> Spec | None:
     low = text.lower()
     index: int | None = None
     m = re.search(rf"{_QWORD}\s*([1-4])(?!\d)", low)
@@ -321,7 +306,7 @@ def _p_quarter(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.ABS_QUARTER, year=year, index=index, basis=basis)
 
 
-def _p_half(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_half(text: str, cfg: WranglerConfig) -> Spec | None:
     low = text.lower()
     index: int | None = None
     m = re.search(r"\bh\s*([12])(?!\d)", low) or re.search(r"\bhalf\s*([12])(?!\d)", low)
@@ -341,7 +326,7 @@ def _p_half(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.ABS_HALF, year=year, index=index, basis=basis)
 
 
-def _p_month(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_month(text: str, cfg: WranglerConfig) -> Spec | None:
     month = find_month(text)
     if month is None:
         return None
@@ -349,24 +334,23 @@ def _p_month(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.ABS_MONTH, year=year, month=month)
 
 
-def _p_year(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_year(text: str, cfg: WranglerConfig) -> Spec | None:
     year, basis = parse_year_token(text, cfg)
     if year is None:
         return None
     return Spec(Kind.ABS_YEAR, year=year, basis=basis)
 
 
-def _p_bare_year(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_bare_year(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.fullmatch(rf"\s*({_BARE_YEAR})\s*", text)
     if not m:
         return None
-    # A year written on its own is a calendar year. Only a quarter or half labelled with a
-    # year inherits the configured basis -- "2024" plainly means the year 2024, whereas
-    # "Q1 2024" is genuinely a question about which calendar the writer had in mind.
+    # A year on its own is a calendar year. Only a quarter or half labelled with one
+    # inherits the configured basis, because that case is genuinely ambiguous.
     return Spec(Kind.ABS_YEAR, year=int(m.group(1)), basis=Basis.CALENDAR, confidence=0.8)
 
 
-def _p_ago(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_ago(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.match(rf"\s*({_NUM})\s+({_UNIT})\s+({_AGO_WORDS})", text, re.IGNORECASE)
     if not m:
         return None
@@ -374,14 +358,13 @@ def _p_ago(text: str, cfg: ParserConfig) -> Spec | None:
     unit = _unit_of(m.group(2))
     if count is None or unit is None:
         return None
-    # "before" and "after" have to be here, not only among the modifier prefixes. Without
-    # them "6 month before" fell through to the fiscal-month rule, which happily read
-    # "6 month" as the sixth month of the fiscal year and answered September.
+    # "before"/"after" belong here as well as in the modifier prefixes, or "6 month
+    # before" falls through to the fiscal-month rule and answers with the sixth month.
     direction = 1 if m.group(3).lower() in _AGO_FUTURE else -1
     return Spec(Kind.AGO, count=count, unit=unit, direction=direction)
 
 
-def _p_relative_fy(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_relative_fy(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.match(rf"\s*({_DIRWORD})\s+(?:({_NUM})\s+)?({_FY_WORD}|{_CY_WORD})\b", text, re.I)
     if not m:
         return None
@@ -398,7 +381,7 @@ def _p_relative_fy(text: str, cfg: ParserConfig) -> Spec | None:
     )
 
 
-def _p_relative(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_relative(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.match(rf"\s*({_DIRWORD})\s+(?:({_NUM})\s+)?({_UNIT})\b", text, re.IGNORECASE)
     if not m:
         return None
@@ -409,7 +392,7 @@ def _p_relative(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.RELATIVE, count=count, unit=unit, direction=_direction_of(m.group(1)))
 
 
-def _p_this(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_this(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.match(rf"\s*(?:this|current|present)\s+({_UNIT})\b", text, re.IGNORECASE)
     if not m:
         return None
@@ -419,7 +402,7 @@ def _p_this(text: str, cfg: ParserConfig) -> Spec | None:
     return Spec(Kind.THIS_PERIOD, unit=unit)
 
 
-def _p_day_keyword(text: str, cfg: ParserConfig) -> Spec | None:
+def _p_day_keyword(text: str, cfg: WranglerConfig) -> Spec | None:
     low = text.strip().lower()
     offset = {"today": 0, "yesterday": -1, "tomorrow": 1}.get(low)
     if offset is None:
@@ -462,10 +445,10 @@ RULES: tuple[Rule, ...] = (
         rf"\b{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\s*\d)(?:\s*,?\s+{_YEAR})?\b",
         _p_month_day_year,
     ),
-    # "ago" must precede "fiscal_month": both can open with a bare number, and
-    # "3 months ago" would otherwise be read as "the 3rd month".
+    # Before "fiscal_month": both open with a bare number, and "3 months ago" would
+    # otherwise read as "the 3rd month".
     Rule("ago", rf"\b{_NUM}\s+{_UNIT}\s+(?:{_AGO_WORDS})\b", _p_ago),
-    # Singular "month" only -- an ordinal position is "the third month", never "months".
+    # Singular "month" only: an ordinal position is "the third month", never "months".
     Rule("fiscal_month", rf"\b(?:the\s+)?{_ORD}\s+month\b{_YEAR_SUFFIX}", _p_fiscal_month),
     Rule(
         "relative_fy",

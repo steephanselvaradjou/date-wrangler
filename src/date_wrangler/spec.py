@@ -1,13 +1,8 @@
-"""The intermediate form between recognising text and computing dates.
+"""What a rule recognised, before any dates are computed.
 
-A :class:`Spec` is what a rule produces: "the user named quarter 2 of some year, on no
-particular basis". It carries no dates. Resolution to an actual range happens later, in
-:mod:`.resolve`, once ``today`` and the configuration are known.
-
-Keeping the two apart is what lets a range unify its endpoints before either is resolved.
-The predecessor resolved each end of "Q1 to Q2 of 2024" independently and got a fifteen
-month span, because the first end defaulted to fiscal and the second to calendar. Specs
-can be adjusted -- given a year, given a basis -- while they are still just intentions.
+Resolution happens later, in :mod:`.resolve`, once ``today`` and the config are known.
+Keeping them apart is what lets a range agree on a year and a basis across both endpoints
+before either is resolved.
 """
 
 from __future__ import annotations
@@ -42,9 +37,8 @@ class Kind(Enum):
 class Spec:
     """A recognised period, not yet resolved to dates.
 
-    ``None`` in ``year`` or ``basis`` means "not stated" -- a later stage supplies it,
-    either from the other end of a range or from configuration. That distinction is load
-    bearing: it is how an explicit year on one endpoint reaches the other.
+    ``None`` in ``year`` or ``basis`` means "not stated": a later stage fills it in from
+    the other end of a range, or from config. That distinction is load bearing.
     """
 
     kind: Kind

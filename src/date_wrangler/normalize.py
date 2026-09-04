@@ -1,19 +1,11 @@
-"""Text normalisation that preserves a mapping back to the original string.
+"""Fold typographic variants to ASCII, keeping a map back to the original string.
 
-Real text arrives with typographic damage. Word and Slack rewrite ``-`` as an en dash the
-moment you type a range, ``'24`` becomes a curly apostrophe, pasted spreadsheet cells carry
-non-breaking spaces, and CJK input methods produce fullwidth digits. None of that should
-decide whether a date parses.
+Editors rewrite ``-`` as an en dash and ``'24`` with a curly apostrophe; spreadsheets paste
+non-breaking spaces. None of that should decide whether a date parses.
 
-Normalising is easy; the catch is that :class:`~date_wrangler.types.DateMatch` reports a
-span into the string the *caller* passed, not into our cleaned-up copy, and normalisation
-can change lengths. So every produced character records which original character it came
-from, and :meth:`Normalized.to_original` maps a span back.
-
-Normalisation is per-character rather than whole-string NFKC. That gives an exact offset
-map, at the cost of not composing combining sequences (``e`` + U+0301 stays two characters
-instead of becoming ``é``). For date text that trade is free -- no month name or numeral we
-recognise depends on composition.
+Matches report spans into the caller's string, so every produced character records where it
+came from. Normalisation is per-character rather than whole-string NFKC: that keeps the
+offset map exact, at the cost of not composing accents, which no date needs.
 """
 
 from __future__ import annotations

@@ -1,8 +1,7 @@
 name: Publish
 
-# Publishing is deliberately manual or tag-driven, never on every push: a version can be
-# uploaded to PyPI exactly once and can never be replaced, so an accidental release is
-# permanent.
+# Tag-driven or manual, never on every push: a PyPI version can be uploaded once and
+# never replaced, so an accidental release is permanent.
 on:
   push:
     tags: ["v*"]
@@ -44,8 +43,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
     runs-on: ubuntu-latest
     environment: testpypi
-    # Trusted Publishing: PyPI verifies this workflow's OIDC identity, so there is no API
-    # token to create, store or leak. `id-token: write` is what mints that identity.
+    # Trusted Publishing: PyPI verifies this workflow's OIDC identity, so there is no
+    # token to store. `id-token: write` mints that identity.
     permissions:
       id-token: write
     steps:

@@ -1,12 +1,8 @@
-"""Parser configuration.
+"""Everything the wrangler treats as policy rather than fact.
 
-Everything the parser treats as policy rather than fact lives here, and it is passed per
-call. Nothing is read from a module global: two tenants on different fiscal calendars have
-to be servable from one process, which the predecessor could not do.
-
-Config objects are frozen and validated on construction, so a bad fiscal month is a
-``ValueError`` naming the field at startup, not a ``ValueError: month must be in 1..12``
-from deep inside ``date()`` on the first request that happens to mention a quarter.
+Passed per call, never read from a module global, so one process can serve tenants on
+different fiscal calendars. Frozen and validated on construction, so a bad fiscal month
+names the field it came from instead of failing later inside ``date()``.
 """
 
 from __future__ import annotations
@@ -17,16 +13,14 @@ from typing import Any
 
 from .types import Basis
 
-__all__ = ["DateOrder", "YearLabel", "FiscalCalendar", "ParserConfig"]
+__all__ = ["DateOrder", "MonthNumber", "YearLabel", "FiscalCalendar", "WranglerConfig"]
 
 
 class DateOrder(Enum):
     """How to read an all-numeric date like ``03/04/2024``.
 
-    There is no correct default -- 3 April to most of the world, 4 March in the US -- so
-    the parser refuses to guess silently and this must be a deliberate choice. Unambiguous
-    forms (ISO ``2024-03-04``, or any form with a day above 12) are read correctly under
-    every setting.
+    3 April to most of the world, 4 March in the US, so this has to be your choice.
+    Unambiguous forms -- ISO, or any component above 12 -- are read right regardless.
     """
 
     DMY = "DMY"
@@ -34,12 +28,26 @@ class DateOrder(Enum):
     YMD = "YMD"
 
 
+class MonthNumber(Enum):
+    """What a bare two-digit number after a month name means: ``jan 24``.
+
+    Genuinely ambiguous, and which way it falls depends on the writing. Prose means the
+    day; a finance sheet listing "jan 24, feb 24, mar 24" means the year.
+
+    The setting only decides the ambiguous middle. A single digit is always a day (nobody
+    writes a year as ``3``), an ordinal suffix is always a day (``jan 24th``), and an
+    apostrophe, four digits, or anything above 31 is always a year.
+    """
+
+    DAY = "day"
+    YEAR = "year"
+
+
 class YearLabel(Enum):
     """Which calendar year names a fiscal year.
 
-    ``END_YEAR`` is the Indian/UK/Australian convention and matches pandas' anchored
-    quarters: with an April start, FY2024 runs Apr 2023 - Mar 2024, and Apr-Jun is Q1.
-    ``START_YEAR`` is common in US corporate reporting, where FY2024 begins in 2024.
+    END_YEAR (India/UK/Australia, and pandas): with an April start FY2024 is Apr 2023 -
+    Mar 2024. START_YEAR (common in US corporate reporting): FY2024 begins in 2024.
     """
 
     END_YEAR = "end_year"
@@ -74,9 +82,8 @@ class FiscalCalendar:
     def end_month(self) -> int:
         return 12 if self.start_month == 1 else self.start_month - 1
 
-    # -- presets ---------------------------------------------------------------
-    # Named rather than left to the caller to derive, because "which month does the
-    # US federal year start" is exactly the kind of thing people get wrong once.
+    # Presets, because "which month does the US federal year start" is the kind of
+    # thing people look up once and misremember afterwards.
 
     @staticmethod
     def india() -> FiscalCalendar:
@@ -105,7 +112,7 @@ class FiscalCalendar:
 
 
 @dataclass(frozen=True, slots=True)
-class ParserConfig:
+class WranglerConfig:
     """Everything the parser treats as policy."""
 
     fiscal: FiscalCalendar = field(default_factory=FiscalCalendar)
@@ -113,16 +120,18 @@ class ParserConfig:
     #: What a bare "Q1"/"H1" means when no year and no fy/cy marker is present.
     bare_period_basis: Basis = Basis.FISCAL
 
-    #: What "Q1 of 2024" means. INHERIT keeps it identical to ``bare_period_basis`` so
-    #: that "Q1 2024" and "Q1 of 2024" agree -- the predecessor resolved those a year
-    #: apart, which was its single most surprising behaviour.
+    #: What "Q1 of 2024" means. None inherits ``bare_period_basis``, so that phrasing and
+    #: "Q1 2024" agree -- they should never land a year apart.
     of_year_basis: Basis | None = None  # None => inherit
 
     #: Reading of all-numeric dates. See :class:`DateOrder`.
     date_order: DateOrder = DateOrder.DMY
 
-    #: Two-digit years at or below this map to 20xx, above it to 19xx. The default is
-    #: the POSIX pivot, so "99" is 1999 rather than 2099.
+    #: What "jan 24" means. See :class:`MonthNumber`.
+    month_number: MonthNumber = MonthNumber.DAY
+
+    #: Two-digit years at or below this map to 20xx, above it to 19xx. POSIX default,
+    #: so "99" is 1999.
     two_digit_pivot: int = 68
 
     #: How eagerly to claim bare month names in running prose. "strict" requires a year
@@ -131,25 +140,27 @@ class ParserConfig:
 
     def __post_init__(self) -> None:
         if not isinstance(self.fiscal, FiscalCalendar):
-            raise TypeError("ParserConfig.fiscal must be a FiscalCalendar")
+            raise TypeError("WranglerConfig.fiscal must be a FiscalCalendar")
         if not isinstance(self.date_order, DateOrder):
-            raise TypeError("ParserConfig.date_order must be a DateOrder")
+            raise TypeError("WranglerConfig.date_order must be a DateOrder")
+        if not isinstance(self.month_number, MonthNumber):
+            raise TypeError("WranglerConfig.month_number must be a MonthNumber")
         if not 0 <= self.two_digit_pivot <= 99:
             raise ValueError(
-                f"ParserConfig.two_digit_pivot must be 0-99, got {self.two_digit_pivot}"
+                f"WranglerConfig.two_digit_pivot must be 0-99, got {self.two_digit_pivot}"
             )
         if self.strictness not in ("strict", "balanced", "greedy"):
             raise ValueError(
-                f"ParserConfig.strictness must be strict/balanced/greedy, got {self.strictness!r}"
+                f"WranglerConfig.strictness must be strict/balanced/greedy, got {self.strictness!r}"
             )
 
     @property
     def effective_of_year_basis(self) -> Basis:
         return self.of_year_basis if self.of_year_basis is not None else self.bare_period_basis
 
-    def with_(self, **changes: Any) -> ParserConfig:
+    def with_(self, **changes: Any) -> WranglerConfig:
         """A copy with fields replaced, validated the same way."""
         return replace(self, **changes)
 
 
-DEFAULT_CONFIG = ParserConfig()
+DEFAULT_CONFIG = WranglerConfig()

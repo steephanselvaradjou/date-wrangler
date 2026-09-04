@@ -1,14 +1,11 @@
 """Rendering ranges back to text.
 
-Formatting is a separate, replaceable function rather than something baked into the
-parser, which is what makes the output format configurable at all. It also keeps the two
-halves honest: :func:`~date_wrangler.parser.parse` can express an unbounded range because
-nothing in it is obliged to turn one into a sentence.
+Formatting is a separate, replaceable function, which is what makes the output format
+configurable -- and lets :func:`~date_wrangler.wrangler.parse` return an unbounded range
+without having to phrase one.
 
-Month names come from a table in :mod:`.vocab`, never from ``strftime('%B')``. That
-directive honours ``LC_TIME``, so the predecessor's output changed from "June" to "Juni"
-if anything anywhere in the host process had called ``setlocale`` -- a library's output
-should not depend on unrelated global state.
+Month names come from :mod:`.vocab`, never ``strftime('%B')``, which honours LC_TIME and
+would let an unrelated ``setlocale`` elsewhere turn "June" into "Juni".
 """
 
 from __future__ import annotations
@@ -45,12 +42,7 @@ def _point(d: date, grain: Grain) -> str:
 
 
 def format_range(r: DateRange) -> str:
-    """A readable phrase for ``r``, at the grain it was expressed at.
-
-    Deliberately does not begin with the word "period". The predecessor emitted
-    "period from X to Y", which collided with the word in its own input: "the P&L for the
-    period April 2024 - March 2025" came back reading "for the period period from ...".
-    """
+    """A readable phrase for ``r``, at the grain it was expressed at."""
     if r.start is None and r.end is None:
         return "any date"
 
@@ -79,8 +71,8 @@ def format_range(r: DateRange) -> str:
         return f"{format_day(r.start)} to {format_day(last)}"
     if (r.start.year, r.start.month) == (last.year, last.month):
         return format_month(r.start)
-    # No leading "from". The phrase usually lands in a slot that already has a preposition
-    # -- "sales report of <range>" -- and "of from April to June" reads as a typo.
+    # No leading "from": the phrase usually lands after a preposition already, and
+    # "of from April to June" reads as a typo.
     return f"{format_month(r.start)} to {format_month(last)}"
 
 
@@ -97,24 +89,18 @@ def make_formatter(
     unbounded: str = "any date",
     inclusive_end: bool = True,
 ) -> Callable[[DateRange], str]:
-    """Build a formatter from format strings, for callers who do not want to write one.
+    """Build a formatter from format strings, so you need not write one.
 
-    ``date_format`` is a ``strftime`` pattern applied to each bound; the templates are
-    ``str.format`` patterns taking ``{start}`` and ``{end}``. One is chosen per range
-    according to which bounds exist and which modifier applies.
+    ``date_format`` is a strftime pattern for each bound; the templates are ``str.format``
+    patterns taking ``{start}`` and ``{end}``, one per shape of range.
 
-    ``inclusive_end`` decides which day ``{end}`` names. It defaults to True because an
-    end-user-facing string should say the last day *inside* the period -- "to 2024-03-31",
-    not "to 2024-04-01". Set it False when the output feeds a system that wants the
-    exclusive bound.
+    ``inclusive_end`` decides which day ``{end}`` names -- the last day inside the period
+    (the default, for people) or the exclusive bound (for machines).
 
-    Note that ``%B`` and ``%A`` in ``date_format`` are locale-sensitive, unlike the
-    built-in :func:`format_range`. That is your choice to make here, but it does mean the
-    output can change with the host process's locale::
+    Unlike :func:`format_range`, ``%B`` and ``%A`` here are locale-sensitive::
 
         fmt = make_formatter(date_format="%d/%m/%Y", closed="{start} - {end}")
-        substitute("sales in Q1 FY25", formatter=fmt)
-        # 'sales in 01/04/2024 - 30/06/2024'
+        substitute("sales in Q1 FY25", formatter=fmt)   # '01/04/2024 - 30/06/2024'
     """
 
     def render(r: DateRange) -> str:
@@ -132,8 +118,8 @@ def make_formatter(
             template = after if r.mod is Mod.AFTER else since
             return template.format(start=start, end=end)
         if r.start is None:
-            # BEFORE excludes the named period, so it reports the exclusive bound even
-            # when inclusive_end is set -- "before March" ends where March begins.
+            # BEFORE excludes the named period, so it always reports the exclusive
+            # bound: "before March" ends where March begins.
             edge = fmt(r.end) if r.mod is Mod.BEFORE else end
             template = before if r.mod is Mod.BEFORE else until
             return template.format(start=start, end=edge)

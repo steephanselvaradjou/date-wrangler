@@ -1,8 +1,6 @@
 """Command line entry point: ``date-wrangler "q1 fy25"``.
 
-Exists mainly so that "what does this library think that phrase means?" is answerable in
-one line, without writing a script. The predecessor had no such affordance, which made
-every ambiguity a debugging session.
+So that "what does this think that phrase means?" is answerable without writing a script.
 """
 
 from __future__ import annotations
@@ -14,14 +12,14 @@ from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import __version__
-from .config import DateOrder, FiscalCalendar, ParserConfig, YearLabel
+from .config import DateOrder, FiscalCalendar, WranglerConfig, YearLabel
 from .format import format_iso, format_range
-from .parser import diagnose
 from .types import Basis
+from .wrangler import diagnose
 
 
-def _build_config(args: argparse.Namespace) -> ParserConfig:
-    return ParserConfig(
+def _build_config(args: argparse.Namespace) -> WranglerConfig:
+    return WranglerConfig(
         fiscal=FiscalCalendar(
             start_month=args.fiscal_start,
             label_by=YearLabel(args.label_by),

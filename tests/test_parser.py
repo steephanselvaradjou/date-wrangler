@@ -20,7 +20,7 @@ from date_wrangler import (
     FiscalCalendar,
     Grain,
     Mod,
-    ParserConfig,
+    WranglerConfig,
     diagnose,
     parse,
     parse_one,
@@ -28,10 +28,10 @@ from date_wrangler import (
 )
 
 TODAY = date(2025, 9, 4)
-CFG = ParserConfig()  # April fiscal start, bare periods fiscal
+CFG = WranglerConfig()  # April fiscal start, bare periods fiscal
 
 
-def rng(text: str, cfg: ParserConfig = CFG):
+def rng(text: str, cfg: WranglerConfig = CFG):
     """The single range parsed from ``text``, as a (start, end) tuple."""
     matches = parse(text, today=TODAY, config=cfg)
     assert len(matches) == 1, f"expected exactly one match in {text!r}, got {len(matches)}"
@@ -39,7 +39,7 @@ def rng(text: str, cfg: ParserConfig = CFG):
     return r.start, r.end
 
 
-def ranges(text: str, cfg: ParserConfig = CFG):
+def ranges(text: str, cfg: WranglerConfig = CFG):
     return [(m.range.start, m.range.end) for m in parse(text, today=TODAY, config=cfg)]
 
 
@@ -187,8 +187,8 @@ def test_day_of_month_is_not_read_as_a_year():
 
 
 def test_numeric_date_order_is_configurable():
-    dmy = ParserConfig(date_order=DateOrder.DMY)
-    mdy = ParserConfig(date_order=DateOrder.MDY)
+    dmy = WranglerConfig(date_order=DateOrder.DMY)
+    mdy = WranglerConfig(date_order=DateOrder.MDY)
     assert rng("03/04/2024", dmy)[0] == date(2024, 4, 3)
     assert rng("03/04/2024", mdy)[0] == date(2024, 3, 4)
     # A component above 12 can only be a day, whatever the setting says.
@@ -345,8 +345,8 @@ def test_cued_months_still_parse(text):
 
 
 def test_strictness_settings():
-    greedy = ParserConfig(strictness="greedy")
-    strict = ParserConfig(strictness="strict")
+    greedy = WranglerConfig(strictness="greedy")
+    strict = WranglerConfig(strictness="strict")
     assert parse("the march on Washington", today=TODAY, config=greedy) != []
     assert parse("sales in March", today=TODAY, config=strict) == []
     assert parse("sales in Q1", today=TODAY, config=strict) != []
@@ -430,15 +430,15 @@ def test_diagnose_separates_nothing_there_from_could_not_read():
 
 
 def test_fiscal_calendar_is_honoured_per_call():
-    us = ParserConfig(fiscal=FiscalCalendar.us_federal())
-    au = ParserConfig(fiscal=FiscalCalendar.australia())
+    us = WranglerConfig(fiscal=FiscalCalendar.us_federal())
+    au = WranglerConfig(fiscal=FiscalCalendar.australia())
     assert rng("FY24", us) == (date(2023, 10, 1), date(2024, 10, 1))
     assert rng("FY24", au) == (date(2023, 7, 1), date(2024, 7, 1))
     assert rng("FY24", CFG) == (date(2023, 4, 1), date(2024, 4, 1))
 
 
 def test_bare_period_basis_is_configurable():
-    calendar_first = ParserConfig(bare_period_basis=Basis.CALENDAR)
+    calendar_first = WranglerConfig(bare_period_basis=Basis.CALENDAR)
     assert rng("Q1", calendar_first) == (date(2025, 1, 1), date(2025, 4, 1))
     assert rng("Q1") == (date(2025, 4, 1), date(2025, 7, 1))
 
@@ -446,13 +446,13 @@ def test_bare_period_basis_is_configurable():
 def test_q1_and_q1_of_year_agree_by_default():
     """The predecessor resolved these a year apart, which was its most surprising
     behaviour. Whatever the configured basis, the two phrasings must match."""
-    for cfg in (CFG, ParserConfig(bare_period_basis=Basis.CALENDAR)):
+    for cfg in (CFG, WranglerConfig(bare_period_basis=Basis.CALENDAR)):
         assert rng("Q1 2024", cfg) == rng("Q1 of 2024", cfg)
 
 
 def test_prefilter_never_hides_a_match():
     """The fast reject path must not be able to drop something the scanner would find."""
-    from date_wrangler.parser import _PREFILTER, _SCANNER
+    from date_wrangler.wrangler import _PREFILTER, _SCANNER
 
     for text in ("Q1", "march", "last week", "ytd", "2024-01-01", "h1", "first quarter"):
         if _SCANNER.search(text):
@@ -661,3 +661,51 @@ def test_make_formatter_handles_open_ranges():
 def test_a_plain_callable_still_works_as_a_formatter():
     out = substitute("Q1 FY25", today=TODAY, formatter=lambda r: f"<{r.start}..{r.end})")
     assert out == "<2024-04-01..2024-07-01)"
+
+
+# ---------------------------------------------------------------------------
+# "jan 24": day or year
+# ---------------------------------------------------------------------------
+
+
+def test_a_bare_number_after_a_month_follows_the_setting():
+    from date_wrangler import MonthNumber
+
+    as_year = WranglerConfig(month_number=MonthNumber.YEAR)
+    assert rng("jan 24") == (date(2025, 1, 24), date(2025, 1, 25))
+    assert rng("jan 24", as_year) == (date(2024, 1, 1), date(2024, 2, 1))
+
+
+@pytest.mark.parametrize("cfg_kind", ["day", "year"])
+@pytest.mark.parametrize(
+    "text,start,end",
+    [
+        # A single digit is never a year.
+        ("march 3", date(2025, 3, 3), date(2025, 3, 4)),
+        # An ordinal suffix is always a day.
+        ("jan 24th", date(2025, 1, 24), date(2025, 1, 25)),
+        # An apostrophe is always a year.
+        ("jan '24", date(2024, 1, 1), date(2024, 2, 1)),
+        # Four digits are always a year.
+        ("jan 2024", date(2024, 1, 1), date(2024, 2, 1)),
+        # Above 31 can only be a year.
+        ("jan 87", date(1987, 1, 1), date(1987, 2, 1)),
+        # An explicit year makes the other number a day.
+        ("january 15, 2024", date(2024, 1, 15), date(2024, 1, 16)),
+    ],
+)
+def test_unambiguous_forms_ignore_the_setting(cfg_kind, text, start, end):
+    from date_wrangler import MonthNumber
+
+    cfg = WranglerConfig(
+        month_number=MonthNumber.YEAR if cfg_kind == "year" else MonthNumber.DAY
+    )
+    assert rng(text, cfg) == (start, end)
+
+
+def test_month_number_year_reads_the_authors_range_correctly():
+    """"jan 24-mar 2025" is Jan 2024 to Mar 2025 to anyone writing a finance sheet."""
+    from date_wrangler import MonthNumber
+
+    cfg = WranglerConfig(month_number=MonthNumber.YEAR)
+    assert rng("jan 24-mar 2025", cfg) == (date(2024, 1, 1), date(2025, 4, 1))

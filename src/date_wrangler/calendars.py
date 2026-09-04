@@ -1,21 +1,9 @@
 """Period arithmetic for every grain, on both the calendar and fiscal bases.
 
-Two bugs in the predecessor lived here and both are structural rather than incidental, so
-they are worth naming.
+A fiscal year *label* and a calendar year are different kinds of number and are never
+interchangeable here -- conflating them is how a bare "Q1" ends up in the wrong year.
 
-The first: a bare "Q1" defaulted its year to ``today.year`` and then handed that number to
-a function that read it as a *fiscal year label*. With an April start, asking in September
-2025 resolved "Q1" to the fiscal year that had already ended. Callers got the wrong year
-for nine months out of twelve. The fix is that a fiscal token defaults to
-:func:`current_fiscal_year`, never to a calendar year -- the two are different kinds of
-number and are no longer interchangeable here.
-
-The second: the start of a fiscal year was hardcoded as ``date(label - 1, start_month, 1)``,
-which is right only when the year is labelled by its end *and* does not start in January.
-A January-start calendar put FY2024 in 2023. :func:`fiscal_year_start` now derives the
-offset from the configured convention instead of assuming one.
-
-All ranges returned here are half-open, so no function in this module subtracts a day.
+Everything returned is half-open, so nothing in this module subtracts a day.
 """
 
 from __future__ import annotations
@@ -47,12 +35,7 @@ class DateRangeOverflow(ValueError):
 
 
 def _check_year(year: int, what: str) -> int:
-    """Guard every year before it reaches ``date()``.
-
-    The predecessor let "5000 years ago" through to ``date(-2975, 4, 1)`` and surfaced a
-    bare ``ValueError: year -2975 is out of range`` to the caller's request handler. A
-    library should not crash a web request over a typo in a search box.
-    """
+    """Guard a year before it reaches ``date()``, so a typo cannot crash a request."""
     if not MINYEAR <= year <= MAXYEAR:
         raise DateRangeOverflow(
             f"{what} resolves to year {year}, outside the supported range "
@@ -62,11 +45,7 @@ def _check_year(year: int, what: str) -> int:
 
 
 def add_months(d: date, n: int) -> date:
-    """``d`` shifted by ``n`` months, clamping to the end of a short month.
-
-    Replaces the sole use of ``python-dateutil``; the library now has no runtime
-    dependencies at all.
-    """
+    """``d`` shifted by ``n`` months, clamping to the end of a short month."""
     total = d.month - 1 + n
     year = d.year + total // 12
     month = total % 12 + 1
@@ -81,10 +60,10 @@ def add_months(d: date, n: int) -> date:
 
 
 def _label_offset(cal: FiscalCalendar) -> int:
-    """How far the fiscal *label* sits ahead of the year the fiscal year starts in.
+    """How far the fiscal label sits ahead of the year the fiscal year starts in.
 
-    Zero for a January start (the fiscal year begins and ends in the same calendar year,
-    so both conventions agree) and for START_YEAR labelling; one otherwise.
+    Zero for a January start -- it begins and ends in the same calendar year, so both
+    conventions agree -- and for START_YEAR labelling. One otherwise.
     """
     if cal.is_calendar_aligned or cal.label_by is YearLabel.START_YEAR:
         return 0
@@ -135,10 +114,9 @@ def half_range(label: int, half: int, cal: FiscalCalendar, basis: Basis) -> Date
 
 
 def quarter_range(label: int, quarter: int, cal: FiscalCalendar, basis: Basis) -> DateRange:
-    """Q1-Q4 of the given year.
+    """Q1-Q4 of the given year, counted from the start of the fiscal year.
 
-    Fiscal quarters are counted from the start of the fiscal year, so with an April start
-    Q1 is Apr-Jun -- the same convention pandas uses for ``freq='Q-MAR'``.
+    With an April start Q1 is Apr-Jun, matching pandas' ``freq='Q-MAR'``.
     """
     if not 1 <= quarter <= 4:
         raise ValueError(f"quarter must be 1-4, got {quarter}")
@@ -158,7 +136,7 @@ def month_range(year: int, month: int) -> DateRange:
 def fiscal_month_range(label: int, index: int, cal: FiscalCalendar) -> DateRange:
     """The ``index``-th month of a fiscal year, 1-based.
 
-    With an April start, the 12th month of FY2026 is March 2026 -- not December.
+    With an April start the 12th month of FY2026 is March 2026, not December.
     """
     if not 1 <= index <= 12:
         raise ValueError(f"fiscal month index must be 1-12, got {index}")

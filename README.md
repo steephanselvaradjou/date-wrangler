@@ -86,11 +86,12 @@ Config is passed per call and never read from a module global, so one process ca
 tenants on different fiscal calendars.
 
 ```python
-from date_wrangler import ParserConfig, FiscalCalendar, DateOrder, YearLabel
+from date_wrangler import WranglerConfig, FiscalCalendar, DateOrder, MonthNumber, YearLabel
 
-ParserConfig(
+WranglerConfig(
     fiscal=FiscalCalendar.us_federal(),   # October start
     date_order=DateOrder.MDY,             # how to read 03/04/2024
+    month_number=MonthNumber.YEAR,        # what "jan 24" means
     bare_period_basis=Basis.FISCAL,       # what a bare "Q1" means
     two_digit_pivot=68,                   # "99" -> 1999, not 2099
     strictness="balanced",
@@ -105,6 +106,28 @@ Fiscal years follow the pandas `Q-MAR` convention by default — labelled by the
 
 Invalid configuration fails on construction with a message naming the field, not later
 from inside `date()` on the first request that mentions a quarter.
+
+### `jan 24` — day or year?
+
+Genuinely ambiguous, and it depends who is writing. Prose means the 24th; a finance sheet
+listing `jan 24, feb 24, mar 24` means the year. `month_number` decides:
+
+```python
+parse("jan 24")                                    # 24 January 2025   (default)
+parse("jan 24", config=WranglerConfig(month_number=MonthNumber.YEAR))
+                                                   # January 2024
+```
+
+The setting only decides that ambiguous middle. Everything else settles itself:
+
+| written | reads as | why |
+|---|---|---|
+| `march 3` | 3 March | a single digit is never a year |
+| `jan 24th` | 24 January | ordinal suffix |
+| `jan '24` | January 2024 | apostrophe |
+| `jan 2024` | January 2024 | four digits |
+| `jan 87` | January 1987 | above 31, so it cannot be a day |
+| `january 15, 2024` | 15 January 2024 | the year is already stated |
 
 ## Parsing text
 
@@ -162,8 +185,8 @@ controls how eagerly they are claimed:
 ```python
 parse("the march on Washington")        # [] — no cue, so "march" is a noun
 parse("sales in March")                 # matched — "in" is a cue
-ParserConfig(strictness="greedy")       # match any month name anywhere
-ParserConfig(strictness="strict")       # require a year or explicit period marker
+WranglerConfig(strictness="greedy")       # match any month name anywhere
+WranglerConfig(strictness="strict")       # require a year or explicit period marker
 ```
 
 ### Rewriting text

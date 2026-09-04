@@ -12,11 +12,18 @@ all the same shape, which is what lets them share an API.
 """
 
 from .calendars import DateRangeOverflow
-from .config import DEFAULT_CONFIG, DateOrder, FiscalCalendar, ParserConfig, YearLabel
+from .config import (
+    DEFAULT_CONFIG,
+    DateOrder,
+    FiscalCalendar,
+    MonthNumber,
+    WranglerConfig,
+    YearLabel,
+)
 from .format import format_iso, format_range, make_formatter
-from .parser import Diagnostic, diagnose, parse, parse_one, substitute
 from .resolve import UnresolvableSpec
 from .types import Basis, DateMatch, DateRange, Grain, Mod
+from .wrangler import Diagnostic, diagnose, parse, parse_one, substitute
 
 __version__ = "0.1.0.dev0"
 
@@ -28,9 +35,10 @@ __all__ = [
     "Basis",
     "Mod",
     # Configuration
-    "ParserConfig",
+    "WranglerConfig",
     "FiscalCalendar",
     "DateOrder",
+    "MonthNumber",
     "YearLabel",
     "DEFAULT_CONFIG",
     # Parsing

@@ -17,7 +17,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from date_wrangler import Basis, FiscalCalendar, ParserConfig, YearLabel, parse_one
+from date_wrangler import Basis, FiscalCalendar, WranglerConfig, YearLabel, parse_one
 from date_wrangler.calendars import (
     fiscal_year_of,
     month_range,
@@ -38,8 +38,8 @@ PROBE_DAYS = [
 ]
 
 
-def _range(text: str, today: date, cfg: ParserConfig | None = None):
-    match = parse_one(text, today=today, config=cfg or ParserConfig())
+def _range(text: str, today: date, cfg: WranglerConfig | None = None):
+    match = parse_one(text, today=today, config=cfg or WranglerConfig())
     assert match is not None, f"{text!r} did not parse"
     return match.range
 
@@ -64,7 +64,7 @@ def test_every_day_belongs_to_exactly_one_fiscal_year(start_month):
 @pytest.mark.parametrize("start_month", ALL_START_MONTHS)
 def test_this_year_is_the_fiscal_year_in_progress(start_month):
     cal = FiscalCalendar(start_month)
-    cfg = ParserConfig(fiscal=cal)
+    cfg = WranglerConfig(fiscal=cal)
     day = date(2024, 1, 1)
     while day <= date(2026, 12, 31):
         want = year_range(fiscal_year_of(day, cal), cal, Basis.FISCAL)
@@ -77,7 +77,7 @@ def test_this_year_is_the_fiscal_year_in_progress(start_month):
 def test_bare_quarters_always_use_the_current_fiscal_year(start_month):
     """The defect this pins cost the predecessor a wrong year for nine months of twelve."""
     cal = FiscalCalendar(start_month)
-    cfg = ParserConfig(fiscal=cal)
+    cfg = WranglerConfig(fiscal=cal)
     day = date(2024, 1, 1)
     while day <= date(2026, 12, 31):
         fy = fiscal_year_of(day, cal)
@@ -133,7 +133,7 @@ def test_n_months_ago_is_one_month_n_back(today, n):
 @pytest.mark.parametrize("today", PROBE_DAYS)
 @pytest.mark.parametrize("start_month", [1, 4, 7, 10])
 def test_ytd_and_last_ytd_are_comparable(today, start_month):
-    cfg = ParserConfig(fiscal=FiscalCalendar(start_month))
+    cfg = WranglerConfig(fiscal=FiscalCalendar(start_month))
     now = _range("ytd", today, cfg)
     prior = _range("last ytd", today, cfg)
     assert now.end == today + timedelta(days=1), "year-to-date must include today"

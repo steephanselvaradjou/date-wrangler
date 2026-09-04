@@ -1,16 +1,11 @@
 """Finding dates in text.
 
-The pass structure is: reject cheaply, scan once, then reason about what was found.
-
     prefilter -> normalise -> scan -> link -> merge ranges -> modifiers -> resolve
 
-Ranges are assembled *after* scanning rather than during it. The predecessor inlined its
-entire token alternation twice inside one pattern so that "X to Y" could match in a single
-shot, which made the expression enormous, made every no-date string pay for it, and left
-the connector vocabulary fixed at ``to``, ``and`` and ``-``. Looking at the gap between two
-matches instead makes ``through``, ``till``, ``until`` and an en dash one-line additions,
-and it is what allows an explicit year or basis on one endpoint to reach the other before
-either is resolved.
+Ranges are assembled after scanning rather than during it, by looking at the gap between
+two matches. That keeps the scanning pattern small, makes a new connector a one-line
+addition, and lets an explicit year on one endpoint reach the other before either is
+resolved.
 """
 
 from __future__ import annotations
@@ -20,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, tzinfo
 
-from .config import DEFAULT_CONFIG, ParserConfig
+from .config import DEFAULT_CONFIG, WranglerConfig
 from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
 from .rules import RULES, Rule
@@ -42,9 +37,8 @@ __all__ = ["parse", "parse_one", "substitute", "diagnose", "Diagnostic"]
 # Prefilter
 # ---------------------------------------------------------------------------
 
-#: Every rule needs either a digit or one of these words, so a string containing neither
-#: cannot possibly hold a date. Most real traffic is rejected here for the price of one
-#: scan, instead of paying for the full alternation.
+#: Every rule needs a digit or one of these words, so text with neither cannot hold a
+#: date. Rejects most real traffic for one cheap scan.
 _TRIGGERS = (
     set(MONTH_NAMES)
     | set(UNIT_WORDS)
@@ -72,7 +66,7 @@ _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 
 #: A gap that joins two periods into one span.
 _STRONG_LINK = re.compile(r"^\s*(?:to|through|thru|until|till|up\s*to|upto|-|–|—)\s*$", re.I)
-#: ``and`` joins a range only when nothing suggests a list.
+#: "and" joins a range only when nothing suggests a list.
 _WEAK_LINK = re.compile(r"^\s*(?:and|&)\s*$", re.IGNORECASE)
 #: A comma means the writer is enumerating, not describing a span.
 _LIST_LINK = re.compile(r"^\s*,\s*(?:and\s+)?$", re.IGNORECASE)
@@ -100,12 +94,11 @@ _MOD_SUFFIXES: tuple[tuple[re.Pattern[str], Mod | None], ...] = (
     (re.compile(r"^\s*to\s+date\b", re.IGNORECASE), None),  # handled by the to_date rule
 )
 
-#: Words that introduce a range and belong inside its span. Leaving them outside makes
-#: substitution both ungrammatical ("between from April to September") and non-idempotent,
-#: since the replacement re-emits a "from" the original one then sits in front of.
+#: Words that introduce a range and belong inside its span -- leaving them out makes
+#: substitution ungrammatical ("between from April to September").
 _RANGE_LEAD = re.compile(r"\b(?:from|between|betwn|b/w)\s+$", re.IGNORECASE)
 
-#: Words that make a bare month name or bare year plausible as a date rather than a noun.
+#: Words that make a bare month or year read as a date rather than a noun.
 _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|between|before|after|"
     r"sales|revenue|profit|data|report|numbers|figures|results|performance|growth|"
@@ -142,7 +135,7 @@ class _Raw:
 # ---------------------------------------------------------------------------
 
 
-def _scan(text: str, cfg: ParserConfig, diags: list[Diagnostic] | None) -> list[_Raw]:
+def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> list[_Raw]:
     out: list[_Raw] = []
     for m in _SCANNER.finditer(text):
         name = m.lastgroup
@@ -169,18 +162,16 @@ def _scan(text: str, cfg: ParserConfig, diags: list[Diagnostic] | None) -> list[
 
 
 def _passes_strictness(
-    raw: _Raw, text: str, cfg: ParserConfig, chain_start: int, chain_end: int
+    raw: _Raw, text: str, cfg: WranglerConfig, chain_start: int, chain_end: int
 ) -> bool:
     """Whether a weak match survives the configured strictness.
 
-    A bare month name in running prose -- "the march on Washington", "my august
-    colleague" -- is the dominant false positive for this kind of library, and no amount
-    of extra patterns fixes it. Requiring a nearby cue does.
+    Bare month names in prose -- "the march on Washington" -- are the dominant false
+    positive here, and no amount of extra patterns fixes it; a nearby cue does.
 
-    The cue is looked for before the whole *chain*, not before this match, so that
-    "from Jan to Mar" is admitted on the strength of the "from" that introduces it. Being
-    joined to another period is not on its own enough: "a may-december romance" is two
-    month names either side of a dash and nothing more.
+    The cue is looked for before the whole chain so "from Jan to Mar" passes on its
+    "from". Being joined is not enough on its own: "a may-december romance" is two month
+    names either side of a dash.
     """
     if cfg.strictness == "greedy" or raw.rule not in _WEAK_RULES:
         return True
@@ -214,10 +205,9 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
 
 
 def _demote_lists(links: list[str | None]) -> list[str | None]:
-    """A comma anywhere in a run of joined periods makes the whole run a list.
+    """A comma anywhere in a run makes the whole run a list.
 
-    "Q1, Q2 and Q3" is three quarters, not Q1 plus a Q2-to-Q3 span. The predecessor read
-    the trailing "and" as a range connector and silently merged the last two.
+    "Q1, Q2 and Q3" is three quarters, not Q1 plus a Q2-to-Q3 span.
     """
     out = list(links)
     i = 0
@@ -238,12 +228,10 @@ def _demote_lists(links: list[str | None]) -> list[str | None]:
 
 
 def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
-    """Share one stated year across a list of periods, or across a comparison.
+    """Share one stated year across a list, or across a comparison.
 
-    "Jan, Feb, Mar 2024" names three months of the same year; resolving the first two
-    against today's year and only the last against 2024 is never what was meant. The same
-    goes for "Q1 versus Q2 2024", where comparing quarters from two different years
-    defeats the point of the comparison.
+    "Jan, Feb, Mar 2024" is three months of the same year, and comparing "Q1 versus
+    Q2 2024" across two different years defeats the point.
     """
     shared = ("list", "compare")
     i = 0
@@ -264,10 +252,9 @@ def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
 
 
 def _unify(a: Spec, b: Spec) -> tuple[Spec, Spec]:
-    """Make two endpoints of a range agree about year and basis before resolving.
+    """Make both endpoints agree on year and basis before resolving.
 
-    Without this, "Q1 to Q2 of 2024" resolved its first endpoint fiscally and its second
-    on the calendar and returned a fifteen month span.
+    Otherwise "Q1 to Q2 of 2024" resolves one end fiscally, the other on the calendar.
     """
     if not a.is_relative and not b.is_relative:
         if a.year is None and b.year is not None:
@@ -289,7 +276,7 @@ def _unify(a: Spec, b: Spec) -> tuple[Spec, Spec]:
 
 
 def _apply_modifier(raw: _Raw, text: str) -> _Raw:
-    """Attach a leading or trailing modifier, extending the span to cover it."""
+    """Attach a leading or trailing modifier, extending the span over it."""
     for pattern, mod in _MOD_SUFFIXES:
         if mod is not None and pattern.match(text[raw.end : raw.end + 24]):
             m = pattern.match(text[raw.end : raw.end + 24])
@@ -316,26 +303,18 @@ def _apply_modifier(raw: _Raw, text: str) -> _Raw:
 def _resolve_today(today: date | datetime | None, tz: tzinfo | None) -> date:
     """Work out which day "today" is.
 
-    Every relative phrase this library understands is measured from a single day, so
-    getting that day wrong is silently wrong everywhere at once. The failure mode is
-    specific: a server running UTC answering a tenant in Asia/Kolkata at 04:00 local time
-    on the 1st is still on the previous date, so "this month" quietly returns last month.
+    Every relative phrase is measured from one day, so getting it wrong is wrong
+    everywhere at once -- a UTC server answering a reader in Asia/Kolkata just after local
+    midnight is still on yesterday, and "this month" quietly returns last month.
 
-    Hence three ways to say it, in decreasing order of how much they leave to chance:
-
-    * ``today=date(...)`` -- exact, and what tests should use.
-    * ``tz=ZoneInfo("Asia/Kolkata")`` -- the current date *there*, not on this machine.
-    * neither -- the machine's own local date, which is only right when the server and the
-      reader share a timezone.
-
-    A ``datetime`` is accepted wherever a ``date`` is, and combined with ``tz`` it converts
-    first, answering "which day was that instant, for this reader".
+    Three ways to say it, least to most left to chance: an explicit ``today``, a ``tz``
+    (the date *there*), or neither (this machine's local date). A ``datetime`` works
+    wherever a ``date`` does, and with ``tz`` it converts first.
     """
     if today is None:
-        # datetime.now(None) is the naive local clock, so the no-argument path is
-        # unchanged for callers who pass neither.
+        # datetime.now(None) is the naive local clock.
         return datetime.now(tz).date()
-    # datetime subclasses date, so it has to be tested first.
+    # datetime subclasses date, so test it first.
     if isinstance(today, datetime):
         if tz is not None:
             if today.tzinfo is None:
@@ -355,15 +334,14 @@ def parse(
     *,
     today: date | datetime | None = None,
     tz: tzinfo | None = None,
-    config: ParserConfig = DEFAULT_CONFIG,
+    config: WranglerConfig = DEFAULT_CONFIG,
     diagnostics: list[Diagnostic] | None = None,
 ) -> list[DateMatch]:
     """Find every date expression in ``text``.
 
-    Spans index ``text`` as given, so a caller can highlight or replace without searching
+    Spans index ``text`` as given, so you can highlight or replace without searching
     again. Pass a list as ``diagnostics`` to collect fragments that looked like dates but
-    could not be resolved -- that is what distinguishes "nothing there" from "I saw
-    something and could not read it".
+    would not resolve -- that is what tells "nothing there" from "could not read it".
     """
     if not isinstance(text, str):
         raise TypeError(f"text must be a str, got {type(text).__name__}")
@@ -381,8 +359,7 @@ def parse(
     links = _demote_lists(_link_kinds(raws, body))
     _propagate_year(raws, links)
 
-    # Group matches into chains of anything joined by a link, so strictness can judge the
-    # chain as a whole rather than each member in isolation.
+    # Group linked matches into chains, so strictness judges the chain as a whole.
     chain_of: dict[int, tuple[int, int]] = {}
     i = 0
     while i < len(raws):
@@ -431,10 +408,8 @@ def _emit(
 def _usable(r: DateRange) -> bool:
     """Whether a resolved range is worth handing back.
 
-    A zero-width range is not an answer. ``DateRange`` still permits one -- ``clamp`` can
-    legitimately produce one when the window excludes the period entirely -- but the
-    parser must never invent one, because it reads as a valid result and quietly matches
-    no rows.
+    A zero-width range is not an answer. ``clamp`` may legitimately produce one, but we
+    must never invent one: it reads as a valid result and quietly matches no rows.
     """
     return not r.is_empty
 
@@ -442,7 +417,7 @@ def _usable(r: DateRange) -> bool:
 def _single(
     raw: _Raw,
     day: date,
-    cfg: ParserConfig,
+    cfg: WranglerConfig,
     body: str,
     norm: Normalized,
     diags: list[Diagnostic] | None,
@@ -472,12 +447,12 @@ def _merge(
     a: _Raw,
     b: _Raw,
     day: date,
-    cfg: ParserConfig,
+    cfg: WranglerConfig,
     body: str,
     norm: Normalized,
     diags: list[Diagnostic] | None,
 ) -> DateMatch | None:
-    """Resolve two endpoints as one span, wrapping to the next year if they invert."""
+    """Resolve two endpoints as one span, wrapping a year if they invert."""
     sa, sb = _unify(a.spec, b.spec)
     try:
         ra, rb = resolve(sa, day, cfg), resolve(sb, day, cfg)
@@ -486,22 +461,16 @@ def _merge(
             diags.append(Diagnostic(body[a.start : b.end], (a.start, b.end), "range", str(exc)))
         return None
 
-    # The far end must finish strictly *after* the near end begins. Testing only for
-    # "ends before it starts" misses the adjacent case: in "Q2 to Q1" the end of Q1 is
-    # exactly the start of Q2, which yields the zero-width range [Jul 1, Jul 1) rather
-    # than triggering the wrap. An empty range contains nothing, so any query built from
-    # it silently returns no rows.
+    # The far end must finish strictly after the near end begins. Testing only for
+    # "ends before it starts" misses adjacency: in "Q2 to Q1" the end of Q1 is exactly
+    # the start of Q2, giving an empty range that quietly matches no rows.
     if ra.start is not None and rb.end is not None and rb.end <= ra.start:
-        # A range that does not move forwards crosses a year boundary, and which end to
-        # shift depends on which one the writer pinned. "Q4 2024 to Q1" means the Q1 after
-        # it, so the far end moves forward; "from H2 to H1 2025" means the H2 before it,
-        # so the near end moves back. Only an end whose year was *inferred* may move -- an
-        # explicit year is what the writer said, so "Mar 2024 to Jan 2024" stays rejected.
+        # Which end to shift depends on which one the writer pinned. "Q4 2024 to Q1"
+        # means the Q1 after it; "from H2 to H1 2025" means the H2 before it. Only an
+        # inferred year may move, so "Mar 2024 to Jan 2024" stays rejected.
         #
-        # The year to shift is taken from the unified spec rather than from
-        # default_year_for(), which returns None once _unify has supplied a year. Reading
-        # it from the resolved dates would not work either: for a fiscal quarter the year
-        # is a fiscal label, not any calendar year appearing in the result.
+        # The year comes from the unified spec: default_year_for() returns None once
+        # _unify has supplied one, and a fiscal label cannot be read off the dates.
         if not b.spec.has_explicit_year:
             base = sb.year if sb.year is not None else default_year_for(sb, day, cfg)
             if base is not None:
@@ -553,7 +522,7 @@ def _merge(
     return _emit(merged, start, b.end, norm, min(a.spec.confidence, b.spec.confidence))
 
 
-#: Coarsest grain wins when a range joins two different resolutions.
+#: Coarsest grain wins when a range joins two resolutions.
 _GRAIN_ORDER: tuple[Grain, ...] = (
     Grain.DAY, Grain.WEEK, Grain.MONTH, Grain.QUARTER, Grain.HALF, Grain.YEAR,
 )
@@ -568,7 +537,7 @@ def parse_one(
     *,
     today: date | datetime | None = None,
     tz: tzinfo | None = None,
-    config: ParserConfig = DEFAULT_CONFIG,
+    config: WranglerConfig = DEFAULT_CONFIG,
 ) -> DateMatch | None:
     """The first date expression in ``text``, or None."""
     found = parse(text, today=today, tz=tz, config=config)
@@ -580,7 +549,7 @@ def diagnose(
     *,
     today: date | datetime | None = None,
     tz: tzinfo | None = None,
-    config: ParserConfig = DEFAULT_CONFIG,
+    config: WranglerConfig = DEFAULT_CONFIG,
 ) -> tuple[list[DateMatch], list[Diagnostic]]:
     """:func:`parse`, with the unresolvable fragments alongside the matches."""
     diags: list[Diagnostic] = []
@@ -593,15 +562,10 @@ def substitute(
     *,
     today: date | datetime | None = None,
     tz: tzinfo | None = None,
-    config: ParserConfig = DEFAULT_CONFIG,
+    config: WranglerConfig = DEFAULT_CONFIG,
     formatter: Callable[[DateRange], str] | None = None,
 ) -> str:
-    """Rewrite every date expression in ``text`` using ``formatter``.
-
-    Only the matched phrase is replaced. The predecessor's patterns swallowed neighbouring
-    filler words, so "sales report of Q1" came back as "sales <range>" with "report"
-    silently deleted.
-    """
+    """Rewrite every date expression in ``text``. Only the matched phrase changes."""
     from .format import format_range
 
     render = formatter or format_range

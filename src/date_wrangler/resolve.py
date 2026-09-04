@@ -1,24 +1,9 @@
 """Turn a :class:`~date_wrangler.spec.Spec` into a concrete :class:`DateRange`.
 
-This is where "what did they say" becomes "which days". Everything returned is half-open,
-so nothing in this module subtracts a day to find an end.
-
-Three behaviours here are corrections rather than choices, and each is a one-line
-difference that produced badly wrong answers before.
-
-``Kind.AGO`` and ``Kind.RELATIVE`` resolve differently. "3 months ago" names a single
-month; "last 3 months" names three. The predecessor routed both through one branch and
-returned the three month span for each, so "eleven months ago" answered with a year.
-
-A quarter or year with no stated year defaults to the *current fiscal year* when its basis
-is fiscal, never to ``today.year``. Those are different kinds of number: with an April
-start, September 2025 sits in FY2026, and treating 2025 as a fiscal label answered every
-bare "Q1" with a year that had already finished.
-
-"Last YTD" shifts the year-to-date window back by a year rather than expanding to the whole
-prior year, so it compares like with like. Comparing a five-month YTD against a twelve
-month prior year is the sort of error that survives review because both numbers look
-plausible.
+Where "what did they say" becomes "which days". Three distinctions carry most of the
+weight: AGO names one period while RELATIVE names a span, a fiscal period with no stated
+year belongs to the current *fiscal* year rather than ``today.year``, and "last YTD"
+shifts the window back a year instead of widening to the whole prior year.
 """
 
 from __future__ import annotations
@@ -37,7 +22,7 @@ from .calendars import (
     week_range,
     year_range,
 )
-from .config import ParserConfig
+from .config import WranglerConfig
 from .spec import Kind, Spec
 from .types import Basis, DateRange, Grain, Mod
 
@@ -57,12 +42,10 @@ def _month_start(today: date) -> date:
     return date(today.year, today.month, 1)
 
 
-def _quarter_start(today: date, cfg: ParserConfig, basis: Basis) -> date:
+def _quarter_start(today: date, cfg: WranglerConfig, basis: Basis) -> date:
     """Start of the quarter containing ``today``, on the relevant grid.
 
-    Fiscal and calendar quarter boundaries coincide only when the fiscal year starts in
-    January, April, July or October. For any other start month the grids genuinely differ,
-    so the basis has to be honoured rather than assumed.
+    The grids coincide only for Jan/Apr/Jul/Oct starts, so the basis matters.
     """
     if basis is Basis.FISCAL:
         fy_start = fiscal_year_start(fiscal_year_of(today, cfg.fiscal), cfg.fiscal)
@@ -71,13 +54,13 @@ def _quarter_start(today: date, cfg: ParserConfig, basis: Basis) -> date:
     return date(today.year, (today.month - 1) // 3 * 3 + 1, 1)
 
 
-def _year_start(today: date, cfg: ParserConfig, basis: Basis) -> date:
+def _year_start(today: date, cfg: WranglerConfig, basis: Basis) -> date:
     if basis is Basis.FISCAL:
         return fiscal_year_start(fiscal_year_of(today, cfg.fiscal), cfg.fiscal)
     return date(today.year, 1, 1)
 
 
-def _period_start(today: date, cfg: ParserConfig, unit: Grain, basis: Basis) -> date:
+def _period_start(today: date, cfg: WranglerConfig, unit: Grain, basis: Basis) -> date:
     if unit is Grain.DAY:
         return today
     if unit is Grain.WEEK:
@@ -110,17 +93,14 @@ def _shift(start: date, unit: Grain, n: int) -> date:
 # ---------------------------------------------------------------------------
 
 
-def _basis_for(spec: Spec, cfg: ParserConfig) -> Basis:
+def _basis_for(spec: Spec, cfg: WranglerConfig) -> Basis:
     if spec.basis is not None:
         return spec.basis
     return cfg.bare_period_basis
 
 
-def _default_year(today: date, cfg: ParserConfig, basis: Basis) -> int:
-    """The year a bare period belongs to.
-
-    A fiscal period defaults to the fiscal year in progress, which is *not* ``today.year``.
-    """
+def _default_year(today: date, cfg: WranglerConfig, basis: Basis) -> int:
+    """The year a bare period belongs to: the fiscal one in progress, not today.year."""
     if basis is Basis.FISCAL:
         return fiscal_year_of(today, cfg.fiscal)
     return today.year
@@ -131,13 +111,11 @@ def _default_year(today: date, cfg: ParserConfig, basis: Basis) -> int:
 # ---------------------------------------------------------------------------
 
 
-def default_year_for(spec: Spec, today: date, cfg: ParserConfig) -> int | None:
-    """The year :func:`resolve` would assume for ``spec``, or None if it needs no year.
+def default_year_for(spec: Spec, today: date, cfg: WranglerConfig) -> int | None:
+    """The year :func:`resolve` would assume for ``spec``, or None if it needs none.
 
-    Exposed so that a range can retry its far endpoint one year later without having to
-    guess how the year was derived. For a fiscal quarter that number is a fiscal label,
-    which is not the same as any calendar year appearing in the resolved dates -- deriving
-    it by hand from the result is how the two got confused in the first place.
+    A range uses this to retry an endpoint a year on. For a fiscal quarter the number is a
+    fiscal label, so it cannot be read back off the resolved dates.
     """
     if spec.is_relative or spec.year is not None:
         return None
@@ -148,7 +126,7 @@ def default_year_for(spec: Spec, today: date, cfg: ParserConfig) -> int | None:
     return _default_year(today, cfg, _basis_for(spec, cfg))
 
 
-def resolve(spec: Spec, today: date, cfg: ParserConfig) -> DateRange:
+def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     """Resolve ``spec`` against ``today``. Raises :class:`UnresolvableSpec` on bad input."""
     try:
         base = _resolve_core(spec, today, cfg)
@@ -159,14 +137,13 @@ def resolve(spec: Spec, today: date, cfg: ParserConfig) -> DateRange:
     return _apply_mod(base, spec.mod, today)
 
 
-def _resolve_core(spec: Spec, today: date, cfg: ParserConfig) -> DateRange:
+def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     basis = _basis_for(spec, cfg)
 
     if spec.kind is Kind.ABS_DAY:
         if spec.month is None or spec.day is None:
             raise UnresolvableSpec("an absolute day needs a month and a day")
-        # "meeting on March 3" states no year; the current calendar year is the only
-        # sensible reading, and refusing to resolve it drops the date entirely.
+        # "meeting on March 3" states no year; assume the current calendar year.
         return day_range(date(spec.year if spec.year is not None else today.year,
                               spec.month, spec.day))
 
@@ -227,9 +204,8 @@ def _resolve_core(spec: Spec, today: date, cfg: ParserConfig) -> DateRange:
 def _resolve_weekday(spec: Spec, today: date) -> DateRange:
     """"last Monday", "next Friday", "this Tuesday".
 
-    Past and future are *strict*: if today is Thursday, "last Thursday" is a week ago, not
-    today. "This Tuesday" instead means the one in the current week, which may be either
-    side of today -- that is what distinguishes it from the other two.
+    Past and future are strict -- on a Thursday, "last Thursday" is a week ago. "This
+    Tuesday" is the one in the current week, either side of today.
     """
     if spec.index is None:
         raise UnresolvableSpec("a weekday spec needs a weekday")
@@ -245,13 +221,9 @@ def _resolve_weekday(spec: Spec, today: date) -> DateRange:
 
 
 def _resolve_period_ending(
-    spec: Spec, today: date, cfg: ParserConfig, basis: Basis
+    spec: Spec, today: date, cfg: WranglerConfig, basis: Basis
 ) -> DateRange:
-    """"quarter ending June 2024" -- a period pinned by its end rather than its start.
-
-    Reporting language names periods this way constantly, and reading only the month out
-    of it silently narrows a three month figure to one month.
-    """
+    """"quarter ending June 2024" -- a period pinned by its end, not its start."""
     unit = spec.unit or Grain.QUARTER
     if spec.month is not None:
         year = spec.year
@@ -266,18 +238,15 @@ def _resolve_period_ending(
     return DateRange(_shift(end, unit, -1), end, unit, basis)
 
 
-def _resolve_relative(spec: Spec, today: date, cfg: ParserConfig, basis: Basis) -> DateRange:
-    """"last 3 months" -- a span of ``count`` whole units, not counting the current one.
+def _resolve_relative(spec: Spec, today: date, cfg: WranglerConfig, basis: Basis) -> DateRange:
+    """"last 3 months" -- ``count`` whole units, excluding the current one.
 
-    The current period is excluded on both sides. "Last 3 months" asked in September is
-    June, July and August: including a part-finished September would silently mix a
-    complete period with an incomplete one.
+    Asked in September that is June, July and August; including a part-finished September
+    would mix a complete period with an incomplete one.
     """
     unit = spec.unit or Grain.MONTH
     n = spec.count if spec.count is not None else 1
     if n < 1:
-        # "last 0 months" is a zero-width range. The predecessor returned it with the end
-        # before the start; reporting it as unreadable is more useful than either.
         raise UnresolvableSpec(f"a period count must be at least 1, got {n}")
     current = _period_start(today, cfg, unit, basis)
     if spec.direction < 0:
@@ -286,7 +255,7 @@ def _resolve_relative(spec: Spec, today: date, cfg: ParserConfig, basis: Basis) 
     return DateRange(start, _shift(start, unit, n), unit, basis)
 
 
-def _resolve_ago(spec: Spec, today: date, cfg: ParserConfig, basis: Basis) -> DateRange:
+def _resolve_ago(spec: Spec, today: date, cfg: WranglerConfig, basis: Basis) -> DateRange:
     """"3 months ago" -- the single period ``count`` units away, one unit wide."""
     unit = spec.unit or Grain.MONTH
     n = spec.count if spec.count is not None else 1
@@ -297,17 +266,15 @@ def _resolve_ago(spec: Spec, today: date, cfg: ParserConfig, basis: Basis) -> Da
     return DateRange(start, _shift(start, unit, 1), unit, basis)
 
 
-def _resolve_to_date(spec: Spec, today: date, cfg: ParserConfig, basis: Basis) -> DateRange:
+def _resolve_to_date(spec: Spec, today: date, cfg: WranglerConfig, basis: Basis) -> DateRange:
     """YTD / MTD / QTD: the current period so far, ``today`` included.
 
-    ``direction < 0`` ("last YTD") shifts the *whole window* back one year, so the
-    comparison window is the same length as the current one.
+    "Last YTD" shifts the whole window back a year, so both are the same length.
     """
     unit = spec.unit or Grain.YEAR
 
     if spec.month is not None:
-        # "YTD March 2024", or "YTD March" -- with no year, the most recent March that has
-        # actually finished, since a year-to-date figure for a future month is meaningless.
+        # With no year, the most recent March that has actually finished.
         year = spec.year
         if year is None:
             year = today.year if date(today.year, spec.month, 1) <= today else today.year - 1
@@ -337,12 +304,8 @@ def _resolve_to_date(spec: Spec, today: date, cfg: ParserConfig, basis: Basis) -
 def _apply_mod(r: DateRange, mod: Mod | None, today: date) -> DateRange:
     """Reshape a closed range according to a modifier.
 
-    ``UNTIL`` includes the named period and ``BEFORE`` excludes it, which is the whole
-    reason both exist: "until March" ends 1 April, "before March" ends 1 March.
-
-    An open end stays ``None`` rather than quietly becoming today. Whether "since March"
-    means "up to now" or "for all time" is the caller's question, answered with
-    :meth:`DateRange.clamp`.
+    An open end stays None rather than quietly becoming today -- whether "since March"
+    means "up to now" or "for all time" is the caller's question, via ``clamp()``.
     """
     if mod is None:
         return r
