@@ -275,23 +275,24 @@ def _unify(a: Spec, b: Spec) -> tuple[Spec, Spec]:
 # ---------------------------------------------------------------------------
 
 
-def _apply_modifier(raw: _Raw, text: str) -> _Raw:
-    """Attach a leading or trailing modifier, extending the span over it."""
+def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
+    """Attach a leading or trailing modifier, extending the span over it.
+
+    ``floor`` is where the previous match ended. A prefix may not reach back past it, or
+    two matches end up claiming the same words: in "0 MONTH BEFORE 1Q" the "before"
+    belongs to the count on its left, and 1Q must not swallow it as a modifier.
+    """
     for pattern, mod in _MOD_SUFFIXES:
         if mod is not None and pattern.match(text[raw.end : raw.end + 24]):
             m = pattern.match(text[raw.end : raw.end + 24])
             assert m is not None
             return _Raw(raw.rule, raw.spec.with_(mod=mod), raw.start, raw.end + m.end())
-    before = text[max(0, raw.start - 24) : raw.start]
+    window = max(floor, raw.start - 24)
+    before = text[window : raw.start]
     for pattern, mod in _MOD_PREFIXES:
         m = pattern.search(before)
         if m:
-            return _Raw(
-                raw.rule,
-                raw.spec.with_(mod=mod),
-                raw.start - (len(before) - m.start()),
-                raw.end,
-            )
+            return _Raw(raw.rule, raw.spec.with_(mod=mod), window + m.start(), raw.end)
     return raw
 
 
@@ -377,6 +378,7 @@ def parse(
     }
 
     matches: list[DateMatch] = []
+    floor = 0  # where the previous match ended, so modifiers cannot reach back over it
     i = 0
     while i < len(raws):
         if i not in kept:
@@ -386,14 +388,16 @@ def parse(
         while j < len(links) and links[j] == "range" and (j + 1) in kept:
             j += 1
         if j > i:
-            merged = _merge(raws[i], raws[j], day, config, body, norm, diagnostics)
+            merged = _merge(raws[i], raws[j], day, config, body, norm, diagnostics, floor)
             if merged is not None:
                 matches.append(merged)
+                floor = raws[j].end
                 i = j + 1
                 continue
-        single = _single(raws[i], day, config, body, norm, diagnostics)
+        single = _single(raws[i], day, config, body, norm, diagnostics, floor)
         if single is not None:
             matches.append(single)
+            floor = max(floor, raws[i].end)
         i += 1
     return matches
 
@@ -421,8 +425,9 @@ def _single(
     body: str,
     norm: Normalized,
     diags: list[Diagnostic] | None,
+    floor: int = 0,
 ) -> DateMatch | None:
-    raw = _apply_modifier(raw, body)
+    raw = _apply_modifier(raw, body, floor)
     try:
         r = resolve(raw.spec, day, cfg)
     except UnresolvableSpec as exc:
@@ -451,6 +456,7 @@ def _merge(
     body: str,
     norm: Normalized,
     diags: list[Diagnostic] | None,
+    floor: int = 0,
 ) -> DateMatch | None:
     """Resolve two endpoints as one span, wrapping a year if they invert."""
     sa, sb = _unify(a.spec, b.spec)
@@ -515,10 +521,11 @@ def _merge(
         return None
 
     start = a.start
-    before = body[max(0, a.start - 12) : a.start]
+    window = max(floor, a.start - 12)
+    before = body[window : a.start]
     lead = _RANGE_LEAD.search(before)
     if lead:
-        start = a.start - (len(before) - lead.start())
+        start = window + lead.start()
     return _emit(merged, start, b.end, norm, min(a.spec.confidence, b.spec.confidence))
 
 
