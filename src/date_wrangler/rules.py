@@ -66,10 +66,23 @@ _CY_WORD = r"(?:c\.?y\.?|calendar\s+year)"
 _YEAR_WORD = rf"(?:{_FY_WORD}|{_CY_WORD}|year)"
 _SEP = r"[\s-]*"
 
-#: What may be read as a year. Deliberately strict: a bare two-digit number is *not* a
-#: year, because that is how a day-of-month became one.
+#: What may be read as a year. Deliberately strict about *two* digit numbers: a bare
+#: two-digit number is never a year, because that is how a day-of-month became one.
 _MARKED_YEAR = rf"(?:{_FY_WORD}|{_CY_WORD}){_SEP}'?\d{{2,4}}"
-_YEAR = rf"(?:{_YEAR_WORD}{_SEP}'?\d{{2,4}}|'\d{{2}}|(?:19|20)\d{{2}})"
+
+#: A year in a position where nothing else can be meant -- after a month name, a quarter
+#: or a half. Any four digits are accepted here, because "January 2100" is not ambiguous.
+#:
+#: Restricting this to 19xx/20xx caused unbounded growth in :func:`substitute`: parsing
+#: "1 January 2100" matched only "1 January", so the replacement re-emitted the year and
+#: the orphaned "2100" accumulated on every pass. A library that cannot read back its own
+#: output has the exact defect this one was written to fix.
+_YEAR = rf"(?:{_YEAR_WORD}{_SEP}'?\d{{2,4}}|'\d{{2}}|\d{{4}})"
+
+#: A year standing entirely on its own, with no month or period beside it. Here the
+#: century *is* the only thing separating a date from a quantity, so "5000" stays a
+#: number and only a plausible year is claimed.
+_BARE_YEAR = r"(?:19|20|21)\d{2}"
 #: A marked year may follow with no space at all ("Q1FY24"); an unmarked one may not,
 #: since "Q12024" would then be read as a quarter plus a year.
 _YEAR_SUFFIX = rf"(?:\s*{_MARKED_YEAR}|\s+(?:of\s+)?{_YEAR})?"
@@ -338,7 +351,7 @@ def _p_year(text: str, cfg: ParserConfig) -> Spec | None:
 
 
 def _p_bare_year(text: str, cfg: ParserConfig) -> Spec | None:
-    m = re.fullmatch(r"\s*((?:19|20)\d{2})\s*", text)
+    m = re.fullmatch(rf"\s*({_BARE_YEAR})\s*", text)
     if not m:
         return None
     # A year written on its own is a calendar year. Only a quarter or half labelled with a
@@ -468,5 +481,5 @@ RULES: tuple[Rule, ...] = (
     Rule("year", rf"\b{_YEAR_WORD}{_SEP}'?\d{{2,4}}\b", _p_year),
     Rule("month", rf"\b{_MONTH}\b", _p_month),
     Rule("weekday", rf"\b{alt(WEEKDAY_NAMES)}\b", _p_weekday),
-    Rule("bare_year", r"\b(?:19|20)\d{2}\b", _p_bare_year),
+    Rule("bare_year", rf"\b{_BARE_YEAR}\b", _p_bare_year),
 )

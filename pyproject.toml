@@ -45,12 +45,10 @@ dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "mypy>=1.11"]
 [project.scripts]
 date-wrangler = "date_wrangler.__main__:main"
 
-# TODO(before first release): point these at a personal account. They pointed at the
-# ctdtechs org, which is wrong for a personal project, so they are removed rather than
-# left incorrect -- PyPI shows these prominently and they cannot be fixed in place.
-# [project.urls]
-# Homepage = "https://github.com/<username>/date-wrangler"
-# Issues = "https://github.com/<username>/date-wrangler/issues"
+[project.urls]
+Homepage = "https://github.com/steephanselvaradjou/date-wrangler"
+Issues = "https://github.com/steephanselvaradjou/date-wrangler/issues"
+Source = "https://github.com/steephanselvaradjou/date-wrangler"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/date_wrangler"]

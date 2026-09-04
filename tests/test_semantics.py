@@ -244,3 +244,39 @@ def test_a_year_stated_once_reaches_every_period_in_a_list():
     assert [m.range.start for m in found] == [
         date(2024, 4, 1), date(2024, 7, 1), date(2024, 10, 1),
     ]
+
+
+# ---------------------------------------------------------------------------
+# The library must be able to read back its own output
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("year", [1850, 1900, 1999, 2000, 2024, 2099, 2100, 2150, 2199])
+@pytest.mark.parametrize("text", ["{y}-03-15", "15 March {y}", "March {y}", "Q1 {y}"])
+def test_dates_far_from_today_round_trip(year, text):
+    r"""REGRESSION: the year pattern was ``(?:19|20)\d{2}``, so from 2100 onwards a year
+    was not recognised at all. "1 January 2100" matched only "1 January", `substitute`
+    re-emitted the year, and the orphan accumulated on every pass -- unbounded growth,
+    the precise defect this library was written to remove."""
+    from date_wrangler import format_range, parse, substitute
+
+    today = date(2025, 9, 4)
+    phrase = text.format(y=year)
+    found = parse(phrase, today=today)
+    assert found, f"{phrase!r} did not parse"
+    assert found[0].span == (0, len(phrase)), (
+        f"{phrase!r} matched only {found[0].text!r}; the year was left outside the span"
+    )
+    once = substitute(phrase, today=today)
+    assert substitute(once, today=today) == once, f"{phrase!r} does not converge"
+    reparsed = parse(format_range(found[0].range), today=today)
+    assert reparsed and reparsed[0].range.start == found[0].range.start
+
+
+@pytest.mark.parametrize("text", ["5000", "3000 employees", "top 5000 customers", "9999"])
+def test_implausible_bare_numbers_are_not_years(text):
+    """A bare four-digit number only reads as a year in a plausible century. Beside a
+    month or quarter any four digits are fine, because nothing else can be meant there."""
+    from date_wrangler import parse
+
+    assert parse(text, today=date(2025, 9, 4)) == []
