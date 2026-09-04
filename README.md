@@ -127,10 +127,14 @@ plausible.
 
 | | |
 |---|---|
-| Fiscal periods | `Q1 FY25`, `H2 of last fiscal year`, `FY2024-25`, `third month of FY24` |
+| Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `fy-24`, `F.Y. 2024` |
 | Calendar periods | `CY2024`, `Q1 of 2024`, `January 2024`, `2024` |
+| Fiscal month index | `third month of FY24`, `twelfth month` |
 | Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` |
+| Weekdays | `last Monday`, `next Friday`, `this Tuesday` |
 | To-date | `YTD`, `MTD`, `QTD`, `last YTD` (the same window a year earlier) |
+| Reporting shorthand | `TTM`, `LTM`, `T12M`, `L3M`, `trailing 12 months`, `rolling 3 months` |
+| Period-ending | `quarter ending June 2024`, `year ended March 2024` |
 | Absolute | `2024-03-15`, `15 January 2024`, `January 15, 2024`, `03/04/2024` |
 | Ranges | `Q1 to Q2`, `Jan–Mar`, `from April to September 2024`, `Nov to Feb` (wraps) |
 | Open-ended | `since March`, `from Q1 onwards`, `up to March 2024`, `before 2024`, `after FY24` |
@@ -170,6 +174,44 @@ substitute("sales report of Q1", today=today)
 
 Only the matched phrase is replaced, and the output is a fixed point — running it again
 changes nothing.
+
+## Output format
+
+Formatting is a separate, replaceable function, so the output format and structure are
+entirely yours. Three levels, in increasing order of control:
+
+**1. Don't format at all.** The dates are already objects — `m.range.start`, `m.range.end`,
+`m.range.grain`. Most callers never need a string.
+
+**2. `make_formatter()`** — build one from format strings:
+
+```python
+from date_wrangler import make_formatter
+
+make_formatter()(r)                                          # '2024-04-01 to 2024-06-30'
+make_formatter(date_format="%d/%m/%Y", closed="{start} - {end}")(r)
+                                                             # '01/04/2024 - 30/06/2024'
+make_formatter(closed="BETWEEN '{start}' AND '{end}'")(r)
+                                                # "BETWEEN '2024-04-01' AND '2024-06-30'"
+make_formatter(closed="[{start}, {end}]", inclusive_end=False)(r)
+                                                             # '[2024-04-01, 2024-07-01]'
+```
+
+`date_format` is a `strftime` pattern; the templates are `str.format` patterns taking
+`{start}` and `{end}`. Separate templates exist for each shape — `closed`, `single`,
+`since`, `until`, `before`, `after`, `as_of`, `unbounded`.
+
+`inclusive_end` decides which day `{end}` names. It defaults to `True`, so a human-facing
+string says the last day *inside* the period (`2024-06-30`); set it `False` to emit the
+exclusive bound (`2024-07-01`) for a machine.
+
+**3. Any callable.** A formatter is just `DateRange -> str`:
+
+```python
+substitute(text, formatter=lambda r: f"<{r.start}..{r.end})")
+```
+
+Built-ins: `format_range` (prose, locale-independent) and `format_iso` (`2024-04-01/2024-07-01`).
 
 ## Command line
 
