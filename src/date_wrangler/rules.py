@@ -17,8 +17,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .config import MonthNumber, WranglerConfig
-from .spec import Kind, Spec
-from .types import Basis, Grain
+from .spec import Kind, Part, Spec
+from .types import Anchor, Basis, Grain
 from .vocab import (
     CARDINALS,
     FUTURE_WORDS,
@@ -64,8 +64,13 @@ _YEAR = rf"(?:{_YEAR_WORD}{_SEP}'?\d{{2,4}}|'\d{{2}}|\d{{4}})"
 #: A year standing alone. Here the century is all that separates a date from a
 #: quantity, so "5000" stays a number.
 _BARE_YEAR = r"(?:19|20|21)\d{2}"
+#: "last year", "next year", "this year" -- a year named by offset rather than by number.
+#: Without this "Q1 last year" scans as two separate matches and the Q1 keeps the current
+#: year, which is silently wrong rather than merely unrecognised.
+_REL_YEAR = rf"(?:{_DIRWORD}|this|current)\s+year"
+
 #: A marked year may abut ("Q1FY24"); an unmarked one may not, or "Q12024" splits.
-_YEAR_SUFFIX = rf"(?:\s*{_MARKED_YEAR}|\s+(?:of\s+)?{_YEAR})?"
+_YEAR_SUFFIX = rf"(?:\s*{_MARKED_YEAR}|\s+(?:of\s+)?{_YEAR}|\s+(?:of\s+)?{_REL_YEAR})?"
 
 _QWORD = r"(?:quarters?|qtrs?\.?|q)"
 _HWORD = r"(?:halves|half|h)"
@@ -123,6 +128,25 @@ def _year_from_suffix(text: str, cfg: WranglerConfig) -> tuple[int | None, Basis
     if basis is None and re.search(r"\bof\b", text, re.IGNORECASE):
         basis = cfg.effective_of_year_basis
     return year, basis
+
+
+def _year_offset_from_suffix(text: str) -> int | None:
+    """"Q1 last year" -> -1. None when no relative year is named."""
+    m = re.search(rf"\s*(?:of\s+)?({_DIRWORD}|this|current)\s+year\s*$", text, re.IGNORECASE)
+    if not m:
+        return None
+    word = m.group(1).lower()
+    if word in ("this", "current"):
+        return 0
+    return _direction_of(word)
+
+
+def _period_suffix(text: str, cfg: WranglerConfig) -> tuple[int | None, Basis | None, int | None]:
+    """The year, basis and year-offset trailing a period phrase. At most one year form."""
+    year, basis = _year_from_suffix(text, cfg)
+    if year is not None:
+        return year, basis, None
+    return None, basis, _year_offset_from_suffix(text)
 
 
 def _unit_of(word: str) -> Grain | None:
@@ -244,7 +268,12 @@ def _p_trailing_months(text: str, cfg: WranglerConfig) -> Spec | None:
         count = int(m.group(1))
     if not 1 <= count <= 60:
         return None
-    return Spec(Kind.RELATIVE, count=count, unit=Grain.MONTH, direction=-1)
+    # Always anchored: TTM is the last twelve *completed* months, which is the whole
+    # reason the figure gets quoted. Rolling it would make it incomparable period to
+    # period, so this ignores the configured default rather than following it.
+    return Spec(
+        Kind.RELATIVE, count=count, unit=Grain.MONTH, direction=-1, anchor=Anchor.ANCHORED
+    )
 
 
 def _p_period_ending(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -302,8 +331,8 @@ def _p_quarter(text: str, cfg: WranglerConfig) -> Spec | None:
             index = ordinal_to_int(m2.group(1))
     if index is None or not 1 <= index <= 4:
         return None
-    year, basis = _year_from_suffix(text, cfg)
-    return Spec(Kind.ABS_QUARTER, year=year, index=index, basis=basis)
+    year, basis, offset = _period_suffix(text, cfg)
+    return Spec(Kind.ABS_QUARTER, year=year, index=index, basis=basis, year_offset=offset)
 
 
 def _p_half(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -322,16 +351,16 @@ def _p_half(text: str, cfg: WranglerConfig) -> Spec | None:
                 index = ordinal_to_int(m3.group(1))
     if index is None or index not in (1, 2):
         return None
-    year, basis = _year_from_suffix(text, cfg)
-    return Spec(Kind.ABS_HALF, year=year, index=index, basis=basis)
+    year, basis, offset = _period_suffix(text, cfg)
+    return Spec(Kind.ABS_HALF, year=year, index=index, basis=basis, year_offset=offset)
 
 
 def _p_month(text: str, cfg: WranglerConfig) -> Spec | None:
     month = find_month(text)
     if month is None:
         return None
-    year, _ = _year_from_suffix(text, cfg)
-    return Spec(Kind.ABS_MONTH, year=year, month=month)
+    year, _, offset = _period_suffix(text, cfg)
+    return Spec(Kind.ABS_MONTH, year=year, month=month, year_offset=offset)
 
 
 def _p_year(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -389,7 +418,17 @@ def _p_relative(text: str, cfg: WranglerConfig) -> Spec | None:
     unit = _unit_of(m.group(3))
     if count is None or unit is None:
         return None
-    return Spec(Kind.RELATIVE, count=count, unit=unit, direction=_direction_of(m.group(1)))
+    # "trailing 12 months" is TTM spelled out, and "rolling" says what it means; both name
+    # the anchoring outright, so neither should follow the configured default.
+    word = m.group(1).lower()
+    anchor = {"trailing": Anchor.ANCHORED, "rolling": Anchor.ROLLING}.get(word)
+    return Spec(
+        Kind.RELATIVE,
+        count=count,
+        unit=unit,
+        direction=_direction_of(m.group(1)),
+        anchor=anchor,
+    )
 
 
 def _p_this(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -400,6 +439,141 @@ def _p_this(text: str, cfg: WranglerConfig) -> Spec | None:
     if unit is None:
         return None
     return Spec(Kind.THIS_PERIOD, unit=unit)
+
+
+#: Words naming a slice of a period. "middle" before "mid" would never match, so the
+#: longer spelling of each pair comes first.
+_PART_WORDS: tuple[tuple[str, Part], ...] = (
+    (r"first\s+half|1st\s+half", Part.FIRST_HALF),
+    (r"second\s+half|2nd\s+half|latter\s+half", Part.SECOND_HALF),
+    (r"beginning|start|early", Part.EARLY),
+    (r"middle|mid", Part.MID),
+    (r"end|late|close", Part.LATE),
+)
+_PART_ALT = "|".join(p for p, _ in _PART_WORDS)
+
+#: The period a part or an ordinal day can be taken from.
+_PART_TARGET = (
+    rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
+    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_YEAR}|{_DIRWORD}\s+{_UNIT}|this\s+{_UNIT}|{_UNIT})"
+)
+
+
+def _part_of(text: str) -> Part | None:
+    for pattern, part in _PART_WORDS:
+        if re.match(rf"\s*(?:the\s+)?(?:{pattern})\b", text, re.IGNORECASE):
+            return part
+    return None
+
+
+def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
+    """Read the period a part or ordinal is being taken out of."""
+    tail = tail.strip()
+    if not tail:
+        return None
+    month = find_month(tail)
+    if month is not None:
+        year, _, offset = _period_suffix(tail, cfg)
+        return Spec(Kind.ABS_MONTH, month=month, year=year, year_offset=offset)
+    # Quarters and halves divide as neatly as months do -- "early Q1" is its first month.
+    for reader in (_p_quarter, _p_half):
+        spec = reader(tail, cfg)
+        if spec is not None:
+            return spec
+    rel = re.match(rf"\s*({_DIRWORD})\s+({_UNIT})\b", tail, re.IGNORECASE)
+    if rel:
+        unit = _unit_of(rel.group(2))
+        if unit is not None:
+            return Spec(Kind.RELATIVE, count=1, unit=unit, direction=_direction_of(rel.group(1)))
+    this = re.match(rf"\s*(?:this|current|present)\s+({_UNIT})\b", tail, re.IGNORECASE)
+    if this:
+        unit = _unit_of(this.group(1))
+        if unit is not None:
+            return Spec(Kind.THIS_PERIOD, unit=unit)
+    year, basis = _year_from_suffix(tail, cfg)
+    if year is not None:
+        # A year standing alone is a calendar year, as in the bare_year rule -- otherwise
+        # "early 2024" quietly means the fiscal year and starts in 2023.
+        if basis is None and re.fullmatch(rf"\s*{_BARE_YEAR}\s*", tail):
+            basis = Basis.CALENDAR
+        return Spec(Kind.ABS_YEAR, year=year, basis=basis)
+    bare = re.fullmatch(rf"\s*({_UNIT})\s*", tail, re.IGNORECASE)
+    if bare:
+        unit = _unit_of(bare.group(1))
+        if unit is not None:
+            return Spec(Kind.THIS_PERIOD, unit=unit)
+    return None
+
+
+def _p_part_of(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"first half of March", "late 2024", "end of next month".
+
+    Without this "first half of March" scanned as a fiscal H1 plus a stray March, and the
+    H1 won -- so a phrase about two weeks in March resolved to six months in April.
+    """
+    part = _part_of(text)
+    if part is None:
+        return None
+    m = re.match(rf"\s*(?:the\s+)?(?:{_PART_ALT})\s+(?:of\s+|in\s+)?(.+)$", text, re.IGNORECASE)
+    if not m:
+        return None
+    target = _target_spec(m.group(1), cfg)
+    if target is None:
+        return None
+    return target.with_(part=part)
+
+
+def _p_nth_of(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"1st of next month", "15th of March" -- one day inside a named period."""
+    m = re.match(rf"\s*(?:the\s+)?({_ORD})\s+(?:of\s+)?(.+)$", text, re.IGNORECASE)
+    if not m:
+        return None
+    day = ordinal_to_int(m.group(1))
+    if day is None or not 1 <= day <= 31:
+        return None
+    target = _target_spec(m.group(2), cfg)
+    if target is None:
+        return None
+    return target.with_(day_of_period=day)
+
+
+def _p_same_period(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"same quarter last year", "this time last year" -- today's period, a year back."""
+    m = re.match(
+        rf"\s*(?:the\s+)?same\s+({_UNIT})\s+({_DIRWORD})\s+year\b", text, re.IGNORECASE
+    )
+    if m:
+        unit = _unit_of(m.group(1))
+        if unit is None:
+            return None
+        return Spec(Kind.THIS_PERIOD, unit=unit, year_offset=_direction_of(m.group(2)))
+    m2 = re.match(rf"\s*this\s+time\s+({_DIRWORD})\s+year\b", text, re.IGNORECASE)
+    if not m2:
+        return None
+    return Spec(Kind.DAY_KEYWORD, direction=0, year_offset=_direction_of(m2.group(1)))
+
+
+def _p_rolling(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"rolling 3 months" -- a window measured back from today, not to unit boundaries.
+
+    Only the words that say so outright. "last 3 months" follows configuration, and
+    "trailing 12 months"/TTM stays anchored: in reporting it means the last twelve
+    *completed* months, which is the whole point of quoting it.
+    """
+    m = re.match(
+        rf"\s*(?:the\s+)?(?:rolling|moving|sliding)\s+({_NUM})\s+({_UNIT})\b",
+        text,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    count = word_to_int(m.group(1))
+    unit = _unit_of(m.group(2))
+    if count is None or unit is None:
+        return None
+    return Spec(
+        Kind.RELATIVE, count=count, unit=unit, direction=-1, anchor=Anchor.ROLLING
+    )
 
 
 def _p_day_keyword(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -435,6 +609,25 @@ RULES: tuple[Rule, ...] = (
         _p_period_ending,
     ),
     Rule("trailing_months", r"\b(?:ttm|ltm|[tl]\d{1,2}m)\b", _p_trailing_months),
+    # Before "half" and "quarter": "first half of March" opens with something the half
+    # rule will happily claim as fiscal H1, throwing the month away.
+    Rule(
+        "part_of",
+        rf"\b(?:the\s+)?(?:{_PART_ALT})\s+(?:of\s+|in\s+)?{_PART_TARGET}\b",
+        _p_part_of,
+    ),
+    Rule(
+        "same_period",
+        rf"\b(?:the\s+)?(?:same\s+{_UNIT}|this\s+time)\s+{_DIRWORD}\s+year\b",
+        _p_same_period,
+    ),
+    Rule(
+        "rolling",
+        rf"\b(?:the\s+)?(?:rolling|moving|sliding)\s+{_NUM}\s+{_UNIT}\b",
+        _p_rolling,
+    ),
+    # Before "fiscal_month" and "day_month_year", both of which open with a number.
+    Rule("nth_of", rf"\b(?:the\s+)?{_ORD}\s+of\s+{_PART_TARGET}\b", _p_nth_of),
     Rule(
         "day_month_year",
         rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}{_YEAR_SUFFIX}\b",
@@ -470,6 +663,9 @@ RULES: tuple[Rule, ...] = (
         _p_half,
     ),
     Rule("month_year", rf"\b{_MONTH}\s+(?:of\s+)?{_YEAR}\b", _p_month),
+    # "March last year" -- without this the month has no cue, is dropped by strictness,
+    # and the answer becomes the whole of last year.
+    Rule("month_rel_year", rf"\b{_MONTH}\s+(?:of\s+)?{_REL_YEAR}\b", _p_month),
     Rule("year", rf"\b{_YEAR_WORD}{_SEP}'?\d{{2,4}}\b", _p_year),
     Rule("month", rf"\b{_MONTH}\b", _p_month),
     Rule("weekday", rf"\b{alt(WEEKDAY_NAMES)}\b", _p_weekday),

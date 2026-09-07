@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from . import __version__
 from .config import DateOrder, FiscalCalendar, WranglerConfig, YearLabel
 from .format import format_iso, format_range
-from .types import Basis
+from .types import Anchor, Basis
 from .wrangler import diagnose
 
 
@@ -25,6 +25,7 @@ def _build_config(args: argparse.Namespace) -> WranglerConfig:
             label_by=YearLabel(args.label_by),
         ),
         bare_period_basis=Basis(args.basis),
+        anchor=Anchor(args.anchor),
         date_order=DateOrder(args.date_order),
         strictness=args.strictness,
     )
@@ -44,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--label-by", choices=[y.value for y in YearLabel], default="end_year")
     p.add_argument("--basis", choices=[b.value for b in Basis], default="fiscal",
                    help="what a bare Q1/H1 means (default fiscal)")
+    p.add_argument("--anchor", choices=[a.value for a in Anchor], default="anchored",
+                   help="what 'last month' means (default anchored)")
     p.add_argument("--date-order", choices=[d.value for d in DateOrder], default="DMY")
     p.add_argument("--strictness", choices=["strict", "balanced", "greedy"], default="balanced")
     p.add_argument("--json", action="store_true", help="emit JSON instead of a table")

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, tzinfo
 
 from .config import DEFAULT_CONFIG, WranglerConfig
@@ -151,6 +151,18 @@ _MONTH_NOUNS = frozenset({
 
 #: Rules whose matches are weak enough to need a cue in "balanced" mode.
 _WEAK_RULES = frozenset({"month", "bare_year", "weekday"})
+
+#: Words that change which days a period covers. Left unread beside a match, the answer is
+#: not the one the writer asked for -- "March 2024 to date" is not all of March 2024. We
+#: cannot resolve every combination, but we can refuse to pretend we read it.
+_QUALIFIER_AFTER = re.compile(
+    r"^\W*(?:to\s+date|ago|onwards?|or\s+(?:later|earlier)|ytd|mtd|qtd)\b", re.IGNORECASE
+)
+_QUALIFIER_BEFORE = re.compile(
+    r"\b(?:first\s+half|second\s+half|latter\s+half|beginning|start|early|middle|mid|late|"
+    r"end|same|this\s+time|\d{1,2}(?:st|nd|rd|th))\s+(?:of\s+|in\s+)?\W*$",
+    re.IGNORECASE,
+)
 
 
 def _looks_like_a_person(text: str, start: int, end: int) -> bool:
@@ -474,7 +486,47 @@ def parse(
             matches.append(single)
             floor = max(floor, raws[i].end)
         i += 1
-    return matches
+    return _flag_unread_qualifiers(matches, body, norm, diagnostics)
+
+
+def _flag_unread_qualifiers(
+    matches: list[DateMatch],
+    body: str,
+    norm: Normalized,
+    diags: list[Diagnostic] | None,
+) -> list[DateMatch]:
+    """Lower confidence where a meaning-changing word next to a match went unread.
+
+    The rules cover the combinations people actually write, but not every one. When a
+    qualifier is left over the honest answer is "I read part of this", not a confident
+    range -- so the match survives with reduced confidence and, if the caller asked for
+    diagnostics, an explanation naming the words that were dropped.
+    """
+    if not matches:
+        return matches
+    spans = [m.span for m in matches]
+    out: list[DateMatch] = []
+    for idx, m in enumerate(matches):
+        lo, hi = m.span
+        after = norm.original[hi : hi + 24]
+        prev_end = spans[idx - 1][1] if idx else 0
+        before = norm.original[max(prev_end, lo - 24) : lo]
+        dropped = _QUALIFIER_AFTER.match(after) or _QUALIFIER_BEFORE.search(before)
+        if dropped is None:
+            out.append(m)
+            continue
+        if diags is not None:
+            diags.append(
+                Diagnostic(
+                    norm.original[lo:hi],
+                    m.span,
+                    "partial",
+                    f"read {norm.original[lo:hi]!r} but not {dropped.group(0).strip()!r}, "
+                    "which changes the period",
+                )
+            )
+        out.append(replace(m, confidence=min(m.confidence, 0.5)))
+    return out
 
 
 def _emit(

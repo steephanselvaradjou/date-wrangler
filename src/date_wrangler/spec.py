@@ -10,9 +10,23 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 
-from .types import Basis, Grain, Mod
+from .types import Anchor, Basis, Grain, Mod
 
-__all__ = ["Kind", "Spec"]
+__all__ = ["Kind", "Part", "Spec"]
+
+
+class Part(Enum):
+    """A slice of a named period: "first half of March", "late 2024".
+
+    Thirds for early/mid/late, halves for first/second half. Both are conventions rather
+    than facts, so they are named explicitly here instead of being buried in resolve().
+    """
+
+    EARLY = auto()        # first third
+    MID = auto()          # middle third
+    LATE = auto()         # last third
+    FIRST_HALF = auto()
+    SECOND_HALF = auto()
 
 
 class Kind(Enum):
@@ -52,6 +66,15 @@ class Spec:
     basis: Basis | None = None    # None => take it from configuration
     mod: Mod | None = None
     confidence: float = 1.0
+    #: Whole years to shift the resolved period by: "Q1 last year" is -1. Kept apart from
+    #: ``year`` because a fiscal quarter's year is a *label*, not a number to subtract from.
+    year_offset: int | None = None
+    #: A slice of the period rather than all of it: "first half of March".
+    part: Part | None = None
+    #: A single day inside the period: "1st of next month".
+    day_of_period: int | None = None
+    #: None => take it from configuration. Only relative periods can roll.
+    anchor: Anchor | None = None
 
     @property
     def has_explicit_year(self) -> bool:

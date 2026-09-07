@@ -11,7 +11,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
 
-from .types import Basis
+from .types import Anchor, Basis
 
 __all__ = ["DateOrder", "MonthNumber", "YearLabel", "FiscalCalendar", "WranglerConfig"]
 
@@ -124,6 +124,11 @@ class WranglerConfig:
     #: "Q1 2024" agree -- they should never land a year apart.
     of_year_basis: Basis | None = None  # None => inherit
 
+    #: Where a relative period's edges fall when the phrasing does not say. See
+    #: :class:`~date_wrangler.types.Anchor`. Phrasings that are explicit about it -- "last
+    #: 30 days", "rolling 4 weeks" -- override this.
+    anchor: Anchor = Anchor.ANCHORED
+
     #: Reading of all-numeric dates. See :class:`DateOrder`.
     date_order: DateOrder = DateOrder.DMY
 
@@ -143,6 +148,8 @@ class WranglerConfig:
             raise TypeError("WranglerConfig.fiscal must be a FiscalCalendar")
         if not isinstance(self.date_order, DateOrder):
             raise TypeError("WranglerConfig.date_order must be a DateOrder")
+        if not isinstance(self.anchor, Anchor):
+            raise TypeError("WranglerConfig.anchor must be an Anchor")
         if not isinstance(self.month_number, MonthNumber):
             raise TypeError("WranglerConfig.month_number must be a MonthNumber")
         if not 0 <= self.two_digit_pivot <= 99:

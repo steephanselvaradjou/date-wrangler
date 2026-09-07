@@ -22,10 +22,10 @@ from .config import (
 )
 from .format import format_iso, format_range, make_formatter
 from .resolve import UnresolvableSpec
-from .types import Basis, DateMatch, DateRange, Grain, Mod
+from .types import Anchor, Basis, DateMatch, DateRange, Grain, Mod
 from .wrangler import Diagnostic, diagnose, parse, parse_one, substitute
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # Values
@@ -33,6 +33,7 @@ __all__ = [
     "DateMatch",
     "Grain",
     "Basis",
+    "Anchor",
     "Mod",
     # Configuration
     "WranglerConfig",
