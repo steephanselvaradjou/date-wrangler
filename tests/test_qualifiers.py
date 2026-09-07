@@ -214,14 +214,109 @@ def test_clean_matches_keep_full_confidence():
 
 
 # ---------------------------------------------------------------------------
+# Vocabulary added alongside the qualifier work
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,start,end",
+    [
+        # TODAY is a Thursday, so "this weekend" is the one ahead of it.
+        ("weekend", date(2025, 9, 6), date(2025, 9, 8)),
+        ("this weekend", date(2025, 9, 6), date(2025, 9, 8)),
+        ("next weekend", date(2025, 9, 13), date(2025, 9, 15)),
+        ("last weekend", date(2025, 8, 30), date(2025, 9, 1)),
+    ],
+)
+def test_weekend(text, start, end):
+    assert rng(text) == (start, end)
+
+
+def test_weekend_is_two_days():
+    for text in ("weekend", "next weekend", "last weekend"):
+        start, end = rng(text)
+        assert (end - start).days == 2, text
+        assert start.weekday() == 5, text  # Saturday
+
+
+@pytest.mark.parametrize(
+    "text,start,end",
+    [
+        ("month end", date(2025, 9, 21), date(2025, 10, 1)),
+        ("end of the month", date(2025, 9, 21), date(2025, 10, 1)),
+        ("EOM", date(2025, 9, 21), date(2025, 10, 1)),
+        ("month start", date(2025, 9, 1), date(2025, 9, 11)),
+    ],
+)
+def test_period_edges(text, start, end):
+    assert rng(text) == (start, end)
+
+
+@pytest.mark.parametrize(
+    "text,start,end",
+    [
+        ("in 3 days", date(2025, 9, 7), date(2025, 9, 8)),
+        ("in 2 weeks", date(2025, 9, 15), date(2025, 9, 22)),
+        ("2 weeks from now", date(2025, 9, 15), date(2025, 9, 22)),
+        ("3 months from today", date(2025, 12, 1), date(2026, 1, 1)),
+        ("in a month", date(2025, 10, 1), date(2025, 11, 1)),
+    ],
+)
+def test_future_relative(text, start, end):
+    """REGRESSION: "3 months from today" matched only "today" and answered one day."""
+    assert rng(text) == (start, end)
+
+
+def test_article_counts_as_one():
+    assert rng("a month ago") == rng("1 month ago")
+    assert rng("a week ago") == rng("one week ago")
+
+
+def test_fortnight_is_two_weeks():
+    a, b = rng("last fortnight")
+    assert (b - a).days == 14
+    assert rng("next fortnight") == (date(2025, 9, 8), date(2025, 9, 22))
+
+
+@pytest.mark.parametrize(
+    "text,day",
+    [
+        ("day before yesterday", date(2025, 9, 2)),
+        ("the day before yesterday", date(2025, 9, 2)),
+        ("day after tomorrow", date(2025, 9, 6)),
+    ],
+)
+def test_day_idioms_are_single_days(text, day):
+    """REGRESSION: read as "before yesterday", these became unbounded ranges reaching
+    back to the beginning of time -- a range that matches almost every row."""
+    start, end = rng(text)
+    assert (start, end) == (day, day + (date(2025, 1, 2) - date(2025, 1, 1)))
+
+
+@pytest.mark.parametrize("text", ["mid-March", "mid-2024", "early-2024"])
+def test_hyphenated_parts(text):
+    """An editor writing "mid-March" means the same as "mid March"."""
+    assert parse(text, today=TODAY) != []
+
+
+def test_a_year_from_a_month_is_flagged_not_guessed():
+    """Not resolved, but not silently answered with the bare month either."""
+    matches, diags = diagnose("a year from March", today=TODAY)
+    assert matches and matches[0].confidence <= 0.5
+    assert any("a year from" in d.reason for d in diags)
+
+
+# ---------------------------------------------------------------------------
 # Shape of the results
 # ---------------------------------------------------------------------------
 
 
 def test_part_and_day_report_a_sensible_grain():
+    """A slice is not the grain it came out of -- grain drives the GROUP BY bucket, and a
+    third of a year is four months, so grouping it by year would collapse it to one row."""
     assert parse_one("first half of March", today=TODAY).range.grain is Grain.DAY
     assert parse_one("15th of March", today=TODAY).range.grain is Grain.DAY
-    assert parse_one("early 2024", today=TODAY).range.grain is Grain.YEAR
+    assert parse_one("early 2024", today=TODAY).range.grain is Grain.MONTH
 
 
 def test_relative_year_keeps_its_basis():

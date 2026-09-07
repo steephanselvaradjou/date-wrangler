@@ -50,6 +50,11 @@ _TRIGGERS = (
         "this", "current", "present", "today", "yesterday", "tomorrow",
         "fiscal", "financial", "calendar", "since", "until", "till", "onwards",
         "ttm", "ltm", "ending", "ended", "ends",
+        # Phrases whose only trigger is the word itself: a bare "weekend" or "EOM"
+        # carries no digit and no unit word, so without these it never reaches the
+        # scanner at all.
+        "weekend", "eom", "eoq", "eoy", "eow",
+        "beginning", "start", "early", "mid", "middle", "late", "end", "close",
     }
 )
 _PREFILTER = re.compile(rf"\d|\b{alt(_TRIGGERS)}\b", re.IGNORECASE)
@@ -160,7 +165,11 @@ _QUALIFIER_AFTER = re.compile(
 )
 _QUALIFIER_BEFORE = re.compile(
     r"\b(?:first\s+half|second\s+half|latter\s+half|beginning|start|early|middle|mid|late|"
-    r"end|same|this\s+time|\d{1,2}(?:st|nd|rd|th))\s+(?:of\s+|in\s+)?\W*$",
+    r"end|same|this\s+time|\d{1,2}(?:st|nd|rd|th))\s+(?:of\s+|in\s+)?\W*$"
+    # "a year from March" is March next year, not March. Only "from now"/"from today"
+    # are actually resolved, so any other tail here is a period we did not compute.
+    r"|\b(?:a|an|\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
+    r"(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+\W*$",
     re.IGNORECASE,
 )
 

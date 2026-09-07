@@ -25,6 +25,7 @@ from .vocab import (
     MONTH_NAMES,
     ORDINALS,
     PAST_WORDS,
+    UNIT_SCALE,
     UNIT_WORDS,
     WEEKDAY_NAMES,
     WEEKDAYS,
@@ -152,6 +153,11 @@ def _period_suffix(text: str, cfg: WranglerConfig) -> tuple[int | None, Basis | 
 def _unit_of(word: str) -> Grain | None:
     name = UNIT_WORDS.get(word.lower().rstrip("."))
     return Grain[name] if name else None
+
+
+def _scale_of(word: str) -> int:
+    """How many of the mapped grain the word means: a fortnight is two weeks."""
+    return UNIT_SCALE.get(word.lower().rstrip("."), 1)
 
 
 def _direction_of(word: str) -> int:
@@ -390,7 +396,9 @@ def _p_ago(text: str, cfg: WranglerConfig) -> Spec | None:
     # "before"/"after" belong here as well as in the modifier prefixes, or "6 month
     # before" falls through to the fiscal-month rule and answers with the sixth month.
     direction = 1 if m.group(3).lower() in _AGO_FUTURE else -1
-    return Spec(Kind.AGO, count=count, unit=unit, direction=direction)
+    return Spec(
+        Kind.AGO, count=count * _scale_of(m.group(2)), unit=unit, direction=direction
+    )
 
 
 def _p_relative_fy(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -424,7 +432,7 @@ def _p_relative(text: str, cfg: WranglerConfig) -> Spec | None:
     anchor = {"trailing": Anchor.ANCHORED, "rolling": Anchor.ROLLING}.get(word)
     return Spec(
         Kind.RELATIVE,
-        count=count,
+        count=count * _scale_of(m.group(3)),
         unit=unit,
         direction=_direction_of(m.group(1)),
         anchor=anchor,
@@ -464,6 +472,11 @@ def _part_of(text: str) -> Part | None:
         if re.match(rf"\s*(?:the\s+)?(?:{pattern})\b", text, re.IGNORECASE):
             return part
     return None
+
+
+#: What separates a part from its period: "mid-March" and "mid March" are the same phrase,
+#: and "end of the month" carries an article the period itself does not want.
+_OF = r"(?:\s*-\s*|\s+)(?:of\s+|in\s+)?(?:the\s+)?"
 
 
 def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
@@ -514,7 +527,7 @@ def _p_part_of(text: str, cfg: WranglerConfig) -> Spec | None:
     part = _part_of(text)
     if part is None:
         return None
-    m = re.match(rf"\s*(?:the\s+)?(?:{_PART_ALT})\s+(?:of\s+|in\s+)?(.+)$", text, re.IGNORECASE)
+    m = re.match(rf"\s*(?:the\s+)?(?:{_PART_ALT}){_OF}(.+)$", text, re.IGNORECASE)
     if not m:
         return None
     target = _target_spec(m.group(1), cfg)
@@ -577,11 +590,78 @@ def _p_rolling(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 def _p_day_keyword(text: str, cfg: WranglerConfig) -> Spec | None:
-    low = text.strip().lower()
-    offset = {"today": 0, "yesterday": -1, "tomorrow": 1}.get(low)
+    low = re.sub(r"\s+", " ", text.strip().lower())
+    offset = {
+        "today": 0,
+        "yesterday": -1,
+        "tomorrow": 1,
+        # Idioms, not a modifier plus a day. Read as "before yesterday" they became
+        # unbounded ranges reaching back to the beginning of time.
+        "day before yesterday": -2,
+        "the day before yesterday": -2,
+        "day after tomorrow": 2,
+        "the day after tomorrow": 2,
+    }.get(low)
     if offset is None:
         return None
     return Spec(Kind.DAY_KEYWORD, direction=offset)
+
+
+def _p_weekend(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"this weekend", "next weekend" -- Saturday and Sunday of the week meant."""
+    m = re.match(rf"\s*(?:(this|{_DIRWORD})\s+)?weekend\b", text, re.IGNORECASE)
+    if not m:
+        return None
+    word = (m.group(1) or "this").lower()
+    direction = 0 if word == "this" else _direction_of(word)
+    return Spec(Kind.WEEKEND, direction=direction)
+
+
+#: "EOM"/"month end" and friends. The unit each names, and which end of it.
+_EDGE_WORDS: dict[str, tuple[str, Part]] = {
+    "eom": ("month", Part.LATE),
+    "eoq": ("quarter", Part.LATE),
+    "eoy": ("year", Part.LATE),
+    "eow": ("week", Part.LATE),
+}
+
+
+def _p_period_edge(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"month end", "EOY", "start of the quarter" -- the edge of the current period."""
+    low = re.sub(r"[\s.-]+", " ", text.strip().lower())
+    edge = _EDGE_WORDS.get(low.replace(" ", ""))
+    if edge is not None:
+        unit_word, part = edge
+        unit = _unit_of(unit_word)
+        return None if unit is None else Spec(Kind.THIS_PERIOD, unit=unit, part=part)
+    m = re.fullmatch(rf"(?:the\s+)?({_UNIT})[- ](end|start|beginning|close)", low)
+    if not m:
+        return None
+    unit = _unit_of(m.group(1))
+    if unit is None:
+        return None
+    part = Part.LATE if m.group(2) in ("end", "close") else Part.EARLY
+    return Spec(Kind.THIS_PERIOD, unit=unit, part=part)
+
+
+def _p_in_future(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"in 3 days", "2 weeks from now", "3 months from today".
+
+    One period that far ahead, matching "3 months ago" in the other direction. Without
+    this "3 months from today" matched only "today" and answered with a single day.
+    """
+    m = re.match(rf"\s*in\s+({_NUM})\s+({_UNIT})\b", text, re.IGNORECASE)
+    if m is None:
+        m = re.match(
+            rf"\s*({_NUM})\s+({_UNIT})\s+from\s+(?:now|today)\b", text, re.IGNORECASE
+        )
+    if m is None:
+        return None
+    count = word_to_int(m.group(1))
+    unit = _unit_of(m.group(2))
+    if count is None or unit is None:
+        return None
+    return Spec(Kind.AGO, count=count * _scale_of(m.group(2)), unit=unit, direction=1)
 
 
 # ---------------------------------------------------------------------------
@@ -611,10 +691,23 @@ RULES: tuple[Rule, ...] = (
     Rule("trailing_months", r"\b(?:ttm|ltm|[tl]\d{1,2}m)\b", _p_trailing_months),
     # Before "half" and "quarter": "first half of March" opens with something the half
     # rule will happily claim as fiscal H1, throwing the month away.
+    # Before "part_of": "month end" is an edge of the current period, and part_of would
+    # read the bare unit as the whole of it.
+    Rule(
+        "period_edge",
+        rf"\b(?:eom|eoq|eoy|eow|(?:the\s+)?{_UNIT}[-\s](?:end|start|beginning|close))\b",
+        _p_period_edge,
+    ),
     Rule(
         "part_of",
-        rf"\b(?:the\s+)?(?:{_PART_ALT})\s+(?:of\s+|in\s+)?{_PART_TARGET}\b",
+        rf"\b(?:the\s+)?(?:{_PART_ALT}){_OF}{_PART_TARGET}\b",
         _p_part_of,
+    ),
+    Rule("weekend", rf"\b(?:(?:this|{_DIRWORD})\s+)?weekend\b", _p_weekend),
+    Rule(
+        "in_future",
+        rf"\b(?:in\s+{_NUM}\s+{_UNIT}|{_NUM}\s+{_UNIT}\s+from\s+(?:now|today))\b",
+        _p_in_future,
     ),
     Rule(
         "same_period",
@@ -650,7 +743,12 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule("relative", rf"\b{_DIRWORD}\s+(?:{_NUM}\s+)?{_UNIT}\b", _p_relative),
     Rule("this_period", rf"\b(?:this|current|present)\s+{_UNIT}\b", _p_this),
-    Rule("day_keyword", r"\b(?:today|yesterday|tomorrow)\b", _p_day_keyword),
+    Rule(
+        "day_keyword",
+        r"\b(?:(?:the\s+)?day\s+(?:before\s+yesterday|after\s+tomorrow)"
+        r"|today|yesterday|tomorrow)\b",
+        _p_day_keyword,
+    ),
     Rule("weekday_rel", rf"\b(?:{_DIRWORD}|this)\s+{alt(WEEKDAY_NAMES)}\b", _p_weekday),
     Rule(
         "quarter",

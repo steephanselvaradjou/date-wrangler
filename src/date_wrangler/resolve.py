@@ -180,11 +180,11 @@ def _slice_part(r: DateRange, part: Part) -> DateRange:
     months = _whole_months(r.start, r.end)
 
     if months is not None and months % pieces == 0:
-        step, cut = months // pieces, add_months
-        grain = r.grain if r.grain is not Grain.MONTH else Grain.MONTH
+        # A slice is no longer the grain it came out of: a third of a year is four months,
+        # so MONTH is the bucket to group it by, not YEAR.
+        step, cut, grain = months // pieces, add_months, Grain.MONTH
     else:
-        step, cut = span // pieces, lambda d, n: d + timedelta(days=n)
-        grain = Grain.DAY
+        step, cut, grain = span // pieces, lambda d, n: d + timedelta(days=n), Grain.DAY
 
     if part is Part.FIRST_HALF:
         return DateRange(r.start, cut(r.start, step), grain, r.basis)
@@ -267,6 +267,9 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     if spec.kind is Kind.WEEKDAY:
         return _resolve_weekday(spec, today)
 
+    if spec.kind is Kind.WEEKEND:
+        return _resolve_weekend(spec, today)
+
     if spec.kind is Kind.PERIOD_ENDING:
         return _resolve_period_ending(spec, today, cfg, basis)
 
@@ -290,6 +293,18 @@ def _resolve_weekday(spec: Spec, today: date) -> DateRange:
         back = delta - 7 if delta else -7
         return day_range(today + timedelta(days=back))
     return day_range(today + timedelta(days=delta or 7))
+
+
+def _resolve_weekend(spec: Spec, today: date) -> DateRange:
+    """Saturday and Sunday of the week meant.
+
+    Weeks start on Monday here, so "this weekend" is always ahead of a weekday and the
+    weekend you are standing in if it is already Saturday -- never the one just gone.
+    """
+    week_start = week_range(today).start
+    assert week_start is not None
+    saturday = week_start + timedelta(days=5 + 7 * spec.direction)
+    return DateRange(saturday, saturday + timedelta(days=2), Grain.DAY, Basis.CALENDAR)
 
 
 def _resolve_period_ending(

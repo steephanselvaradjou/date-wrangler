@@ -45,6 +45,7 @@ class Kind(Enum):
     TO_DATE = auto()            # YTD, MTD, QTD
     WEEKDAY = auto()            # last Monday, next Friday
     PERIOD_ENDING = auto()      # "quarter ending June 2024" -- a period fixed by its end
+    WEEKEND = auto()            # this weekend, next weekend
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +91,7 @@ class Spec:
             Kind.DAY_KEYWORD,
             Kind.TO_DATE,
             Kind.WEEKDAY,
+            Kind.WEEKEND,
         )
 
     def with_(self, **changes: object) -> Spec:

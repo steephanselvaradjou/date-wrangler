@@ -194,6 +194,11 @@ plausible.
 | Part of a period | `first half of March`, `early 2024`, `mid March`, `end of Q1` |
 | Day in a period | `1st of next month`, `15th of March` |
 | Same period back | `same quarter last year`, `this time last year` |
+| Weekend | `this weekend`, `next weekend`, `last weekend` |
+| Period edges | `month end`, `EOM`, `EOQ`, `end of the quarter`, `year start` |
+| Ahead | `in 3 days`, `2 weeks from now`, `3 months from today` |
+| Fortnights | `a fortnight ago`, `last fortnight`, `next fortnight` |
+| Day idioms | `day before yesterday`, `day after tomorrow` |
 
 Connectors include `to`, `through`, `thru`, `until`, `till`, `upto`, `and`, and hyphen, en
 dash or em dash — the last three matter because editors rewrite `-` as `–` on sight.
