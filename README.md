@@ -199,9 +199,32 @@ plausible.
 | Ahead | `in 3 days`, `2 weeks from now`, `3 months from today` |
 | Fortnights | `a fortnight ago`, `last fortnight`, `next fortnight` |
 | Day idioms | `day before yesterday`, `day after tomorrow` |
+| Written formats | `15-Mar-2024`, `15 Mar 24`, `Mar-24`, `15.03.2024`, `2024/03/15` |
+| Timestamps | `2024-03-15T14:30:00Z`, `Mar 15 14:30:00`, `Wed, 15 Mar 2024 14:30:00 GMT` |
+| Chat and email | `EOD`, `COB Friday`, `on the 15th`, `meet Thursday` |
+| Decades | `the 1990s` |
 
 Connectors include `to`, `through`, `thru`, `until`, `till`, `upto`, `and`, and hyphen, en
 dash or em dash — the last three matter because editors rewrite `-` as `–` on sight.
+
+### What it deliberately does not read
+
+Recall is not the only thing that matters. In ordinary prose a wrong date is worse than no
+date, so these are left alone on purpose:
+
+| not read | why |
+|---|---|
+| `20240315` | indistinguishable from `invoice 20240315` |
+| `the 3rd floor`, `2nd round` | an ordinal followed by a noun is a position, not a day |
+| `cob` in lower case | corn, not close of business — `COB` is read |
+| `19th century` | centuries are unsupported, and guessing a day would be worse |
+| `Christmas`, `Diwali` | holidays need a locale and a calendar of their own |
+| `every Monday` | recurrence is a different shape from a range |
+| `within 30 days of the Effective Date` | a duration with no anchor to measure from |
+| `bake for 30 minutes` | durations and times of day are out of scope |
+
+Version numbers, prices, phone numbers, invoice IDs, scores and measurements are all left
+alone too. See [tests/test_realworld.py](tests/test_realworld.py) for the full corpus.
 
 ### Telling "nothing there" from "couldn't read it"
 

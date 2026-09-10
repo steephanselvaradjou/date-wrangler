@@ -53,7 +53,7 @@ _TRIGGERS = (
         # Phrases whose only trigger is the word itself: a bare "weekend" or "EOM"
         # carries no digit and no unit word, so without these it never reaches the
         # scanner at all.
-        "weekend", "eom", "eoq", "eoy", "eow",
+        "weekend", "eom", "eoq", "eoy", "eow", "eod", "cob", "eob",
         "beginning", "start", "early", "mid", "middle", "late", "end", "close",
     }
 )
@@ -108,7 +108,15 @@ _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|between|before|after|"
     r"vs|versus|compared\s+(?:to|with)|"
     r"sales|revenue|profit|data|report|numbers|figures|results|performance|growth|"
-    r"spend|cost|budget|forecast|actuals)\W*$",
+    r"spend|cost|budget|forecast|actuals|"
+    # Everyday text, not just reporting. Without these "Can we meet Thursday?" and
+    # "Rent is due on the 1st" found nothing, which is most of how dates get written.
+    r"meet|meeting|due|deadline|scheduled|schedule|booked|book|expires|expiry|effective|"
+    r"dated|born|joined|starts|starting|ends|ending|arrives|arriving|departing|returning|"
+    r"delivered|delivery|ships|shipping|submitted|signed|executed|commencing|"
+    r"admitted|discharged|appointment|renew|renewal|payable)"
+    # An article may sit between the cue and the date: "on the 15th", "in the March figures".
+    r"(?:\s+the)?\W*$",
     re.IGNORECASE,
 )
 
@@ -155,7 +163,7 @@ _MONTH_NOUNS = frozenset({
 })
 
 #: Rules whose matches are weak enough to need a cue in "balanced" mode.
-_WEAK_RULES = frozenset({"month", "bare_year", "weekday"})
+_WEAK_RULES = frozenset({"month", "bare_year", "weekday", "ordinal_day"})
 
 #: Words that change which days a period covers. Left unread beside a match, the answer is
 #: not the one the writer asked for -- "March 2024 to date" is not all of March 2024. We

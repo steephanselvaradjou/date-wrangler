@@ -270,6 +270,13 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     if spec.kind is Kind.WEEKEND:
         return _resolve_weekend(spec, today)
 
+    if spec.kind is Kind.DECADE:
+        if spec.year is None:
+            raise UnresolvableSpec("a decade needs a year")
+        return DateRange(
+            date(spec.year, 1, 1), date(spec.year + 10, 1, 1), Grain.YEAR, Basis.CALENDAR
+        )
+
     if spec.kind is Kind.PERIOD_ENDING:
         return _resolve_period_ending(spec, today, cfg, basis)
 

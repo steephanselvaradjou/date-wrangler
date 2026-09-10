@@ -170,10 +170,77 @@ def _direction_of(word: str) -> int:
 
 
 def _p_iso(text: str, cfg: WranglerConfig) -> Spec | None:
-    m = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", text.strip())
+    m = re.match(r"\s*(\d{4})-(\d{1,2})-(\d{1,2})", text)
     if not m:
         return None
     return Spec(Kind.ABS_DAY, year=int(m.group(1)), month=int(m.group(2)), day=int(m.group(3)))
+
+
+def _p_dashed_day(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"15-Mar-2024", "15-Mar-24" -- what spreadsheets and SQL clients emit."""
+    month = find_month(text)
+    if month is None:
+        return None
+    m = re.match(r"\s*(\d{1,2})\s*-", text)
+    if not m:
+        return None
+    year_m = re.search(r"-\s*'?(\d{2,4})\s*$", text)
+    year = _pivot_year(year_m.group(1), cfg) if year_m else None
+    return Spec(Kind.ABS_DAY, year=year, month=month, day=int(m.group(1)))
+
+
+def _p_dashed_month(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"Mar-24", "Mar-2024".
+
+    The hyphen settles the ``jan 24`` ambiguity on its own: a column of "Jan-24, Feb-24,
+    Mar-24" is months, and a day would be written "15-Mar-24" with the month in the middle.
+    """
+    month = find_month(text)
+    if month is None:
+        return None
+    m = re.search(r"-\s*'?(\d{2,4})\s*$", text)
+    if not m:
+        return None
+    return Spec(Kind.ABS_MONTH, year=_pivot_year(m.group(1), cfg), month=month)
+
+
+def _p_decade(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"the 1990s" -- ten years, starting at the zero."""
+    m = re.search(r"\b((?:1[89]|20)\d)0s\b", text)
+    if not m:
+        return None
+    return Spec(Kind.DECADE, year=int(m.group(1)) * 10)
+
+
+def _p_ordinal_day(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"the 15th", "on the 1st" -- a day of the current month.
+
+    Weak on purpose: a bare ordinal is far more often a list position than a date, so this
+    only survives where a cue vouches for it.
+    """
+    m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)\b", text)
+    if not m:
+        return None
+    day = int(m.group(1))
+    if not 1 <= day <= 31:
+        return None
+    return Spec(Kind.THIS_PERIOD, unit=Grain.MONTH, day_of_period=day, confidence=0.8)
+
+
+def _p_close_of_business(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"EOD", "COB Friday" -- a deadline landing on a whole day.
+
+    A weekday after it settles the matter. On its own the acronym has to be capitalised,
+    because "cob" in lower case is far more often corn than close of business.
+    """
+    stripped = text.strip()
+    m = re.search(rf"\b({alt(WEEKDAY_NAMES)})\b", stripped.lower())
+    if m is not None:
+        return Spec(Kind.WEEKDAY, index=WEEKDAYS[m.group(1)], direction=0)
+    acronym = re.match(r"[A-Za-z]+", stripped)
+    if acronym is None or not acronym.group(0).isupper():
+        return None
+    return Spec(Kind.DAY_KEYWORD, direction=0)
 
 
 def _p_numeric(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -208,6 +275,12 @@ def _p_day_month_year(text: str, cfg: WranglerConfig) -> Spec | None:
     if month is None:
         return None
     year, _ = _year_from_suffix(text, cfg)
+    if year is None:
+        # "15 Mar 24". A bare two-digit number is normally too ambiguous to be a year, but
+        # here the day slot is already filled, so nothing else is left for it to be.
+        short = re.search(r"\s+(\d{2})\s*$", text)
+        if short:
+            year = _pivot_year(short.group(1), cfg)
     return Spec(Kind.ABS_DAY, year=year, month=month, day=int(m.group(1)))
 
 
@@ -650,7 +723,9 @@ def _p_in_future(text: str, cfg: WranglerConfig) -> Spec | None:
     One period that far ahead, matching "3 months ago" in the other direction. Without
     this "3 months from today" matched only "today" and answered with a single day.
     """
-    m = re.match(rf"\s*in\s+({_NUM})\s+({_UNIT})\b", text, re.IGNORECASE)
+    # "after 6 months" is a duration from now; "after March" is the AFTER modifier and is
+    # handled elsewhere. The number is what tells them apart.
+    m = re.match(rf"\s*(?:in|after|within)\s+({_NUM})\s+({_UNIT})\b", text, re.IGNORECASE)
     if m is None:
         m = re.match(
             rf"\s*({_NUM})\s+({_UNIT})\s+from\s+(?:now|today)\b", text, re.IGNORECASE
@@ -669,7 +744,11 @@ def _p_in_future(text: str, cfg: WranglerConfig) -> Spec | None:
 # ---------------------------------------------------------------------------
 
 RULES: tuple[Rule, ...] = (
-    Rule("iso", r"\b\d{4}-\d{1,2}-\d{1,2}\b", _p_iso),
+    # No trailing \b: an ISO timestamp runs the date straight into the time with a "T",
+    # and a word boundary between "5" and "T" does not exist -- so every ISO 8601 instant
+    # in a log line was being skipped.
+    Rule("iso", r"\b\d{4}-\d{1,2}-\d{1,2}(?!\d)", _p_iso),
+    Rule("dashed_day", rf"\b\d{{1,2}}-{_MONTH}-'?\d{{2,4}}\b", _p_dashed_day),
     Rule("fy_range", rf"\b{_FY_WORD}\s*'?\d{{2,4}}\s*[-/]\s*'?\d{{2,4}}\b", _p_fy_range),
     Rule("numeric", r"\b\d{1,4}[/.]\d{1,2}[/.]\d{1,4}\b", _p_numeric),
     Rule(
@@ -706,7 +785,8 @@ RULES: tuple[Rule, ...] = (
     Rule("weekend", rf"\b(?:(?:this|{_DIRWORD})\s+)?weekend\b", _p_weekend),
     Rule(
         "in_future",
-        rf"\b(?:in\s+{_NUM}\s+{_UNIT}|{_NUM}\s+{_UNIT}\s+from\s+(?:now|today))\b",
+        rf"\b(?:(?:in|after|within)\s+{_NUM}\s+{_UNIT}"
+        rf"|{_NUM}\s+{_UNIT}\s+from\s+(?:now|today))\b",
         _p_in_future,
     ),
     Rule(
@@ -723,9 +803,16 @@ RULES: tuple[Rule, ...] = (
     Rule("nth_of", rf"\b(?:the\s+)?{_ORD}\s+of\s+{_PART_TARGET}\b", _p_nth_of),
     Rule(
         "day_month_year",
-        rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}{_YEAR_SUFFIX}\b",
+        # The bare two-digit year is only allowed here, and only when no colon follows,
+        # so "15 Mar 14:30:00" stays a syslog time rather than becoming the year 2014.
+        # It has to be tried first: _YEAR_SUFFIX is optional, so it matches empty and
+        # would win the alternation before the two-digit form is ever considered.
+        rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}(?:\s+\d{{2}}\b(?!\s*:)|{_YEAR_SUFFIX})",
         _p_day_month_year,
     ),
+    # Syslog: "Mar 15 14:30:00". The month_day_year guard below refuses a following
+    # number, so without this the timestamp on every syslog line is invisible.
+    Rule("syslog", rf"\b{_MONTH}\s+\d{{1,2}}(?=\s+\d{{1,2}}:\d{{2}})", _p_month_day_year),
     Rule(
         "month_day_year",
         rf"\b{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\s*\d)(?:\s*,?\s+{_YEAR})?\b",
@@ -760,6 +847,10 @@ RULES: tuple[Rule, ...] = (
         rf"\b(?:h\s*[12](?!\d)|half\s*[12](?!\d)|[12]\s*h\b|{_ORD}\s+{_HWORD}){_YEAR_SUFFIX}\b",
         _p_half,
     ),
+    Rule("dashed_month", rf"\b{_MONTH}-'?\d{{2,4}}\b", _p_dashed_month),
+    Rule("decade", r"\b(?:the\s+)?(?:1[89]|20)\d0s\b", _p_decade),
+    Rule("cob", r"\b(?:eod|cob|eob)(?:\s+(?:on\s+)?" + alt(WEEKDAY_NAMES) + r")?\b",
+         _p_close_of_business),
     Rule("month_year", rf"\b{_MONTH}\s+(?:of\s+)?{_YEAR}\b", _p_month),
     # "March last year" -- without this the month has no cue, is dropped by strictness,
     # and the answer becomes the whole of last year.
@@ -768,4 +859,11 @@ RULES: tuple[Rule, ...] = (
     Rule("month", rf"\b{_MONTH}\b", _p_month),
     Rule("weekday", rf"\b{alt(WEEKDAY_NAMES)}\b", _p_weekday),
     Rule("bare_year", rf"\b{_BARE_YEAR}\b", _p_bare_year),
+    # Last, and starting at the digit rather than at "the": the scanner takes the leftmost
+    # match, so swallowing the article would beat the quarter rule to "the 5th quarter"
+    # whatever the order here says. The cue check allows the article instead.
+    # ...and only at the end of a clause. "on the 15th" is a date; "on the 3rd floor",
+    # "the 2nd round", "for the 3rd time" are not, and a following noun is what tells them
+    # apart. "the 15th of March" is the nth_of rule's job, not this one's.
+    Rule("ordinal_day", r"\b\d{1,2}(?:st|nd|rd|th)\b(?!\s*\w)", _p_ordinal_day),
 )

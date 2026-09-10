@@ -46,6 +46,7 @@ class Kind(Enum):
     WEEKDAY = auto()            # last Monday, next Friday
     PERIOD_ENDING = auto()      # "quarter ending June 2024" -- a period fixed by its end
     WEEKEND = auto()            # this weekend, next weekend
+    DECADE = auto()             # the 1990s
 
 
 @dataclass(frozen=True, slots=True)
