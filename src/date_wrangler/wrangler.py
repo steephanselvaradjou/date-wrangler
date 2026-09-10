@@ -27,7 +27,6 @@ from .vocab import (
     PAST_WORDS,
     UNIT_WORDS,
     WEEKDAY_NAMES,
-    alt,
 )
 
 __all__ = ["parse", "parse_one", "substitute", "diagnose", "Diagnostic"]
@@ -57,11 +56,27 @@ _TRIGGERS = (
         "beginning", "start", "early", "mid", "middle", "late", "end", "close",
     }
 )
-_PREFILTER = re.compile(rf"\d|\b{alt(_TRIGGERS)}\b", re.IGNORECASE)
+#: Tokenising and intersecting a set beats a 116-way alternation by roughly ten times on
+#: text with no date in it, which is the case that has to be cheap: the alternation retries
+#: every branch at every position and only stops when one finally matches, so its cost
+#: grows with the length of text it is about to reject. Splitting into words is a single
+#: character-class pass, and the set does the rest.
+_WORDS = re.compile(r"[a-z]+")
+_DIGIT = re.compile(r"\d")
 
-_SCANNER = re.compile(
-    "|".join(f"(?P<{rule.name}>{rule.pattern})" for rule in RULES), re.IGNORECASE
-)
+
+def _might_hold_a_date(text: str) -> bool:
+    """Cheap rejection. Every rule needs a digit or one of the trigger words."""
+    if _DIGIT.search(text) is not None:
+        return True
+    return not _TRIGGERS.isdisjoint(_WORDS.findall(text.lower()))
+
+
+_SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{rule.pattern})" for rule in RULES)
+_SCANNER = re.compile(_SCAN_PATTERN, re.IGNORECASE)
+#: The same rules, case-sensitive, for the lowered-ASCII fast path in :func:`_scan`. Every
+#: rule pattern is written in lower case, so the two accept exactly the same fragments.
+_SCANNER_CS = re.compile(_SCAN_PATTERN)
 _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 
 
@@ -231,15 +246,28 @@ class _Raw:
 
 
 def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> list[_Raw]:
+    """Run every rule's pattern over ``text`` in one pass.
+
+    Scanning is where most of the time goes, and IGNORECASE over an alternation this size
+    costs roughly half as much again as a plain match -- so ASCII text is lowered once and
+    matched case-sensitively instead. Offsets survive because lowering ASCII cannot change
+    a string's length; anything else falls back to the case-insensitive pattern, where that
+    guarantee does not hold. Either way the *fragment* is sliced from the original, so the
+    rules still see the writer's capitals.
+    """
+    if text.isascii():
+        target, scanner = text.lower(), _SCANNER_CS
+    else:
+        target, scanner = text, _SCANNER
     out: list[_Raw] = []
-    for m in _SCANNER.finditer(text):
+    for m in scanner.finditer(target):
         name = m.lastgroup
         if name is None:
             continue
         rule = _RULES_BY_NAME.get(name)
         if rule is None:
             continue
-        fragment = m.group(0)
+        fragment = text[m.start() : m.end()]
         try:
             spec = rule.parse(fragment, cfg)
         except (ValueError, KeyError) as exc:
@@ -450,7 +478,7 @@ def parse(
     """
     if not isinstance(text, str):
         raise TypeError(f"text must be a str, got {type(text).__name__}")
-    if not text or not _PREFILTER.search(text):
+    if not text or not _might_hold_a_date(text):
         return []
 
     day = _resolve_today(today, tz)

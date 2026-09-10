@@ -82,6 +82,19 @@ _AGO_WORDS = r"ago|back|earlier|prior|before|later|hence|after|ahead|out"
 _AGO_FUTURE = frozenset({"later", "hence", "after", "ahead", "out"})
 
 
+#: Patterns a parse function runs on every match it is handed. Built once here rather than
+#: interpolated per call: the f-string is rebuilt and rehashed for the module cache each
+#: time, and these are the innermost loop of scanning.
+_WEEKDAY_RE = re.compile(rf"\b({alt(WEEKDAY_NAMES)})\b")
+_PAST_RE = re.compile(rf"\s*{_PAST}\b")
+_FUTURE_RE = re.compile(rf"\s*{_FUTURE}\b")
+_YEAR_TAIL_RE = re.compile(rf"\s*(?:of\s+)?({_YEAR})\s*$", re.IGNORECASE)
+_REL_YEAR_TAIL_RE = re.compile(
+    rf"\s*(?:of\s+)?({_DIRWORD}|this|current)\s+year\s*$", re.IGNORECASE
+)
+_OF_RE = re.compile(r"\bof\b", re.IGNORECASE)
+
+
 @dataclass(frozen=True, slots=True)
 class Rule:
     """A named recogniser."""
@@ -122,18 +135,18 @@ def parse_year_token(token: str, cfg: WranglerConfig) -> tuple[int | None, Basis
 
 def _year_from_suffix(text: str, cfg: WranglerConfig) -> tuple[int | None, Basis | None]:
     """Pull a trailing year off a period phrase, if one is there."""
-    m = re.search(rf"\s*(?:of\s+)?({_YEAR})\s*$", text, re.IGNORECASE)
+    m = _YEAR_TAIL_RE.search(text)
     if not m:
         return None, None
     year, basis = parse_year_token(m.group(1), cfg)
-    if basis is None and re.search(r"\bof\b", text, re.IGNORECASE):
+    if basis is None and _OF_RE.search(text):
         basis = cfg.effective_of_year_basis
     return year, basis
 
 
 def _year_offset_from_suffix(text: str) -> int | None:
     """"Q1 last year" -> -1. None when no relative year is named."""
-    m = re.search(rf"\s*(?:of\s+)?({_DIRWORD}|this|current)\s+year\s*$", text, re.IGNORECASE)
+    m = _REL_YEAR_TAIL_RE.search(text)
     if not m:
         return None
     word = m.group(1).lower()
@@ -234,7 +247,7 @@ def _p_close_of_business(text: str, cfg: WranglerConfig) -> Spec | None:
     because "cob" in lower case is far more often corn than close of business.
     """
     stripped = text.strip()
-    m = re.search(rf"\b({alt(WEEKDAY_NAMES)})\b", stripped.lower())
+    m = _WEEKDAY_RE.search(stripped.lower())
     if m is not None:
         return Spec(Kind.WEEKDAY, index=WEEKDAYS[m.group(1)], direction=0)
     acronym = re.match(r"[A-Za-z]+", stripped)
@@ -372,13 +385,13 @@ def _p_period_ending(text: str, cfg: WranglerConfig) -> Spec | None:
 
 def _p_weekday(text: str, cfg: WranglerConfig) -> Spec | None:
     low = text.strip().lower()
-    m = re.search(rf"\b({alt(WEEKDAY_NAMES)})\b", low)
+    m = _WEEKDAY_RE.search(low)
     if not m:
         return None
     index = WEEKDAYS[m.group(1)]
-    if re.match(rf"\s*{_PAST}\b", low):
+    if _PAST_RE.match(low):
         direction = -1
-    elif re.match(rf"\s*{_FUTURE}\b", low):
+    elif _FUTURE_RE.match(low):
         direction = 1
     else:
         direction = 0
