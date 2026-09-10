@@ -18,6 +18,7 @@ __all__ = [
     "CARDINALS",
     "ORDINALS",
     "UNIT_WORDS",
+    "UNIT_SCALE",
     "PAST_WORDS",
     "FUTURE_WORDS",
     "CONNECTORS",
@@ -56,6 +57,8 @@ MONTH_DISPLAY: tuple[str, ...] = (
 CARDINALS: dict[str, int] = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
     "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    # "a month ago" is one month ago. Nobody writes "one month ago" out loud.
+    "a": 1, "an": 1,
 }
 
 ORDINALS: dict[str, int] = {
@@ -91,11 +94,16 @@ WEEKDAY_NAMES: tuple[str, ...] = tuple(sorted(WEEKDAYS, key=len, reverse=True))
 UNIT_WORDS: dict[str, str] = {
     "day": "DAY", "days": "DAY",
     "week": "WEEK", "weeks": "WEEK", "wk": "WEEK", "wks": "WEEK",
+    "fortnight": "WEEK", "fortnights": "WEEK",
     "month": "MONTH", "months": "MONTH", "mo": "MONTH", "mos": "MONTH",
     "quarter": "QUARTER", "quarters": "QUARTER", "qtr": "QUARTER", "qtrs": "QUARTER",
     "half": "HALF", "halves": "HALF",
     "year": "YEAR", "years": "YEAR", "yr": "YEAR", "yrs": "YEAR",
 }
+
+#: Units that are a multiple of the grain they map to, so "a fortnight" is two weeks
+#: without FORTNIGHT having to become a Grain and appear in every period grid.
+UNIT_SCALE: dict[str, int] = {"fortnight": 2, "fortnights": 2}
 
 PAST_WORDS: frozenset[str] = frozenset(
     {"last", "past", "previous", "prior", "preceding", "trailing", "rolling"}

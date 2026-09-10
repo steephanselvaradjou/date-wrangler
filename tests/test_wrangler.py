@@ -532,11 +532,68 @@ def test_q1_and_q1_of_year_agree_by_default():
 
 def test_prefilter_never_hides_a_match():
     """The fast reject path must not be able to drop something the scanner would find."""
-    from date_wrangler.wrangler import _PREFILTER, _SCANNER
+    from date_wrangler.wrangler import _SCANNER, _might_hold_a_date
 
-    for text in ("Q1", "march", "last week", "ytd", "2024-01-01", "h1", "first quarter"):
+    texts = (
+        "Q1", "march", "last week", "ytd", "2024-01-01", "h1", "first quarter",
+        "weekend", "EOM", "COB Friday", "the 1990s", "mid-March", "Mar-24",
+        "15-Mar-2024", "a fortnight ago", "the 15th", "in 3 days", "TTM",
+    )
+    for text in texts:
         if _SCANNER.search(text):
-            assert _PREFILTER.search(text), f"prefilter would drop {text!r}"
+            assert _might_hold_a_date(text), f"prefilter would drop {text!r}"
+
+
+def test_both_scanners_accept_the_same_fragments():
+    """_scan lowers ASCII text and uses the case-sensitive pattern, which is only valid
+    while every rule pattern is written in lower case. A new rule with a literal capital
+    would match under IGNORECASE and silently stop matching on the fast path."""
+    import re
+
+    from date_wrangler.rules import RULES
+    from date_wrangler.wrangler import _SCANNER, _SCANNER_CS
+
+    for rule in RULES:
+        # Capitals inside an escape (\b, \d, \W...) are the escape, not a literal.
+        literal = re.sub(r"\\.", "", rule.pattern)
+        assert not re.search(r"[A-Z]", literal), (
+            f"rule {rule.name!r} has a literal capital in its pattern; "
+            "_scan's lowered fast path would never match it"
+        )
+
+    samples = [
+        "Q1 FY25", "MARCH 2024", "March 2024", "march 2024", "15-MAR-2024",
+        "TTM", "ttm", "EOM", "Last Monday", "NEXT WEEK", "2024-03-15",
+        "First Half Of March", "the 1990s", "Mar-24",
+    ]
+    for text in samples:
+        ci = [(m.start(), m.end(), m.lastgroup) for m in _SCANNER.finditer(text)]
+        cs = [(m.start(), m.end(), m.lastgroup) for m in _SCANNER_CS.finditer(text.lower())]
+        assert ci == cs, f"scanners disagree on {text!r}: {ci} vs {cs}"
+
+
+def test_lowering_ascii_preserves_length():
+    """The fast path relies on offsets surviving .lower(), which holds for ASCII only."""
+    for i in range(128):
+        assert len(chr(i).lower()) == 1
+    # A counter-example from outside ASCII, which is why the fast path is guarded.
+    assert len("İ".lower()) == 2
+
+
+def test_prefilter_agrees_with_the_scanner_on_a_wide_sample():
+    """A disagreement here is a silent miss, so check the two against each other rather
+    than against a hand-written list."""
+    from date_wrangler.wrangler import _SCANNER, _might_hold_a_date
+
+    samples = [
+        "", "   ", "hello world", "the quick brown fox", "nothing to see",
+        "Q1 FY25", "revenue in March", "2024-03-15T14:30:00Z", "no dates here",
+        "he lives on the 3rd floor", "corn on the cob", "version 2024.1",
+        "Sun, 15 Mar 2024 14:30:00 +0000", "bake for 30 minutes", "$1,500",
+    ]
+    for text in samples:
+        if _SCANNER.search(text) is not None:
+            assert _might_hold_a_date(text), f"prefilter would drop {text!r}"
 
 
 # ---------------------------------------------------------------------------

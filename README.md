@@ -7,7 +7,7 @@ Whatever someone types — an absolute date, a relative expression, an open-ende
 fiscal period — it comes back as one type: a half-open `DateRange` that is safe to hand
 straight to a query.
 
-> **Status: early development (0.2.0).** The API may still change before 1.0.
+> **Status: early development (0.3.0).** The API may still change before 1.0.
 
 ## Why another date library
 
@@ -63,6 +63,29 @@ feb.end_inclusive  # date(2024, 2, 29)
 on the 29th when `ts` is a timestamp. `ts < '2024-03-01'` does not. Half-open ranges also
 tile exactly — `Q1.end == Q2.start` — so they compose without off-by-one errors.
 
+### Anchored or rolling
+
+`last month` has two defensible readings, and which one you get should not be an accident.
+Asked on 4 September:
+
+```python
+parse("last month")                                       # 2025-08-01 .. 2025-09-01
+parse("last month", config=WranglerConfig(anchor=Anchor.ROLLING))
+                                                          # 2025-08-04 .. 2025-09-04
+```
+
+**Anchored** (the default) snaps to whole calendar units. **Rolling** measures back from
+today. Anchored is the default because only whole units are comparable — rolling months are
+28 to 31 days long, so month-on-month stops being like-for-like — and because a
+part-finished current period should not be mixed in with completed ones.
+
+The wording wins over the setting where it is explicit: `rolling 3 months` always rolls,
+and `TTM` / `trailing 12 months` never does, because in reporting that means the last
+twelve *completed* months. Day-grain phrases like `last 30 days` are the same either way —
+a day is its own unit, so there is nothing to snap to.
+
+`r.anchor` is on the range, so callers can tell which they got.
+
 ### Open-ended ranges
 
 Either bound may be `None`, which is what makes `since March` and `before 2024`
@@ -87,10 +110,13 @@ Config is passed per call and never read from a module global, so one process ca
 tenants on different fiscal calendars.
 
 ```python
-from date_wrangler import WranglerConfig, FiscalCalendar, DateOrder, MonthNumber, YearLabel
+from date_wrangler import (
+    Anchor, DateOrder, FiscalCalendar, MonthNumber, WranglerConfig, YearLabel,
+)
 
 WranglerConfig(
     fiscal=FiscalCalendar.us_federal(),   # October start
+    anchor=Anchor.ANCHORED,               # what "last month" means
     date_order=DateOrder.MDY,             # how to read 03/04/2024
     month_number=MonthNumber.YEAR,        # what "jan 24" means
     bare_period_basis=Basis.FISCAL,       # what a bare "Q1" means
@@ -164,9 +190,41 @@ plausible.
 | Ranges | `Q1 to Q2`, `Jan–Mar`, `from April to September 2024`, `Nov to Feb` (wraps) |
 | Open-ended | `since March`, `from Q1 onwards`, `up to March 2024`, `before 2024`, `after FY24` |
 | Point-in-time | `as of 31 March 2024` |
+| Relative year | `Q1 last year`, `March last year`, `H2 next year` |
+| Part of a period | `first half of March`, `early 2024`, `mid March`, `end of Q1` |
+| Day in a period | `1st of next month`, `15th of March` |
+| Same period back | `same quarter last year`, `this time last year` |
+| Weekend | `this weekend`, `next weekend`, `last weekend` |
+| Period edges | `month end`, `EOM`, `EOQ`, `end of the quarter`, `year start` |
+| Ahead | `in 3 days`, `2 weeks from now`, `3 months from today` |
+| Fortnights | `a fortnight ago`, `last fortnight`, `next fortnight` |
+| Day idioms | `day before yesterday`, `day after tomorrow` |
+| Written formats | `15-Mar-2024`, `15 Mar 24`, `Mar-24`, `15.03.2024`, `2024/03/15` |
+| Timestamps | `2024-03-15T14:30:00Z`, `Mar 15 14:30:00`, `Wed, 15 Mar 2024 14:30:00 GMT` |
+| Chat and email | `EOD`, `COB Friday`, `on the 15th`, `meet Thursday` |
+| Decades | `the 1990s` |
 
 Connectors include `to`, `through`, `thru`, `until`, `till`, `upto`, `and`, and hyphen, en
 dash or em dash — the last three matter because editors rewrite `-` as `–` on sight.
+
+### What it deliberately does not read
+
+Recall is not the only thing that matters. In ordinary prose a wrong date is worse than no
+date, so these are left alone on purpose:
+
+| not read | why |
+|---|---|
+| `20240315` | indistinguishable from `invoice 20240315` |
+| `the 3rd floor`, `2nd round` | an ordinal followed by a noun is a position, not a day |
+| `cob` in lower case | corn, not close of business — `COB` is read |
+| `19th century` | centuries are unsupported, and guessing a day would be worse |
+| `Christmas`, `Diwali` | holidays need a locale and a calendar of their own |
+| `every Monday` | recurrence is a different shape from a range |
+| `within 30 days of the Effective Date` | a duration with no anchor to measure from |
+| `bake for 30 minutes` | durations and times of day are out of scope |
+
+Version numbers, prices, phone numbers, invoice IDs, scores and measurements are all left
+alone too. See [tests/test_realworld.py](tests/test_realworld.py) for the full corpus.
 
 ### Telling "nothing there" from "couldn't read it"
 
@@ -177,6 +235,18 @@ matches, diags = diagnose("5000 years ago", today=today)
 ```
 
 `parse()` never raises on user input.
+
+A match whose neighbouring words change the period but could not be read comes back with
+**confidence 0.5** and an explanation, rather than a confident answer to a question nobody
+asked:
+
+```python
+matches, diags = diagnose("March 2024 to date", today=today)
+matches[0].confidence   # 0.5
+diags[0].reason         # "read 'March 2024' but not 'to date', which changes the period"
+```
+
+Filter on `confidence` when a wrong range is worse than no range.
 
 ### Precision on running prose
 

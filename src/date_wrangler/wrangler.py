@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, tzinfo
 
 from .config import DEFAULT_CONFIG, WranglerConfig
@@ -27,7 +27,6 @@ from .vocab import (
     PAST_WORDS,
     UNIT_WORDS,
     WEEKDAY_NAMES,
-    alt,
 )
 
 __all__ = ["parse", "parse_one", "substitute", "diagnose", "Diagnostic"]
@@ -50,13 +49,34 @@ _TRIGGERS = (
         "this", "current", "present", "today", "yesterday", "tomorrow",
         "fiscal", "financial", "calendar", "since", "until", "till", "onwards",
         "ttm", "ltm", "ending", "ended", "ends",
+        # Phrases whose only trigger is the word itself: a bare "weekend" or "EOM"
+        # carries no digit and no unit word, so without these it never reaches the
+        # scanner at all.
+        "weekend", "eom", "eoq", "eoy", "eow", "eod", "cob", "eob",
+        "beginning", "start", "early", "mid", "middle", "late", "end", "close",
     }
 )
-_PREFILTER = re.compile(rf"\d|\b{alt(_TRIGGERS)}\b", re.IGNORECASE)
+#: Tokenising and intersecting a set beats a 116-way alternation by roughly ten times on
+#: text with no date in it, which is the case that has to be cheap: the alternation retries
+#: every branch at every position and only stops when one finally matches, so its cost
+#: grows with the length of text it is about to reject. Splitting into words is a single
+#: character-class pass, and the set does the rest.
+_WORDS = re.compile(r"[a-z]+")
+_DIGIT = re.compile(r"\d")
 
-_SCANNER = re.compile(
-    "|".join(f"(?P<{rule.name}>{rule.pattern})" for rule in RULES), re.IGNORECASE
-)
+
+def _might_hold_a_date(text: str) -> bool:
+    """Cheap rejection. Every rule needs a digit or one of the trigger words."""
+    if _DIGIT.search(text) is not None:
+        return True
+    return not _TRIGGERS.isdisjoint(_WORDS.findall(text.lower()))
+
+
+_SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{rule.pattern})" for rule in RULES)
+_SCANNER = re.compile(_SCAN_PATTERN, re.IGNORECASE)
+#: The same rules, case-sensitive, for the lowered-ASCII fast path in :func:`_scan`. Every
+#: rule pattern is written in lower case, so the two accept exactly the same fragments.
+_SCANNER_CS = re.compile(_SCAN_PATTERN)
 _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 
 
@@ -103,7 +123,15 @@ _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|between|before|after|"
     r"vs|versus|compared\s+(?:to|with)|"
     r"sales|revenue|profit|data|report|numbers|figures|results|performance|growth|"
-    r"spend|cost|budget|forecast|actuals)\W*$",
+    r"spend|cost|budget|forecast|actuals|"
+    # Everyday text, not just reporting. Without these "Can we meet Thursday?" and
+    # "Rent is due on the 1st" found nothing, which is most of how dates get written.
+    r"meet|meeting|due|deadline|scheduled|schedule|booked|book|expires|expiry|effective|"
+    r"dated|born|joined|starts|starting|ends|ending|arrives|arriving|departing|returning|"
+    r"delivered|delivery|ships|shipping|submitted|signed|executed|commencing|"
+    r"admitted|discharged|appointment|renew|renewal|payable)"
+    # An article may sit between the cue and the date: "on the 15th", "in the March figures".
+    r"(?:\s+the)?\W*$",
     re.IGNORECASE,
 )
 
@@ -150,7 +178,23 @@ _MONTH_NOUNS = frozenset({
 })
 
 #: Rules whose matches are weak enough to need a cue in "balanced" mode.
-_WEAK_RULES = frozenset({"month", "bare_year", "weekday"})
+_WEAK_RULES = frozenset({"month", "bare_year", "weekday", "ordinal_day"})
+
+#: Words that change which days a period covers. Left unread beside a match, the answer is
+#: not the one the writer asked for -- "March 2024 to date" is not all of March 2024. We
+#: cannot resolve every combination, but we can refuse to pretend we read it.
+_QUALIFIER_AFTER = re.compile(
+    r"^\W*(?:to\s+date|ago|onwards?|or\s+(?:later|earlier)|ytd|mtd|qtd)\b", re.IGNORECASE
+)
+_QUALIFIER_BEFORE = re.compile(
+    r"\b(?:first\s+half|second\s+half|latter\s+half|beginning|start|early|middle|mid|late|"
+    r"end|same|this\s+time|\d{1,2}(?:st|nd|rd|th))\s+(?:of\s+|in\s+)?\W*$"
+    # "a year from March" is March next year, not March. Only "from now"/"from today"
+    # are actually resolved, so any other tail here is a period we did not compute.
+    r"|\b(?:a|an|\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
+    r"(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+\W*$",
+    re.IGNORECASE,
+)
 
 
 def _looks_like_a_person(text: str, start: int, end: int) -> bool:
@@ -202,15 +246,28 @@ class _Raw:
 
 
 def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> list[_Raw]:
+    """Run every rule's pattern over ``text`` in one pass.
+
+    Scanning is where most of the time goes, and IGNORECASE over an alternation this size
+    costs roughly half as much again as a plain match -- so ASCII text is lowered once and
+    matched case-sensitively instead. Offsets survive because lowering ASCII cannot change
+    a string's length; anything else falls back to the case-insensitive pattern, where that
+    guarantee does not hold. Either way the *fragment* is sliced from the original, so the
+    rules still see the writer's capitals.
+    """
+    if text.isascii():
+        target, scanner = text.lower(), _SCANNER_CS
+    else:
+        target, scanner = text, _SCANNER
     out: list[_Raw] = []
-    for m in _SCANNER.finditer(text):
+    for m in scanner.finditer(target):
         name = m.lastgroup
         if name is None:
             continue
         rule = _RULES_BY_NAME.get(name)
         if rule is None:
             continue
-        fragment = m.group(0)
+        fragment = text[m.start() : m.end()]
         try:
             spec = rule.parse(fragment, cfg)
         except (ValueError, KeyError) as exc:
@@ -421,7 +478,7 @@ def parse(
     """
     if not isinstance(text, str):
         raise TypeError(f"text must be a str, got {type(text).__name__}")
-    if not text or not _PREFILTER.search(text):
+    if not text or not _might_hold_a_date(text):
         return []
 
     day = _resolve_today(today, tz)
@@ -474,7 +531,47 @@ def parse(
             matches.append(single)
             floor = max(floor, raws[i].end)
         i += 1
-    return matches
+    return _flag_unread_qualifiers(matches, body, norm, diagnostics)
+
+
+def _flag_unread_qualifiers(
+    matches: list[DateMatch],
+    body: str,
+    norm: Normalized,
+    diags: list[Diagnostic] | None,
+) -> list[DateMatch]:
+    """Lower confidence where a meaning-changing word next to a match went unread.
+
+    The rules cover the combinations people actually write, but not every one. When a
+    qualifier is left over the honest answer is "I read part of this", not a confident
+    range -- so the match survives with reduced confidence and, if the caller asked for
+    diagnostics, an explanation naming the words that were dropped.
+    """
+    if not matches:
+        return matches
+    spans = [m.span for m in matches]
+    out: list[DateMatch] = []
+    for idx, m in enumerate(matches):
+        lo, hi = m.span
+        after = norm.original[hi : hi + 24]
+        prev_end = spans[idx - 1][1] if idx else 0
+        before = norm.original[max(prev_end, lo - 24) : lo]
+        dropped = _QUALIFIER_AFTER.match(after) or _QUALIFIER_BEFORE.search(before)
+        if dropped is None:
+            out.append(m)
+            continue
+        if diags is not None:
+            diags.append(
+                Diagnostic(
+                    norm.original[lo:hi],
+                    m.span,
+                    "partial",
+                    f"read {norm.original[lo:hi]!r} but not {dropped.group(0).strip()!r}, "
+                    "which changes the period",
+                )
+            )
+        out.append(replace(m, confidence=min(m.confidence, 0.5)))
+    return out
 
 
 def _emit(

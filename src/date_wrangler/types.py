@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from enum import Enum
 
-__all__ = ["Grain", "Basis", "Mod", "DateRange", "DateMatch"]
+__all__ = ["Grain", "Basis", "Anchor", "Mod", "DateRange", "DateMatch"]
 
 
 class Grain(str, Enum):
@@ -31,6 +31,25 @@ class Basis(str, Enum):
 
     FISCAL = "fiscal"
     CALENDAR = "calendar"
+
+
+class Anchor(str, Enum):
+    """Where a *relative* period's edges fall.
+
+    ANCHORED snaps to whole calendar units: asked on 4 September, "last month" is
+    1-31 August. ROLLING measures back from today instead: 8 August - 7 September.
+
+    Anchored is the default because it is what reporting means, and because only whole
+    units are comparable -- rolling months are 28 to 31 days long, so month-on-month
+    stops being a like-for-like. Rolling is what you want for "the last 30 days of
+    activity", where the cutoff is genuinely now.
+
+    Orthogonal to :class:`Basis`, which picks the *calendar*, and to absolute vs relative,
+    which is whether a period was named outright ("March 2024") or computed from today.
+    """
+
+    ANCHORED = "anchored"
+    ROLLING = "rolling"
 
 
 class Mod(str, Enum):
@@ -56,6 +75,9 @@ class DateRange:
     grain: Grain
     basis: Basis = Basis.CALENDAR
     mod: Mod | None = None
+    #: Only meaningful for a relative period; an absolute one like "March 2024" is always
+    #: ANCHORED, since it names its own edges.
+    anchor: Anchor = Anchor.ANCHORED
 
     def __post_init__(self) -> None:
         if self.start is not None and self.end is not None and self.end < self.start:

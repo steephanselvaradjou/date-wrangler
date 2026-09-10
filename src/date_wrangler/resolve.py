@@ -23,8 +23,8 @@ from .calendars import (
     year_range,
 )
 from .config import WranglerConfig
-from .spec import Kind, Spec
-from .types import Basis, DateRange, Grain, Mod
+from .spec import Kind, Part, Spec
+from .types import Anchor, Basis, DateRange, Grain, Mod
 
 __all__ = ["resolve", "default_year_for", "UnresolvableSpec"]
 
@@ -130,11 +130,83 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     """Resolve ``spec`` against ``today``. Raises :class:`UnresolvableSpec` on bad input."""
     try:
         base = _resolve_core(spec, today, cfg)
+        if spec.year_offset:
+            base = _shift_years(base, spec.year_offset)
+        if spec.part is not None:
+            base = _slice_part(base, spec.part)
+        if spec.day_of_period is not None:
+            base = _pick_day(base, spec.day_of_period)
     except (ValueError, OverflowError) as exc:
         if isinstance(exc, UnresolvableSpec):
             raise
         raise UnresolvableSpec(str(exc)) from exc
     return _apply_mod(base, spec.mod, today)
+
+
+def _shift_years(r: DateRange, offset: int) -> DateRange:
+    """The same period, ``offset`` whole years away. "Q1 last year"."""
+    if r.start is None or r.end is None:
+        raise UnresolvableSpec("cannot shift an unbounded range by a year")
+    return DateRange(
+        add_months(r.start, 12 * offset),
+        add_months(r.end, 12 * offset),
+        r.grain,
+        r.basis,
+        r.mod,
+        r.anchor,
+    )
+
+
+def _whole_months(start: date, end: date) -> int | None:
+    """How many whole months ``[start, end)`` spans, or None if it is not a whole number."""
+    months = (end.year - start.year) * 12 + (end.month - start.month)
+    return months if months > 0 and add_months(start, months) == end else None
+
+
+def _slice_part(r: DateRange, part: Part) -> DateRange:
+    """A half or a third of a resolved period.
+
+    Divided by months where that comes out even, otherwise by days: "early 2024" should be
+    January to April, not the first 122 days, while "first half of March" has to be days
+    because half a month is not a month. Remainders go to the last piece, so the parts tile
+    the period exactly rather than leaving a day unaccounted for.
+    """
+    if r.start is None or r.end is None:
+        raise UnresolvableSpec("cannot take part of an unbounded range")
+    span = (r.end - r.start).days
+    if span < 2:
+        raise UnresolvableSpec("period is too short to divide")
+    pieces = 2 if part in (Part.FIRST_HALF, Part.SECOND_HALF) else 3
+    months = _whole_months(r.start, r.end)
+
+    if months is not None and months % pieces == 0:
+        # A slice is no longer the grain it came out of: a third of a year is four months,
+        # so MONTH is the bucket to group it by, not YEAR.
+        step, cut, grain = months // pieces, add_months, Grain.MONTH
+    else:
+        step, cut, grain = span // pieces, lambda d, n: d + timedelta(days=n), Grain.DAY
+
+    if part is Part.FIRST_HALF:
+        return DateRange(r.start, cut(r.start, step), grain, r.basis)
+    if part is Part.SECOND_HALF:
+        return DateRange(cut(r.start, step), r.end, grain, r.basis)
+    if part is Part.EARLY:
+        return DateRange(r.start, cut(r.start, step), grain, r.basis)
+    if part is Part.MID:
+        return DateRange(cut(r.start, step), cut(r.start, 2 * step), grain, r.basis)
+    return DateRange(cut(r.start, 2 * step), r.end, grain, r.basis)
+
+
+def _pick_day(r: DateRange, day_of_period: int) -> DateRange:
+    """One day counted from the start of a period. "1st of next month"."""
+    if r.start is None or r.end is None:
+        raise UnresolvableSpec("cannot index into an unbounded range")
+    target = r.start + timedelta(days=day_of_period - 1)
+    if target >= r.end:
+        raise UnresolvableSpec(
+            f"day {day_of_period} falls outside the period {r.start}..{r.end}"
+        )
+    return day_range(target)
 
 
 def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
@@ -195,6 +267,16 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     if spec.kind is Kind.WEEKDAY:
         return _resolve_weekday(spec, today)
 
+    if spec.kind is Kind.WEEKEND:
+        return _resolve_weekend(spec, today)
+
+    if spec.kind is Kind.DECADE:
+        if spec.year is None:
+            raise UnresolvableSpec("a decade needs a year")
+        return DateRange(
+            date(spec.year, 1, 1), date(spec.year + 10, 1, 1), Grain.YEAR, Basis.CALENDAR
+        )
+
     if spec.kind is Kind.PERIOD_ENDING:
         return _resolve_period_ending(spec, today, cfg, basis)
 
@@ -220,6 +302,18 @@ def _resolve_weekday(spec: Spec, today: date) -> DateRange:
     return day_range(today + timedelta(days=delta or 7))
 
 
+def _resolve_weekend(spec: Spec, today: date) -> DateRange:
+    """Saturday and Sunday of the week meant.
+
+    Weeks start on Monday here, so "this weekend" is always ahead of a weekday and the
+    weekend you are standing in if it is already Saturday -- never the one just gone.
+    """
+    week_start = week_range(today).start
+    assert week_start is not None
+    saturday = week_start + timedelta(days=5 + 7 * spec.direction)
+    return DateRange(saturday, saturday + timedelta(days=2), Grain.DAY, Basis.CALENDAR)
+
+
 def _resolve_period_ending(
     spec: Spec, today: date, cfg: WranglerConfig, basis: Basis
 ) -> DateRange:
@@ -239,15 +333,24 @@ def _resolve_period_ending(
 
 
 def _resolve_relative(spec: Spec, today: date, cfg: WranglerConfig, basis: Basis) -> DateRange:
-    """"last 3 months" -- ``count`` whole units, excluding the current one.
+    """"last 3 months" -- ``count`` units back, either anchored or rolling.
 
-    Asked in September that is June, July and August; including a part-finished September
-    would mix a complete period with an incomplete one.
+    Anchored counts whole units and excludes the current one: asked in September that is
+    June, July and August, because including a part-finished September would mix a complete
+    period with an incomplete one. Rolling measures from today instead, so the same phrase
+    is 4 June to 3 September.
     """
     unit = spec.unit or Grain.MONTH
     n = spec.count if spec.count is not None else 1
     if n < 1:
         raise UnresolvableSpec(f"a period count must be at least 1, got {n}")
+    anchor = spec.anchor if spec.anchor is not None else cfg.anchor
+    if anchor is Anchor.ROLLING:
+        # A day is its own unit, so rolling and anchored coincide at DAY grain -- which is
+        # why "last 30 days" has always rolled, whatever the setting says.
+        if spec.direction < 0:
+            return DateRange(_shift(today, unit, -n), today, unit, basis, None, anchor)
+        return DateRange(today, _shift(today, unit, n), unit, basis, None, anchor)
     current = _period_start(today, cfg, unit, basis)
     if spec.direction < 0:
         return DateRange(_shift(current, unit, -n), current, unit, basis)
