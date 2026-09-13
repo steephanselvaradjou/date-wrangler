@@ -380,3 +380,145 @@ def test_shift_is_reversible_and_never_inverts(r, grain, periods):
     # come back to exactly where it began; everything else is.
     if r.start.day <= 28 and r.end.day <= 28:
         assert moved.shift(-periods, grain) == r
+
+
+# ---------------------------------------------------------------------------
+# Algebra: overlap, intersection, union, difference
+#
+# An unbounded end is an infinity throughout. Getting that backwards turns "since March"
+# into "nothing at all" without raising, so most of these pin the unbounded case.
+# ---------------------------------------------------------------------------
+
+Q1 = DateRange(date(2024, 1, 1), date(2024, 4, 1), Grain.QUARTER)
+Q2 = DateRange(date(2024, 4, 1), date(2024, 7, 1), Grain.QUARTER)
+Q3 = DateRange(date(2024, 7, 1), date(2024, 10, 1), Grain.QUARTER)
+FEB = DateRange(date(2024, 2, 1), date(2024, 3, 1), Grain.MONTH)
+SINCE_FEB = DateRange(date(2024, 2, 1), None, Grain.MONTH, mod=Mod.SINCE)
+UNTIL_MAR = DateRange(None, date(2024, 3, 1), Grain.MONTH, mod=Mod.UNTIL)
+
+
+def test_overlaps():
+    assert Q1.overlaps(FEB) and FEB.overlaps(Q1)
+    assert not Q1.overlaps(Q3)
+    assert Q1.overlaps(SINCE_FEB) and Q1.overlaps(UNTIL_MAR)
+
+
+def test_adjacent_ranges_do_not_overlap():
+    """Half-open is what makes this exact: Q1 ends on the day Q2 starts and they share
+    no day at all."""
+    assert Q1.end == Q2.start
+    assert not Q1.overlaps(Q2)
+
+
+def test_an_empty_range_overlaps_nothing():
+    empty = DateRange(date(2024, 2, 1), date(2024, 2, 1), Grain.DAY)
+    assert not empty.overlaps(Q1)
+    assert not Q1.overlaps(empty)
+
+
+def test_covers_and_in():
+    assert Q1.covers(FEB) and not FEB.covers(Q1)
+    assert FEB in Q1 and Q1 not in FEB
+    assert date(2024, 2, 5) in Q1  # a day still works
+    assert Q1.covers(Q1)
+    assert SINCE_FEB.covers(Q3) and not Q3.covers(SINCE_FEB)
+
+
+def test_intersection():
+    assert spans([Q1 & FEB]) == [(date(2024, 2, 1), date(2024, 3, 1))]
+    assert spans([Q1 & SINCE_FEB]) == [(date(2024, 2, 1), date(2024, 4, 1))]
+    assert spans([SINCE_FEB & UNTIL_MAR]) == [(date(2024, 2, 1), date(2024, 3, 1))]
+
+
+def test_intersecting_disjoint_ranges_gives_an_empty_range_not_an_error():
+    """Returning None would break a chain of intersections. `is_empty` is the check."""
+    gap = Q1 & Q3
+    assert gap.is_empty and gap.days == 0
+    assert (Q1 & Q3 & FEB).is_empty
+
+
+def test_intersection_is_the_general_form_of_clamp():
+    window = DateRange(date(2024, 2, 15), date(2024, 6, 1), Grain.DAY)
+    by_clamp = SINCE_FEB.clamp(lo=window.start, hi=window.end)
+    assert (SINCE_FEB & window).start == by_clamp.start
+    assert (SINCE_FEB & window).end == by_clamp.end
+
+
+def test_intersection_is_symmetric_in_every_field():
+    assert (Q1 & FEB) == (FEB & Q1)
+    assert (Q1 & SINCE_FEB) == (SINCE_FEB & Q1)
+
+
+def test_results_take_the_finer_grain_and_drop_the_mod():
+    """An intersection is never longer than the shorter side, so claiming the coarser grain
+    would overstate it. The mod described the range it came from, not this one."""
+    assert (Q1 & FEB).grain is Grain.MONTH
+    assert (Q1 & SINCE_FEB).mod is None
+
+
+def test_union_of_touching_or_overlapping_ranges():
+    assert spans([Q1 | Q2]) == [(date(2024, 1, 1), date(2024, 7, 1))]
+    assert spans([Q1 | FEB]) == [(date(2024, 1, 1), date(2024, 4, 1))]
+    assert (Q1 | SINCE_FEB).end is None
+
+
+def test_union_refuses_to_span_a_gap():
+    """The whole point. A union across a gap is two ranges, and silently returning the hull
+    is how "Q1 and Q3" comes to include Q2."""
+    with pytest.raises(ValueError, match="do not meet"):
+        Q1 | Q3
+
+
+def test_hull_spans_the_gap_because_you_asked_it_to():
+    assert spans([Q1.hull(Q3)]) == [(date(2024, 1, 1), date(2024, 10, 1))]
+    assert Q1.hull(Q3) == Q3.hull(Q1)
+
+
+def test_difference_takes_a_bite_out_of_the_middle():
+    assert spans(Q1.difference(FEB)) == [
+        (date(2024, 1, 1), date(2024, 2, 1)),
+        (date(2024, 3, 1), date(2024, 4, 1)),
+    ]
+
+
+def test_difference_off_an_end_gives_one_range():
+    assert spans(Q1.difference(DateRange(date(2024, 3, 1), date(2024, 5, 1), Grain.MONTH))) == [
+        (date(2024, 1, 1), date(2024, 3, 1))
+    ]
+
+
+def test_difference_of_a_covered_range_is_nothing():
+    assert FEB.difference(Q1) == []
+
+
+def test_difference_with_no_overlap_returns_the_range_untouched():
+    assert Q1.difference(Q3) == [Q1]
+    assert Q1.difference(Q2) == [Q1]  # adjacent, so nothing is removed
+
+
+def test_difference_keeps_an_unbounded_tail():
+    assert spans(SINCE_FEB.difference(FEB)) == [(date(2024, 3, 1), None)]
+
+
+def test_empty_ranges_are_identities():
+    empty = DateRange(date(2024, 5, 1), date(2024, 5, 1), Grain.DAY)
+    assert (Q1 | empty) == Q1 and (empty | Q1) == Q1
+    assert Q1.hull(empty) == Q1
+    assert empty.difference(Q1) == []
+    assert (Q1 & empty).is_empty
+
+
+@settings(max_examples=300, deadline=None)
+@given(a=BOUNDED, b=BOUNDED)
+def test_algebra_holds_for_arbitrary_ranges(a, b):
+    both = a & b
+    assert a.covers(both) and b.covers(both)
+    assert both.days <= min(a.days, b.days)
+    assert a.overlaps(b) == (not both.is_empty)
+
+    widest = a.hull(b)
+    assert widest.covers(a) and widest.covers(b)
+
+    # Taking the overlap away and putting it back accounts for every day of `a`.
+    assert sum(p.days for p in a.difference(b)) + both.days == a.days
+    assert all(not p.overlaps(b) for p in a.difference(b))

@@ -7,7 +7,11 @@ Whatever someone types — an absolute date, a relative expression, an open-ende
 fiscal period — it comes back as one type: a half-open `DateRange` that is safe to hand
 straight to a query.
 
-> **Status: early development (0.3.0).** The API may still change before 1.0.
+<!-- No version number anywhere in this file, on purpose: it is baked into the wheel and
+     rendered on PyPI, where the released version is already in the page header. Repeating
+     it is one more thing to remember at release time, and it went stale once already.
+     tests/test_packaging.py enforces this. -->
+> **Status: early development.** The API may still change before 1.0.
 
 ## Why another date library
 
@@ -136,6 +140,29 @@ no day counted twice. The grid starts at `start` rather than at a calendar bound
 fiscal year splits into its own fiscal quarters without being told which calendar it is on,
 and a range that begins mid-unit never widens outwards to cover days you did not ask for.
 Only the final bucket can be short, and `bucket.days` says by how much.
+
+### Combining ranges
+
+Ranges compose like sets, with an unbounded end treated as an infinity throughout — which
+is the only reading that lets `since March` take part at all:
+
+```python
+q1 & since_feb          # intersection — the general form of clamp()
+q1.overlaps(q3)         # False; half-open means Q1 and Q2 are adjacent, not overlapping
+feb in q1               # containment; a bare date still works too
+q1 | q2                 # union of two ranges that meet
+q1.difference(feb)      # [Jan, Feb) and [Mar, Apr) — a bite out of the middle
+```
+
+Intersecting disjoint ranges gives an **empty range, not `None`**, so a chain keeps working;
+check `result.is_empty`. Results take the finer grain — an intersection is never longer than
+the shorter side — and drop `mod`, which described the range it came from.
+
+`difference` returns a **list**, because subtracting from the middle leaves two pieces.
+
+`|` **raises** when the two do not meet. A union across a gap is two ranges, not one, and
+returning the hull silently is exactly how `Q1 and Q3` comes to include Q2. Call
+`q1.hull(q3)` when the widening is what you actually want.
 
 ## Configuration
 
@@ -280,6 +307,28 @@ diags[0].reason         # "read 'March 2024' but not 'to date', which changes th
 ```
 
 Filter on `confidence` when a wrong range is worse than no range.
+
+Two common cases land here rather than in the rules, because the range that comes back is
+still the most useful one available — it just isn't the whole answer:
+
+```python
+parse("yesterday at 2pm")   # the whole day, confidence 0.5
+# "read 'yesterday' but not 'at 2pm', which changes the period"
+
+parse("Q1 and Q3")          # Apr-Dec, confidence 0.5 — Q2 is in there too
+# "read 'Q1 and Q3' as one span, which also covers 2025-07-01 to 2025-10-01 in between"
+```
+
+Times of day are out of scope, so a date beside a clock resolves to the day. That is worth
+saying out loud rather than answering a question about 2pm with 24 hours. **Only a
+preposition counts** — `at`, `by`, `around`. A clock sitting straight against a date is part
+of a timestamp (`2024-03-15T14:30:00Z`, `Mar 15 14:30:00`), where the day *is* the intended
+answer, so log lines stay at full confidence.
+
+`and` joins two periods into one span, which is right for `Q1 and Q2` and for
+`between March and June` — adjacent periods are how people write a range. Only a **gap**
+between them makes the hull a guess, and an explicit `between` or `from … to` settles it
+either way.
 
 ### Precision on running prose
 

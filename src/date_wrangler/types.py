@@ -28,6 +28,20 @@ class Grain(str, Enum):
     YEAR = "year"
 
 
+#: Grains from finest to coarsest. The ordering is a fact about the enum, so it lives here
+#: rather than with any one caller: a range joining two resolutions takes the coarser, and
+#: a range intersecting two takes the finer.
+_GRAIN_ORDER: tuple[Grain, ...] = (
+    Grain.DAY, Grain.WEEK, Grain.MONTH, Grain.QUARTER, Grain.HALF, Grain.YEAR,
+)
+_GRAIN_RANK: dict[Grain, int] = {g: i for i, g in enumerate(_GRAIN_ORDER)}
+
+
+def grain_rank(g: Grain) -> int:
+    """Position from finest (``DAY`` = 0) to coarsest (``YEAR``)."""
+    return _GRAIN_RANK[g]
+
+
 class Basis(str, Enum):
     """Which calendar a period was measured against."""
 
@@ -102,6 +116,40 @@ def _advance(day: date, grain: Grain, periods: int) -> date:
         ) from exc
 
 
+# An unbounded start is -infinity and an unbounded end is +infinity, so which of the four
+# helpers to reach for depends on whether you are narrowing or widening. Spelling them out
+# separately beats one clever function, because getting the infinity backwards turns
+# "since March" into "nothing at all" without raising anything.
+
+
+def _later(a: date | None, b: date | None) -> date | None:
+    """The later of two starts, where None means -infinity."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return max(a, b)
+
+
+def _earlier(a: date | None, b: date | None) -> date | None:
+    """The earlier of two ends, where None means +infinity."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return min(a, b)
+
+
+def _earlier_start(a: date | None, b: date | None) -> date | None:
+    """The earlier of two starts. Unbounded wins, since nothing precedes -infinity."""
+    return None if a is None or b is None else min(a, b)
+
+
+def _later_end(a: date | None, b: date | None) -> date | None:
+    """The later of two ends. Unbounded wins, since nothing follows +infinity."""
+    return None if a is None or b is None else max(a, b)
+
+
 @dataclass(frozen=True, slots=True)
 class DateRange:
     """A half-open date interval ``[start, end)``, either end optionally unbounded."""
@@ -147,9 +195,12 @@ class DateRange:
 
     # ---- operations ---------------------------------------------------------
 
-    def __contains__(self, day: date) -> bool:
-        below = self.start is not None and day < self.start
-        above = self.end is not None and day >= self.end
+    def __contains__(self, item: date | DateRange) -> bool:
+        """``day in r``, and also ``smaller in bigger`` for a whole range."""
+        if isinstance(item, DateRange):
+            return self.covers(item)
+        below = self.start is not None and item < self.start
+        above = self.end is not None and item >= self.end
         return not (below or above)
 
     def clamp(self, lo: date | None = None, hi: date | None = None) -> DateRange:
@@ -166,6 +217,130 @@ class DateRange:
         if start is not None and end is not None and end < start:
             end = start
         return replace(self, start=start, end=end)
+
+    # ---- algebra ------------------------------------------------------------
+    #
+    # An unbounded end is treated as an infinity throughout, which is the only reading that
+    # makes "since March" compose. Results take the finer grain, because an intersection is
+    # never longer than the shorter side, and a calendar-neutral basis and anchor where the
+    # two disagree -- so `a & b` and `b & a` are the same range in every field.
+
+    def _meta(self, other: DateRange) -> tuple[Grain, Basis, Anchor]:
+        grain = min(self.grain, other.grain, key=grain_rank)
+        basis = self.basis if self.basis is other.basis else Basis.CALENDAR
+        anchor = self.anchor if self.anchor is other.anchor else Anchor.ANCHORED
+        return grain, basis, anchor
+
+    def overlaps(self, other: DateRange) -> bool:
+        """Whether the two share at least one day. An empty range overlaps nothing."""
+        if self.is_empty or other.is_empty:
+            return False
+        starts_before_other_ends = (
+            self.start is None or other.end is None or self.start < other.end
+        )
+        other_starts_before_self_ends = (
+            other.start is None or self.end is None or other.start < self.end
+        )
+        return starts_before_other_ends and other_starts_before_self_ends
+
+    def covers(self, other: DateRange) -> bool:
+        """Whether every day of ``other`` is also in this range."""
+        if other.is_empty:
+            return True
+        after_start = self.start is None or (
+            other.start is not None and other.start >= self.start
+        )
+        before_end = self.end is None or (other.end is not None and other.end <= self.end)
+        return after_start and before_end
+
+    def intersection(self, other: DateRange) -> DateRange:
+        """The days in both. Disjoint ranges give an empty range, not an error.
+
+            >>> q1 = DateRange(date(2024, 1, 1), date(2024, 4, 1), Grain.QUARTER)
+            >>> since = DateRange(date(2024, 2, 1), None, Grain.MONTH, mod=Mod.SINCE)
+            >>> str(q1 & since)
+            '[2024-02-01, 2024-04-01)'
+
+        This is the general form of :meth:`clamp`, which is intersection against a window
+        you write out by hand. Use ``is_empty`` on the result rather than checking for
+        ``None``, so a chain of intersections keeps working.
+        """
+        start = _later(self.start, other.start)
+        end = _earlier(self.end, other.end)
+        if start is not None and end is not None and end < start:
+            end = start  # disjoint: an empty range, positioned where they failed to meet
+        grain, basis, anchor = self._meta(other)
+        return DateRange(start, end, grain, basis, None, anchor)
+
+    def hull(self, other: DateRange) -> DateRange:
+        """The smallest range covering both, gap included.
+
+        Named rather than spelled ``|`` because for ranges that do not meet this is a
+        deliberate widening: the hull of Q1 and Q3 quietly contains Q2. :meth:`union`
+        refuses that case; this one is how you ask for it anyway.
+        """
+        if self.is_empty:
+            return other
+        if other.is_empty:
+            return self
+        grain, basis, anchor = self._meta(other)
+        return DateRange(
+            _earlier_start(self.start, other.start),
+            _later_end(self.end, other.end),
+            grain,
+            basis,
+            None,
+            anchor,
+        )
+
+    def union(self, other: DateRange) -> DateRange:
+        """The two joined into one range. Raises if they neither overlap nor touch.
+
+        A union that spans a gap is not a range, it is two of them, and quietly returning
+        the hull is how "Q1 and Q3" comes to include Q2. Call :meth:`hull` if the widening
+        is what you want, or keep the two ranges apart.
+        """
+        if self.is_empty:
+            return other
+        if other.is_empty:
+            return self
+        if not (self.overlaps(other) or self._touches(other)):
+            raise ValueError(
+                f"{self} and {other} do not meet, so their union is not a single range; "
+                f"use hull() to widen over the gap"
+            )
+        return self.hull(other)
+
+    def _touches(self, other: DateRange) -> bool:
+        """Whether the two are adjacent with no day between. Half-open makes this exact."""
+        return (self.end is not None and self.end == other.start) or (
+            other.end is not None and other.end == self.start
+        )
+
+    def difference(self, other: DateRange) -> list[DateRange]:
+        """The days in this range but not in ``other``.
+
+        Returns nothing when ``other`` swallows this range, one range when it bites off an
+        end, and *two* when it takes a piece out of the middle -- which is why this is a
+        list and not an operator.
+        """
+        if self.is_empty:
+            return []
+        if not self.overlaps(other):
+            return [self]
+        grain, basis, anchor = self._meta(other)
+        pieces = []
+        if other.start is not None and (self.start is None or self.start < other.start):
+            pieces.append(DateRange(self.start, other.start, grain, basis, None, anchor))
+        if other.end is not None and (self.end is None or other.end < self.end):
+            pieces.append(DateRange(other.end, self.end, grain, basis, None, anchor))
+        return pieces
+
+    def __and__(self, other: DateRange) -> DateRange:
+        return self.intersection(other)
+
+    def __or__(self, other: DateRange) -> DateRange:
+        return self.union(other)
 
     def shift(self, periods: int, grain: Grain | None = None) -> DateRange:
         """This range moved by ``periods`` whole units, for period-over-period comparison.

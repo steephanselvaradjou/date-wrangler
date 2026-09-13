@@ -20,7 +20,7 @@ from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
 from .rules import RULES, Rule
 from .spec import Spec
-from .types import DateMatch, DateRange, Grain, Mod
+from .types import DateMatch, DateRange, Mod, grain_rank
 from .vocab import (
     FUTURE_WORDS,
     MONTH_NAMES,
@@ -183,8 +183,21 @@ _WEAK_RULES = frozenset({"month", "bare_year", "weekday", "ordinal_day"})
 #: Words that change which days a period covers. Left unread beside a match, the answer is
 #: not the one the writer asked for -- "March 2024 to date" is not all of March 2024. We
 #: cannot resolve every combination, but we can refuse to pretend we read it.
+#: A clock time. It has to carry am/pm or a colon: a bare number beside a date is far more
+#: often a day or a year, and "15 Mar 24" must not read its own year as four in the morning.
+_CLOCK = (
+    r"(?:\d{1,2}(?::\d{2})?\s*(?:a\.m\.|p\.m\.|am|pm)|\d{1,2}:\d{2}|noon|midday|midnight)"
+)
+
 _QUALIFIER_AFTER = re.compile(
-    r"^\W*(?:to\s+date|ago|onwards?|or\s+(?:later|earlier)|ytd|mtd|qtd)\b", re.IGNORECASE
+    r"^\W*(?:to\s+date|ago|onwards?|or\s+(?:later|earlier)|ytd|mtd|qtd)\b"
+    # "yesterday at 2pm" is a moment; the answer is a whole day. That is a wider period
+    # than the one asked for, so it may not be wrong, but it is certainly not complete.
+    # Only a preposition counts: a clock time sitting straight against a date is part of a
+    # timestamp -- "2024-03-15T14:30:00Z", "Mar 15 14:30:00" -- where the day is the
+    # documented answer and nothing was overlooked.
+    rf"|^\W*(?:at|by|around|@)\s*{_CLOCK}(?!\w)",
+    re.IGNORECASE,
 )
 _QUALIFIER_BEFORE = re.compile(
     r"\b(?:first\s+half|second\s+half|latter\s+half|beginning|start|early|middle|mid|late|"
@@ -192,7 +205,14 @@ _QUALIFIER_BEFORE = re.compile(
     # "a year from March" is March next year, not March. Only "from now"/"from today"
     # are actually resolved, so any other tail here is a period we did not compute.
     r"|\b(?:a|an|\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
-    r"(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+\W*$",
+    r"(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+\W*$"
+    # The same clock time, on the other side: "at 3pm on Tuesday", "between 2pm and 4pm
+    # yesterday".
+    rf"|\b(?:at|by|around)\s+{_CLOCK}(?:\s+(?:on|of))?\s*\W*$"
+    # Two clocks first, so "between 2pm and 4pm yesterday" reports the window it dropped
+    # rather than just the "4pm" nearest the match. Leftmost wins, so order is enough.
+    rf"|\b{_CLOCK}\s*(?:and|to|till|until|-)\s*{_CLOCK}\s*\W*$"
+    rf"|\b{_CLOCK}\s*\W*$",
     re.IGNORECASE,
 )
 
@@ -698,17 +718,40 @@ def _merge(
     lead = _RANGE_LEAD.search(before)
     if lead:
         start = window + lead.start()
-    return _emit(merged, start, b.end, norm, min(a.spec.confidence, b.spec.confidence))
+
+    confidence = min(a.spec.confidence, b.spec.confidence)
+    # "Q1 and Q3" is two periods, not one span. Read as a hull it quietly swallows Q2 --
+    # a quarter of data nobody asked about, returned at full confidence. Joining is still
+    # the right default, because "Q1 and Q2" does mean Apr-Sep and adjacent periods are how
+    # people write a span; it is only a gap between them that makes the hull a guess.
+    #
+    # An explicit lead-in settles it either way: "between March and June" is a span by
+    # construction, and so is "from March to June".
+    if (
+        lead is None
+        and ra.end is not None
+        and rb.start is not None
+        and ra.end < rb.start
+        and body[a.end : b.start].strip().lower() == "and"
+    ):
+        confidence = min(confidence, 0.5)
+        if diags is not None:
+            diags.append(
+                Diagnostic(
+                    body[start : b.end],
+                    (start, b.end),
+                    "range",
+                    f"read {body[start : b.end]!r} as one span, which also covers "
+                    f"{ra.end.isoformat()} to {rb.start.isoformat()} in between; "
+                    "write 'to' for a span, or separate the periods with a comma",
+                )
+            )
+    return _emit(merged, start, b.end, norm, confidence)
 
 
-#: Coarsest grain wins when a range joins two resolutions.
-_GRAIN_ORDER: tuple[Grain, ...] = (
-    Grain.DAY, Grain.WEEK, Grain.MONTH, Grain.QUARTER, Grain.HALF, Grain.YEAR,
-)
-
-
-def _grain_rank(g: Grain) -> int:
-    return _GRAIN_ORDER.index(g)
+#: Coarsest grain wins when a range joins two resolutions. The ordering itself lives beside
+#: the enum in :mod:`.types`, so joining and intersecting cannot drift apart.
+_grain_rank = grain_rank
 
 
 def parse_one(
