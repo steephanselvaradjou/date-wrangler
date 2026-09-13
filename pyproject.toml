@@ -35,7 +35,7 @@ classifiers = [
 ]
 
 # Effectively no runtime dependencies: the one use of python-dateutil (relativedelta) is
-# replaced by ~15 lines of month arithmetic in calendars.py, which keeps installs fast and
+# replaced by ~15 lines of month arithmetic in arith.py, which keeps installs fast and
 # avoids dragging a transitive version constraint into every consumer.
 #
 # The exception is Windows, which ships no system timezone database, so the stdlib's

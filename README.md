@@ -104,6 +104,39 @@ the caller's business, so you opt in explicitly:
 r.clamp(hi=date.today() + timedelta(days=1))
 ```
 
+### Grouping and comparing
+
+Parsing gives you one range. A report needs one row per bucket, and a number to compare it
+against. Both are date arithmetic that is easy to get quietly wrong by hand, so the range
+does them:
+
+```python
+today = date(2025, 9, 4)
+r = parse_one("last 3 months", today=today).range
+
+for bucket in r.split(Grain.MONTH):
+    print(bucket, bucket.sql("order_date"))
+# [2025-06-01, 2025-07-01)  order_date >= '2025-06-01' AND order_date < '2025-07-01'
+# [2025-07-01, 2025-08-01)  ...
+# [2025-08-01, 2025-09-01)  ...
+
+q = parse_one("Q1 FY25", today=today).range   # 2024-04-01 .. 2024-07-01
+q.shift(-1)                                   # previous quarter: 2024-01-01 .. 2024-04-01
+q.shift(-1, Grain.YEAR)                       # same quarter last year: 2023-04-01 .. 2023-07-01
+```
+
+`shift` moves by whole units of the range's own `grain`, both ends together, so the length
+survives. That is the part hand-rolled arithmetic loses: `- timedelta(days=90)` drifts
+because quarters are 90 to 92 days, `- timedelta(days=365)` breaks across a leap year, and
+`start.replace(year=...)` raises on 29 February. Basis comes along too — a fiscal Q1 starts
+on a fiscal boundary already, so one step back lands on fiscal Q4 of the year before.
+
+`split` tiles the range exactly: each bucket's `end` is the next one's `start`, no gap and
+no day counted twice. The grid starts at `start` rather than at a calendar boundary, so a
+fiscal year splits into its own fiscal quarters without being told which calendar it is on,
+and a range that begins mid-unit never widens outwards to cover days you did not ask for.
+Only the final bucket can be short, and `bucket.days` says by how much.
+
 ## Configuration
 
 Config is passed per call and never read from a module global, so one process can serve

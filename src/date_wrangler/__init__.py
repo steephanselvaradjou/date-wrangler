@@ -25,7 +25,7 @@ from .resolve import UnresolvableSpec
 from .types import Anchor, Basis, DateMatch, DateRange, Grain, Mod
 from .wrangler import Diagnostic, diagnose, parse, parse_one, substitute
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     # Values
