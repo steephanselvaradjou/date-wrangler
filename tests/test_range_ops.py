@@ -380,3 +380,220 @@ def test_shift_is_reversible_and_never_inverts(r, grain, periods):
     # come back to exactly where it began; everything else is.
     if r.start.day <= 28 and r.end.day <= 28:
         assert moved.shift(-periods, grain) == r
+
+
+# ---------------------------------------------------------------------------
+# Algebra: overlap, intersection, union, difference
+#
+# An unbounded end is an infinity throughout. Getting that backwards turns "since March"
+# into "nothing at all" without raising, so most of these pin the unbounded case.
+# ---------------------------------------------------------------------------
+
+Q1 = DateRange(date(2024, 1, 1), date(2024, 4, 1), Grain.QUARTER)
+Q2 = DateRange(date(2024, 4, 1), date(2024, 7, 1), Grain.QUARTER)
+Q3 = DateRange(date(2024, 7, 1), date(2024, 10, 1), Grain.QUARTER)
+FEB = DateRange(date(2024, 2, 1), date(2024, 3, 1), Grain.MONTH)
+SINCE_FEB = DateRange(date(2024, 2, 1), None, Grain.MONTH, mod=Mod.SINCE)
+UNTIL_MAR = DateRange(None, date(2024, 3, 1), Grain.MONTH, mod=Mod.UNTIL)
+
+
+def test_overlaps():
+    assert Q1.overlaps(FEB) and FEB.overlaps(Q1)
+    assert not Q1.overlaps(Q3)
+    assert Q1.overlaps(SINCE_FEB) and Q1.overlaps(UNTIL_MAR)
+
+
+def test_adjacent_ranges_do_not_overlap():
+    """Half-open is what makes this exact: Q1 ends on the day Q2 starts and they share
+    no day at all."""
+    assert Q1.end == Q2.start
+    assert not Q1.overlaps(Q2)
+
+
+def test_an_empty_range_overlaps_nothing():
+    empty = DateRange(date(2024, 2, 1), date(2024, 2, 1), Grain.DAY)
+    assert not empty.overlaps(Q1)
+    assert not Q1.overlaps(empty)
+
+
+def test_covers_and_in():
+    assert Q1.covers(FEB) and not FEB.covers(Q1)
+    assert FEB in Q1 and Q1 not in FEB
+    assert date(2024, 2, 5) in Q1  # a day still works
+    assert Q1.covers(Q1)
+    assert SINCE_FEB.covers(Q3) and not Q3.covers(SINCE_FEB)
+
+
+def test_intersection():
+    assert spans([Q1 & FEB]) == [(date(2024, 2, 1), date(2024, 3, 1))]
+    assert spans([Q1 & SINCE_FEB]) == [(date(2024, 2, 1), date(2024, 4, 1))]
+    assert spans([SINCE_FEB & UNTIL_MAR]) == [(date(2024, 2, 1), date(2024, 3, 1))]
+
+
+def test_intersecting_disjoint_ranges_gives_an_empty_range_not_an_error():
+    """Returning None would break a chain of intersections. `is_empty` is the check."""
+    gap = Q1 & Q3
+    assert gap.is_empty and gap.days == 0
+    assert (Q1 & Q3 & FEB).is_empty
+
+
+def test_intersection_is_the_general_form_of_clamp():
+    window = DateRange(date(2024, 2, 15), date(2024, 6, 1), Grain.DAY)
+    by_clamp = SINCE_FEB.clamp(lo=window.start, hi=window.end)
+    assert (SINCE_FEB & window).start == by_clamp.start
+    assert (SINCE_FEB & window).end == by_clamp.end
+
+
+def test_intersection_is_symmetric_in_every_field():
+    assert (Q1 & FEB) == (FEB & Q1)
+    assert (Q1 & SINCE_FEB) == (SINCE_FEB & Q1)
+
+
+def test_results_take_the_finer_grain_and_drop_the_mod():
+    """An intersection is never longer than the shorter side, so claiming the coarser grain
+    would overstate it. The mod described the range it came from, not this one."""
+    assert (Q1 & FEB).grain is Grain.MONTH
+    assert (Q1 & SINCE_FEB).mod is None
+
+
+def test_union_of_touching_or_overlapping_ranges():
+    assert spans([Q1 | Q2]) == [(date(2024, 1, 1), date(2024, 7, 1))]
+    assert spans([Q1 | FEB]) == [(date(2024, 1, 1), date(2024, 4, 1))]
+    assert (Q1 | SINCE_FEB).end is None
+
+
+def test_union_refuses_to_span_a_gap():
+    """The whole point. A union across a gap is two ranges, and silently returning the hull
+    is how "Q1 and Q3" comes to include Q2."""
+    with pytest.raises(ValueError, match="do not meet"):
+        Q1 | Q3
+
+
+def test_hull_spans_the_gap_because_you_asked_it_to():
+    assert spans([Q1.hull(Q3)]) == [(date(2024, 1, 1), date(2024, 10, 1))]
+    assert Q1.hull(Q3) == Q3.hull(Q1)
+
+
+def test_difference_takes_a_bite_out_of_the_middle():
+    assert spans(Q1.difference(FEB)) == [
+        (date(2024, 1, 1), date(2024, 2, 1)),
+        (date(2024, 3, 1), date(2024, 4, 1)),
+    ]
+
+
+def test_difference_off_an_end_gives_one_range():
+    assert spans(Q1.difference(DateRange(date(2024, 3, 1), date(2024, 5, 1), Grain.MONTH))) == [
+        (date(2024, 1, 1), date(2024, 3, 1))
+    ]
+
+
+def test_difference_of_a_covered_range_is_nothing():
+    assert FEB.difference(Q1) == []
+
+
+def test_difference_with_no_overlap_returns_the_range_untouched():
+    assert Q1.difference(Q3) == [Q1]
+    assert Q1.difference(Q2) == [Q1]  # adjacent, so nothing is removed
+
+
+def test_difference_keeps_an_unbounded_tail():
+    assert spans(SINCE_FEB.difference(FEB)) == [(date(2024, 3, 1), None)]
+
+
+def test_empty_ranges_are_identities():
+    empty = DateRange(date(2024, 5, 1), date(2024, 5, 1), Grain.DAY)
+    assert (Q1 | empty) == Q1 and (empty | Q1) == Q1
+    assert Q1.hull(empty) == Q1
+    assert empty.difference(Q1) == []
+    assert (Q1 & empty).is_empty
+
+
+@settings(max_examples=300, deadline=None)
+@given(a=BOUNDED, b=BOUNDED)
+def test_algebra_holds_for_arbitrary_ranges(a, b):
+    both = a & b
+    assert a.covers(both) and b.covers(both)
+    assert both.days <= min(a.days, b.days)
+    assert a.overlaps(b) == (not both.is_empty)
+
+    widest = a.hull(b)
+    assert widest.covers(a) and widest.covers(b)
+
+    # Taking the overlap away and putting it back accounts for every day of `a`.
+    assert sum(p.days for p in a.difference(b)) + both.days == a.days
+    assert all(not p.overlaps(b) for p in a.difference(b))
+
+
+# ---------------------------------------------------------------------------
+# Display and SQL
+#
+# The stored `end` is exclusive, which is right for querying and wrong for reading. These
+# pin the two places that distinction has to be handled rather than explained.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,shown",
+    [
+        ("today", "2025-09-04 (1 day)"),
+        ("yesterday", "2025-09-03 (1 day)"),
+        ("last month", "2025-08-01 .. 2025-08-31 (31 days)"),
+        ("last quarter", "2025-04-01 .. 2025-06-30 (91 days)"),
+        ("since March", "2025-03-01 onwards"),
+        ("before 2024", "up to 2023-12-31"),
+    ],
+)
+def test_printing_a_range_shows_the_last_day_inside_it(text, shown):
+    """"today" printing as "[2025-09-04, 2025-09-05)" reads as two days however correct the
+    bracket is, and that is what people see."""
+    assert str(rng(text)) == shown
+
+
+def test_printing_the_degenerate_cases():
+    assert str(DateRange(date(2025, 1, 1), date(2025, 1, 1), Grain.DAY)) == "empty at 2025-01-01"
+    assert str(DateRange(None, None, Grain.DAY)) == "any date"
+
+
+def test_repr_still_shows_the_stored_fields():
+    """Debugging needs the exclusive end; reading does not."""
+    assert "datetime.date(2024, 7, 1)" in repr(rng("Q1 FY25"))
+
+
+def test_sql_closes_the_upper_bound_against_the_next_day_by_default():
+    q2 = DateRange(date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER)
+    assert q2.sql("order_date") == (
+        "order_date >= '2025-04-01' AND order_date < '2025-07-01'"
+    )
+
+
+def test_sql_inclusive_closes_against_the_last_day():
+    """For a DATE column, where every value is midnight and the two forms agree."""
+    q2 = DateRange(date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER)
+    assert q2.sql("order_date", inclusive=True) == (
+        "order_date >= '2025-04-01' AND order_date <= '2025-06-30'"
+    )
+
+
+def test_sql_inclusive_changes_nothing_without_an_upper_bound():
+    since = rng("since March")
+    assert since.sql("d") == since.sql("d", inclusive=True) == "d >= '2025-03-01'"
+    assert DateRange(None, None, Grain.DAY).sql("d", inclusive=True) == "TRUE"
+
+
+def test_both_sql_forms_select_the_same_rows_from_a_date_column():
+    """The claim that justifies offering `inclusive` at all: on a column with no time
+    component the two predicates are equivalent. On a TIMESTAMP column they are not, which
+    is why it is not the default."""
+    import sqlite3
+
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE d (day DATE)")
+    db.executemany(
+        "INSERT INTO d VALUES (?)",
+        [(day.isoformat(),) for day in DateRange(
+            date(2025, 3, 1), date(2025, 8, 1), Grain.DAY
+        ).iter_days()],
+    )
+    q2 = DateRange(date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER)
+    count = lambda sql: db.execute(f"SELECT count(*) FROM d WHERE {sql}").fetchone()[0]  # noqa: E731
+    assert count(q2.sql("day")) == count(q2.sql("day", inclusive=True)) == 91

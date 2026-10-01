@@ -336,3 +336,101 @@ def test_qualified_periods_survive_a_round_trip_through_parse():
             assert m is not None, (text, cfg.anchor)
             assert m.range.start is not None and m.range.end is not None
             assert m.range.start < m.range.end, (text, m.range)
+
+
+# ---------------------------------------------------------------------------
+# Times of day
+#
+# A date carries a day; a clock carries a moment inside it. The library answers with the
+# day either way, which is fine -- but it was doing so at full confidence with nothing
+# said, which is the same silent-partial-read this file exists to stop.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,dropped",
+    [
+        ("yesterday at 2pm", "at 2pm"),
+        ("yesterday at 14:30", "at 14:30"),
+        ("last Monday at 9am", "at 9am"),
+        ("due by 5pm on Friday", "by 5pm on"),
+        ("the meeting at 3pm on Tuesday", "at 3pm on"),
+        ("call at noon on Friday", "at noon on"),
+        ("between 2pm and 4pm yesterday", "2pm and 4pm"),
+    ],
+)
+def test_a_time_of_day_beside_a_date_is_reported_not_ignored(text, dropped):
+    matches, diags = diagnose(text, today=TODAY)
+    assert matches, f"{text!r} found no date at all"
+    assert matches[0].confidence <= 0.5, f"{text!r} answered with a whole day, confidently"
+    assert any(dropped in d.reason for d in diags), [d.reason for d in diags]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "2024-03-15T14:30:00Z",
+        "2024-03-15T14:30:00+05:30",
+        "[2024-03-15 14:30:00] INFO started",
+        "Mar 15 14:30:00 host sshd[1234]: accepted",
+        "Last-Modified: Wed, 15 Mar 2024 14:30:00 GMT",
+        "2024-03-15 14:30",
+    ],
+)
+def test_a_timestamp_is_a_format_not_an_unread_qualifier(text):
+    """A clock sitting straight against a date is part of a timestamp, and the day is the
+    documented answer -- nothing was overlooked, so nothing is flagged. Only a preposition
+    turns a time into a qualifier. Without this line every ISO instant in a log file would
+    come back at half confidence."""
+    matches, _ = diagnose(text, today=TODAY)
+    assert matches and matches[0].confidence == 1.0
+
+
+def test_a_bare_two_digit_year_is_not_read_as_a_clock():
+    """"15 Mar 24" ends in a number that a looser clock pattern would claim as 24:00."""
+    m = parse_one("15 Mar 24", today=TODAY)
+    assert m is not None and m.confidence == 1.0
+    assert m.range.start == date(2024, 3, 15)
+
+
+# ---------------------------------------------------------------------------
+# "and" between two periods that do not meet
+# ---------------------------------------------------------------------------
+
+
+def test_and_joining_adjacent_periods_is_a_span_and_stays_confident():
+    """This is why "and" is a connector at all: two touching periods are how people write
+    a span, and the hull is exactly right."""
+    m = parse_one("Q1 and Q2", today=TODAY)
+    assert m is not None and m.confidence == 1.0
+    assert (m.range.start, m.range.end) == (date(2025, 4, 1), date(2025, 10, 1))
+
+
+@pytest.mark.parametrize(
+    "text,gap",
+    [
+        ("Q1 and Q3", "2025-07-01 to 2025-10-01"),
+        ("March and June", "2025-04-01 to 2025-06-01"),
+        ("15 March and 17 March", "2025-03-16 to 2025-03-17"),
+    ],
+)
+def test_and_joining_periods_with_a_gap_is_flagged(text, gap):
+    """Read as one span, "Q1 and Q3" quietly returns Q2 as well -- a quarter of data nobody
+    asked for, previously at full confidence. The range is unchanged; the claim about it
+    is what was wrong."""
+    matches, diags = diagnose(text, today=TODAY)
+    assert matches and matches[0].confidence <= 0.5
+    assert any(gap in d.reason for d in diags), [d.reason for d in diags]
+
+
+@pytest.mark.parametrize("text", ["between March and June", "from March to June", "Q1 to Q3"])
+def test_an_explicit_span_lead_in_settles_it(text):
+    """"between X and Y" is a span by construction, so the gap is not a guess."""
+    m = parse_one(text, today=TODAY)
+    assert m is not None and m.confidence == 1.0
+
+
+def test_a_comma_separated_list_still_comes_back_as_separate_periods():
+    found = parse("Q1, Q2 and Q3", today=TODAY)
+    assert len(found) == 3
+    assert all(m.confidence == 1.0 for m in found)
