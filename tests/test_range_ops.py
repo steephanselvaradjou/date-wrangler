@@ -522,3 +522,78 @@ def test_algebra_holds_for_arbitrary_ranges(a, b):
     # Taking the overlap away and putting it back accounts for every day of `a`.
     assert sum(p.days for p in a.difference(b)) + both.days == a.days
     assert all(not p.overlaps(b) for p in a.difference(b))
+
+
+# ---------------------------------------------------------------------------
+# Display and SQL
+#
+# The stored `end` is exclusive, which is right for querying and wrong for reading. These
+# pin the two places that distinction has to be handled rather than explained.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,shown",
+    [
+        ("today", "2025-09-04 (1 day)"),
+        ("yesterday", "2025-09-03 (1 day)"),
+        ("last month", "2025-08-01 .. 2025-08-31 (31 days)"),
+        ("last quarter", "2025-04-01 .. 2025-06-30 (91 days)"),
+        ("since March", "2025-03-01 onwards"),
+        ("before 2024", "up to 2023-12-31"),
+    ],
+)
+def test_printing_a_range_shows_the_last_day_inside_it(text, shown):
+    """"today" printing as "[2025-09-04, 2025-09-05)" reads as two days however correct the
+    bracket is, and that is what people see."""
+    assert str(rng(text)) == shown
+
+
+def test_printing_the_degenerate_cases():
+    assert str(DateRange(date(2025, 1, 1), date(2025, 1, 1), Grain.DAY)) == "empty at 2025-01-01"
+    assert str(DateRange(None, None, Grain.DAY)) == "any date"
+
+
+def test_repr_still_shows_the_stored_fields():
+    """Debugging needs the exclusive end; reading does not."""
+    assert "datetime.date(2024, 7, 1)" in repr(rng("Q1 FY25"))
+
+
+def test_sql_closes_the_upper_bound_against_the_next_day_by_default():
+    q2 = DateRange(date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER)
+    assert q2.sql("order_date") == (
+        "order_date >= '2025-04-01' AND order_date < '2025-07-01'"
+    )
+
+
+def test_sql_inclusive_closes_against_the_last_day():
+    """For a DATE column, where every value is midnight and the two forms agree."""
+    q2 = DateRange(date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER)
+    assert q2.sql("order_date", inclusive=True) == (
+        "order_date >= '2025-04-01' AND order_date <= '2025-06-30'"
+    )
+
+
+def test_sql_inclusive_changes_nothing_without_an_upper_bound():
+    since = rng("since March")
+    assert since.sql("d") == since.sql("d", inclusive=True) == "d >= '2025-03-01'"
+    assert DateRange(None, None, Grain.DAY).sql("d", inclusive=True) == "TRUE"
+
+
+def test_both_sql_forms_select_the_same_rows_from_a_date_column():
+    """The claim that justifies offering `inclusive` at all: on a column with no time
+    component the two predicates are equivalent. On a TIMESTAMP column they are not, which
+    is why it is not the default."""
+    import sqlite3
+
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE d (day DATE)")
+    db.executemany(
+        "INSERT INTO d VALUES (?)",
+        [(day.isoformat(),) for day in DateRange(
+            date(2025, 3, 1), date(2025, 8, 1), Grain.DAY
+        ).iter_days()],
+    )
+    q2 = DateRange(date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER)
+    count = lambda sql: db.execute(f"SELECT count(*) FROM d WHERE {sql}").fetchone()[0]  # noqa: E731
+    assert count(q2.sql("day")) == count(q2.sql("day", inclusive=True)) == 91

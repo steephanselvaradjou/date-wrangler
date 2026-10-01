@@ -67,6 +67,34 @@ feb.end_inclusive  # date(2024, 2, 29)
 on the 29th when `ts` is a timestamp. `ts < '2024-03-01'` does not. Half-open ranges also
 tile exactly — `Q1.end == Q2.start` — so they compose without off-by-one errors.
 
+**Why `<` and not the `<=` everyone writes.** SQL reads a bare `'2024-02-29'` as
+`'2024-02-29 00:00:00'` — the first *instant* of the day, not the day. So on a `TIMESTAMP`
+or `DATETIME` column, `<=` keeps only rows stamped exactly midnight:
+
+| predicate, `ts` is a TIMESTAMP | rows found |
+|---|---|
+| `ts BETWEEN '2025-04-01' AND '2025-06-30'` | 1 |
+| `ts >= '2025-04-01' AND ts <= '2025-06-30'` | 1 |
+| `ts >= '2025-04-01' AND ts <  '2025-07-01'` | **4** |
+
+The two are identical on a `DATE` column, where every value *is* midnight. The library
+can't see which it is, and `<` is right for both. When you know it's a `DATE`:
+
+```python
+r.sql("order_date", inclusive=True)   # ... AND order_date <= '2025-06-30'
+```
+
+**Printing never shows the exclusive end.** `str(r)` reports the last day *inside* the
+range, because `[2025-09-04, 2025-09-05)` reads as two days however correct the bracket is:
+
+```python
+print(parse_one("today").range)          # 2025-09-04 (1 day)
+print(parse_one("last quarter").range)   # 2025-04-01 .. 2025-06-30 (91 days)
+print(parse_one("since March").range)    # 2025-03-01 onwards
+```
+
+`repr(r)` still shows the stored fields, exclusive `end` and all.
+
 ### Anchored or rolling
 
 `last month` has two defensible readings, and which one you get should not be an accident.
@@ -120,9 +148,9 @@ r = parse_one("last 3 months", today=today).range
 
 for bucket in r.split(Grain.MONTH):
     print(bucket, bucket.sql("order_date"))
-# [2025-06-01, 2025-07-01)  order_date >= '2025-06-01' AND order_date < '2025-07-01'
-# [2025-07-01, 2025-08-01)  ...
-# [2025-08-01, 2025-09-01)  ...
+# 2025-06-01 .. 2025-06-30 (30 days)  order_date >= '2025-06-01' AND order_date < '2025-07-01'
+# 2025-07-01 .. 2025-07-31 (31 days)  ...
+# 2025-08-01 .. 2025-08-31 (31 days)  ...
 
 q = parse_one("Q1 FY25", today=today).range   # 2024-04-01 .. 2024-07-01
 q.shift(-1)                                   # previous quarter: 2024-01-01 .. 2024-04-01

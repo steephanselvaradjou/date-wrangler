@@ -259,7 +259,7 @@ class DateRange:
             >>> q1 = DateRange(date(2024, 1, 1), date(2024, 4, 1), Grain.QUARTER)
             >>> since = DateRange(date(2024, 2, 1), None, Grain.MONTH, mod=Mod.SINCE)
             >>> str(q1 & since)
-            '[2024-02-01, 2024-04-01)'
+            '2024-02-01 .. 2024-03-31 (60 days)'
 
         This is the general form of :meth:`clamp`, which is intersection against a window
         you write out by hand. Use ``is_empty`` on the result rather than checking for
@@ -380,7 +380,9 @@ class DateRange:
 
             >>> r = DateRange(date(2025, 6, 1), date(2025, 9, 1), Grain.MONTH)
             >>> [str(b) for b in r.split(Grain.MONTH)]
-            ['[2025-06-01, 2025-07-01)', '[2025-07-01, 2025-08-01)', '[2025-08-01, 2025-09-01)']
+            ['2025-06-01 .. 2025-06-30 (30 days)',
+             '2025-07-01 .. 2025-07-31 (31 days)',
+             '2025-08-01 .. 2025-08-31 (31 days)']
 
         The buckets tile exactly -- each one's ``end`` is the next one's ``start`` -- so
         they partition the range with no gap and no overlap, and ``sql()`` on each is a
@@ -426,19 +428,57 @@ class DateRange:
             yield day
             day += timedelta(days=1)
 
-    def sql(self, column: str) -> str:
-        """A SQL predicate for this range, covering all four bound states."""
+    def sql(self, column: str, *, inclusive: bool = False) -> str:
+        """A SQL predicate for this range, covering all four bound states.
+
+        The default closes the upper bound with ``<`` against the day *after* the range,
+        which is correct whatever the column holds. ``inclusive=True`` closes it with
+        ``<=`` against the last day instead -- the way the predicate is usually written by
+        hand, and **only correct when the column is a DATE**:
+
+            >>> q2 = DateRange(date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER)
+            >>> q2.sql("order_date")
+            "order_date >= '2025-04-01' AND order_date < '2025-07-01'"
+            >>> q2.sql("order_date", inclusive=True)
+            "order_date >= '2025-04-01' AND order_date <= '2025-06-30'"
+
+        SQL reads a bare ``'2025-06-30'`` as ``'2025-06-30 00:00:00'``, the first instant
+        of the day rather than the day. On a TIMESTAMP or DATETIME column ``<=`` therefore
+        keeps only rows stamped exactly midnight and silently drops the rest of the last
+        day -- which is most of it. Pass ``inclusive=True`` only when you know the column
+        carries no time.
+        """
         parts = []
         if self.start is not None:
             parts.append(f"{column} >= '{self.start.isoformat()}'")
         if self.end is not None:
-            parts.append(f"{column} < '{self.end.isoformat()}'")
+            if inclusive:
+                last = self.end_inclusive
+                assert last is not None
+                parts.append(f"{column} <= '{last.isoformat()}'")
+            else:
+                parts.append(f"{column} < '{self.end.isoformat()}'")
         return " AND ".join(parts) if parts else "TRUE"
 
     def __str__(self) -> str:
-        lo = self.start.isoformat() if self.start else "-inf"
-        hi = self.end.isoformat() if self.end else "+inf"
-        return f"[{lo}, {hi})"
+        """The range as a person reads it, with the last day *inside* it.
+
+        ``repr`` still shows the stored fields, exclusive ``end`` and all. This is the one
+        people see, and the half-open form read as an off-by-one every time: "today"
+        printing as ``[2025-09-04, 2025-09-05)`` looks like two days however correct the
+        bracket is.
+        """
+        if self.is_empty:
+            assert self.start is not None
+            return f"empty at {self.start.isoformat()}"
+        last = self.end_inclusive
+        if self.start is None:
+            return "any date" if last is None else f"up to {last.isoformat()}"
+        if last is None:
+            return f"{self.start.isoformat()} onwards"
+        if last == self.start:
+            return f"{self.start.isoformat()} (1 day)"
+        return f"{self.start.isoformat()} .. {last.isoformat()} ({self.days} days)"
 
 
 @dataclass(frozen=True, slots=True)
