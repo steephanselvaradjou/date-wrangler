@@ -23,9 +23,9 @@ from .calendars import (
     year_range,
 )
 from .config import WranglerConfig
-from .vocab import WEEKDAY_DISPLAY
 from .spec import Kind, Part, Spec
 from .types import Anchor, Basis, DateRange, Grain, Mod
+from .vocab import WEEKDAY_DISPLAY
 
 __all__ = ["resolve", "default_year_for", "UnresolvableSpec"]
 

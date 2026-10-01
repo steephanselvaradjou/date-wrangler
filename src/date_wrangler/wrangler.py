@@ -804,14 +804,32 @@ def substitute(
     tz: tzinfo | None = None,
     config: WranglerConfig = DEFAULT_CONFIG,
     formatter: Callable[[DateRange], str] | None = None,
+    min_confidence: float = 0.0,
 ) -> str:
-    """Rewrite every date expression in ``text``. Only the matched phrase changes."""
+    """Rewrite every date expression in ``text``. Only the matched phrase changes.
+
+    ``min_confidence`` leaves anything below it exactly as the writer typed it. Raise it
+    whenever the output will be read as fact -- by a person or by a model -- because this
+    is the one function that turns a flagged guess into a confident sentence:
+
+        >>> substitute("revenue Q1 and Q3", today=today)
+        'revenue April 2026 to December 2026'          # Q2 is in there, unremarked
+        >>> substitute("revenue Q1 and Q3", today=today, min_confidence=0.9)
+        'revenue Q1 and Q3'
+
+    Both of those phrases come back from :func:`diagnose` at confidence 0.5 with an
+    explanation. Rewriting them discards that explanation and leaves prose that reads as
+    settled, which is worse than leaving the original words alone. The default stays 0.0
+    so existing callers are unaffected; a future major version will raise it.
+    """
     from .format import format_range
 
     render = formatter or format_range
     found = parse(text, today=today, tz=tz, config=config)
     out = text
     for match in reversed(found):
+        if match.confidence < min_confidence:
+            continue
         lo, hi = match.span
         out = out[:lo] + render(match.range) + out[hi:]
     return out
