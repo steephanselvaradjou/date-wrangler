@@ -27,6 +27,7 @@ def _build_config(args: argparse.Namespace) -> WranglerConfig:
         bare_period_basis=Basis(args.basis),
         anchor=Anchor(args.anchor),
         date_order=DateOrder(args.date_order),
+        week_starts_on=args.week_starts_on,
         strictness=args.strictness,
     )
 
@@ -49,6 +50,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="what 'last month' means (default anchored)")
     p.add_argument("--date-order", choices=[d.value for d in DateOrder], default="DMY")
     p.add_argument("--strictness", choices=["strict", "balanced", "greedy"], default="balanced")
+    p.add_argument("--week-starts-on", type=int, default=0, metavar="D",
+                   help="0=Monday (default) through 6=Sunday")
+    p.add_argument("--min-confidence", type=float, default=0.0, metavar="C",
+                   help="drop matches below this, e.g. 0.9 to exclude flagged reads")
     p.add_argument("--json", action="store_true", help="emit JSON instead of a table")
     p.add_argument("--version", action="version", version=f"date-wrangler {__version__}")
     args = p.parse_args(argv)
@@ -75,24 +80,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     matches, diags = diagnose(text, today=today, tz=tz, config=cfg)
+    # Filtering here rather than inside diagnose keeps the diagnostics: a caller asking
+    # for confident matches only still wants to be told what was dropped and why.
+    matches = [m for m in matches if m.confidence >= args.min_confidence]
 
     if args.json:
         print(json.dumps(
             {
                 "text": text,
                 "matches": [
-                    {
-                        "text": m.text,
-                        "span": list(m.span),
-                        "start": m.range.start.isoformat() if m.range.start else None,
-                        "end": m.range.end.isoformat() if m.range.end else None,
-                        "grain": m.range.grain.value,
-                        "basis": m.range.basis.value,
-                        "mod": m.range.mod.value if m.range.mod else None,
-                        "iso": format_iso(m.range),
-                        "confidence": m.confidence,
-                    }
-                    for m in matches
+                    {**m.to_dict(), "iso": format_iso(m.range)} for m in matches
                 ],
                 "diagnostics": [
                     {"text": d.text, "span": list(d.span), "rule": d.rule, "reason": d.reason}

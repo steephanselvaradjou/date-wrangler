@@ -118,6 +118,9 @@ _MOD_SUFFIXES: tuple[tuple[re.Pattern[str], Mod | None], ...] = (
 #: substitution ungrammatical ("between from April to September").
 _RANGE_LEAD = re.compile(r"\b(?:from|between|betwn|b/w)\s+$", re.IGNORECASE)
 
+#: An "and" anywhere in the text joining the two endpoints of a merged span.
+_AND_JOIN = re.compile(r"\band\b|&", re.IGNORECASE)
+
 #: Words that make a bare month or year read as a date rather than a noun.
 _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|between|before|after|"
@@ -750,7 +753,10 @@ def _merge(
         and ra.end is not None
         and rb.start is not None
         and ra.end < rb.start
-        and body[a.end : b.start].strip().lower() == "and"
+        # Anywhere in the join, not just the whole of it: a chain of three or more is
+        # merged from its first and last endpoints, so "Q1 and Q3 and last month" puts
+        # "and Q3 and" in between and an equality test saw no "and" at all.
+        and _AND_JOIN.search(body[a.end : b.start]) is not None
     ):
         confidence = min(confidence, 0.5)
         if diags is not None:

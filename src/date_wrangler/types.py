@@ -14,7 +14,7 @@ from enum import Enum
 
 from .arith import DateRangeOverflow, add_months
 
-__all__ = ["Grain", "Basis", "Anchor", "Mod", "DateRange", "DateMatch"]
+__all__ = ["Grain", "Basis", "Anchor", "Mod", "SqlDialect", "DateRange", "DateMatch"]
 
 
 class Grain(str, Enum):
@@ -114,6 +114,93 @@ def _advance(day: date, grain: Grain, periods: int) -> date:
             f"{day.isoformat()} {periods:+} {grain.value}(s) falls outside the supported "
             f"year range"
         ) from exc
+
+
+@dataclass(frozen=True, slots=True)
+class SqlDialect:
+    """How one engine spells an identifier and a date literal.
+
+    Two independent choices rather than a list of engine names, so an engine nobody here
+    has heard of is still expressible, and the presets are only shorthand for a pair.
+
+    ``literal`` matters more than it looks. A bare ``'2026-07-01'`` is implicitly converted
+    on most engines, but Oracle converts it with the session's ``NLS_DATE_FORMAT`` --
+    commonly ``DD-MON-RR`` -- so the same predicate raises there, or worse, parses to a
+    different date. ``quote`` matters for the ordinary reason: ``order``, ``date`` and
+    ``group`` are reserved words, and a column named with a space is unquotable text.
+    """
+
+    quote_open: str = ""
+    quote_close: str = ""
+    #: "plain" -> '2026-07-01'; "date" -> DATE '2026-07-01'; "cast" -> CAST(... AS DATE).
+    literal: str = "plain"
+
+    def __post_init__(self) -> None:
+        if self.literal not in ("plain", "date", "cast"):
+            raise ValueError(
+                f"SqlDialect.literal must be plain/date/cast, got {self.literal!r}"
+            )
+        if bool(self.quote_open) != bool(self.quote_close):
+            raise ValueError("SqlDialect needs both quote characters, or neither")
+
+    def identifier(self, column: str) -> str:
+        """``column``, quoted for this engine. A closing quote inside it is doubled."""
+        if not self.quote_open:
+            return column
+        inner = column.replace(self.quote_close, self.quote_close * 2)
+        return f"{self.quote_open}{inner}{self.quote_close}"
+
+    def date_literal(self, day: date) -> str:
+        iso = day.isoformat()
+        if self.literal == "date":
+            return f"DATE '{iso}'"
+        if self.literal == "cast":
+            return f"CAST('{iso}' AS DATE)"
+        return f"'{iso}'"
+
+    # ---- presets ------------------------------------------------------------
+
+    @classmethod
+    def plain(cls) -> SqlDialect:
+        """No quoting, bare literals. What :meth:`DateRange.sql` has always emitted."""
+        return cls()
+
+    @classmethod
+    def ansi(cls) -> SqlDialect:
+        return cls('"', '"', "date")
+
+    @classmethod
+    def postgres(cls) -> SqlDialect:
+        return cls('"', '"', "date")
+
+    @classmethod
+    def oracle(cls) -> SqlDialect:
+        return cls('"', '"', "date")
+
+    @classmethod
+    def snowflake(cls) -> SqlDialect:
+        return cls('"', '"', "date")
+
+    @classmethod
+    def tsql(cls) -> SqlDialect:
+        """SQL Server and Fabric. Brackets, and CAST rather than a DATE literal."""
+        return cls("[", "]", "cast")
+
+    @classmethod
+    def mysql(cls) -> SqlDialect:
+        return cls("`", "`", "plain")
+
+    @classmethod
+    def bigquery(cls) -> SqlDialect:
+        return cls("`", "`", "date")
+
+    @classmethod
+    def sqlite(cls) -> SqlDialect:
+        return cls('"', '"', "plain")
+
+
+#: What :meth:`DateRange.sql` uses when none is given: exactly the previous output.
+_PLAIN_SQL = SqlDialect()
 
 
 # An unbounded start is -infinity and an unbounded end is +infinity, so which of the four
@@ -428,7 +515,13 @@ class DateRange:
             yield day
             day += timedelta(days=1)
 
-    def sql(self, column: str, *, inclusive: bool = False) -> str:
+    def sql(
+        self,
+        column: str,
+        *,
+        inclusive: bool = False,
+        dialect: SqlDialect | None = None,
+    ) -> str:
         """A SQL predicate for this range, covering all four bound states.
 
         The default closes the upper bound with ``<`` against the day *after* the range,
@@ -447,18 +540,64 @@ class DateRange:
         keeps only rows stamped exactly midnight and silently drops the rest of the last
         day -- which is most of it. Pass ``inclusive=True`` only when you know the column
         carries no time.
+
+        ``dialect`` quotes the identifier and spells the literal for one engine. The
+        default quotes nothing and writes a bare string, which is what this method has
+        always emitted and what most engines accept:
+
+            >>> q2.sql("order date", dialect=SqlDialect.tsql())
+            "[order date] >= CAST('2025-04-01' AS DATE) AND ..."
         """
+        d = dialect if dialect is not None else _PLAIN_SQL
+        col = d.identifier(column)
         parts = []
         if self.start is not None:
-            parts.append(f"{column} >= '{self.start.isoformat()}'")
+            parts.append(f"{col} >= {d.date_literal(self.start)}")
         if self.end is not None:
             if inclusive:
                 last = self.end_inclusive
                 assert last is not None
-                parts.append(f"{column} <= '{last.isoformat()}'")
+                parts.append(f"{col} <= {d.date_literal(last)}")
             else:
-                parts.append(f"{column} < '{self.end.isoformat()}'")
+                parts.append(f"{col} < {d.date_literal(self.end)}")
         return " AND ".join(parts) if parts else "TRUE"
+
+    # ---- serialisation ------------------------------------------------------
+
+    def to_dict(self) -> dict[str, object]:
+        """A JSON-ready dict. Dates become ISO strings, enums their values.
+
+        ``end`` stays the exclusive bound, because this is the machine-facing form and
+        round-tripping has to be exact. ``end_inclusive`` is alongside it for anything
+        that will be shown to a person, so neither side has to recompute it.
+        """
+        return {
+            "start": self.start.isoformat() if self.start else None,
+            "end": self.end.isoformat() if self.end else None,
+            "end_inclusive": self.end_inclusive.isoformat() if self.end_inclusive else None,
+            "days": self.days,
+            "grain": self.grain.value,
+            "basis": self.basis.value,
+            "mod": self.mod.value if self.mod else None,
+            "anchor": self.anchor.value,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> DateRange:
+        """Rebuild a range from :meth:`to_dict`. Derived keys are ignored."""
+
+        def day(key: str) -> date | None:
+            raw = data.get(key)
+            return None if raw is None else date.fromisoformat(str(raw))
+
+        return cls(
+            start=day("start"),
+            end=day("end"),
+            grain=Grain(data["grain"]),
+            basis=Basis(data.get("basis", Basis.CALENDAR)),
+            mod=None if data.get("mod") is None else Mod(data["mod"]),
+            anchor=Anchor(data.get("anchor", Anchor.ANCHORED)),
+        )
 
     def __str__(self) -> str:
         """The range as a person reads it, with the last day *inside* it.
@@ -497,3 +636,23 @@ class DateMatch:
     @property
     def end(self) -> date | None:
         return self.range.end
+
+    def to_dict(self) -> dict[str, object]:
+        """A JSON-ready dict, including where in the text the match came from."""
+        return {
+            "text": self.text,
+            "span": list(self.span),
+            "confidence": self.confidence,
+            "range": self.range.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> DateMatch:
+        span = data["span"]
+        assert isinstance(span, (list, tuple))
+        return cls(
+            range=DateRange.from_dict(data["range"]),  # type: ignore[arg-type]
+            text=str(data["text"]),
+            span=(int(span[0]), int(span[1])),
+            confidence=float(data.get("confidence", 1.0)),  # type: ignore[arg-type]
+        )

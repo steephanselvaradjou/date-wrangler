@@ -65,7 +65,7 @@ def _period_start(today: date, cfg: WranglerConfig, unit: Grain, basis: Basis) -
     if unit is Grain.DAY:
         return today
     if unit is Grain.WEEK:
-        start = week_range(today).start
+        start = week_range(today, cfg.week_starts_on).start
         assert start is not None
         return start
     if unit is Grain.MONTH:
@@ -310,7 +310,7 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         return _resolve_to_date(spec, today, cfg, basis)
 
     if spec.kind is Kind.WEEKDAY:
-        return _resolve_weekday(spec, today)
+        return _resolve_weekday(spec, today, cfg)
 
     if spec.kind is Kind.WEEKEND:
         return _resolve_weekend(spec, today)
@@ -328,16 +328,18 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     raise UnresolvableSpec(f"unhandled spec kind {spec.kind}")
 
 
-def _resolve_weekday(spec: Spec, today: date) -> DateRange:
+def _resolve_weekday(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     """"last Monday", "next Friday", "this Tuesday".
 
     Past and future are strict -- on a Thursday, "last Thursday" is a week ago. "This
-    Tuesday" is the one in the current week, either side of today.
+    Tuesday" is the one in the current week, either side of today, so which week that is
+    depends on ``week_starts_on``: on a Sunday-start calendar the Tuesday just gone is
+    still "this Tuesday" a day later than it would be on a Monday-start one.
     """
     if spec.index is None:
         raise UnresolvableSpec("a weekday spec needs a weekday")
     if spec.direction == 0:
-        week_start = week_range(today).start
+        week_start = week_range(today, cfg.week_starts_on).start
         assert week_start is not None
         return day_range(week_start + timedelta(days=spec.index))
     delta = (spec.index - today.weekday()) % 7
@@ -350,8 +352,12 @@ def _resolve_weekday(spec: Spec, today: date) -> DateRange:
 def _resolve_weekend(spec: Spec, today: date) -> DateRange:
     """Saturday and Sunday of the week meant.
 
-    Weeks start on Monday here, so "this weekend" is always ahead of a weekday and the
-    weekend you are standing in if it is already Saturday -- never the one just gone.
+    Deliberately measured from a Monday week whatever ``week_starts_on`` says. A weekend
+    is the Saturday-Sunday pair, and on a Sunday-start calendar that pair straddles the
+    week boundary -- so following the setting would split "this weekend" across two weeks
+    and hand back a Sunday from one and a Saturday from the other. Anchoring on Monday
+    means "this weekend" is the one ahead of a weekday, and the one you are standing in
+    if it is already Saturday, on either calendar.
     """
     week_start = week_range(today).start
     assert week_start is not None
