@@ -47,6 +47,7 @@ class Kind(Enum):
     PERIOD_ENDING = auto()      # "quarter ending June 2024" -- a period fixed by its end
     WEEKEND = auto()            # this weekend, next weekend
     DECADE = auto()             # the 1990s
+    ISO_WEEK = auto()           # 2026-W42, week 42
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +81,14 @@ class Spec:
     #: follows the same convention as ``day_of_period``, so "last Friday of the month" is
     #: ``(-1, 4)``.
     nth_weekday: tuple[int, int] | None = None
+    #: Count working days rather than calendar days: "5 business days ago". Weekend and
+    #: holidays come from configuration.
+    business: bool = False
+    #: Land on a working day when picking one out of a period: "the last business day of
+    #: the month". Kept apart from ``business`` on purpose -- the target here can itself be
+    #: relative ("next month"), and one flag read both ways turned "first working day of
+    #: next month" into the next working day.
+    pick_business_day: bool = False
     #: None => take it from configuration. Only relative periods can roll.
     anchor: Anchor | None = None
 

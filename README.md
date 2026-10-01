@@ -92,16 +92,31 @@ space in it, and Oracle, which converts a bare `'2026-07-01'` using the session'
 ```python
 from date_wrangler import SqlDialect
 
-r.sql("order date", dialect=SqlDialect.postgres())
-# "order date" >= DATE '2025-04-01' AND "order date" < DATE '2025-07-01'
+r.sql("m.claim_date", dialect=SqlDialect.oracle())
+# m.claim_date >= DATE '2025-04-01' AND m.claim_date < DATE '2025-07-01'
 r.sql("order date", dialect=SqlDialect.tsql())
 # [order date] >= CAST('2025-04-01' AS DATE) AND [order date] < CAST('2025-07-01' AS DATE)
+r.sql("m.date", dialect=SqlDialect.oracle())
+# m."DATE" >= DATE '2025-04-01' AND m."DATE" < DATE '2025-07-01'
 ```
 
+**Identifiers are quoted only where they have to be**, and that is a correctness rule, not
+a style one. Oracle, Snowflake, HANA and DB2 store an unquoted name in upper case, so a
+column created as `claim_date` is held as `CLAIM_DATE` and the quoted `"claim_date"` is an
+invalid identifier. Bare `claim_date` is right on every engine, so a plain name is left
+alone. When quoting *is* needed:
+
+- a **reserved word** that is otherwise plain was created unquoted, so it is folded to the
+  case the engine stored it in — `"DATE"` on Oracle, `"date"` on Postgres;
+- a name with a **space or punctuation** must have been created quoted, so it keeps exactly
+  the case you gave;
+- a **qualified name** is quoted part by part — `m.claim_date` is a table and a column, not
+  one column with a dot in it.
+
 Presets: `.plain()` (the default), `.ansi()`, `.postgres()`, `.oracle()`, `.snowflake()`,
-`.tsql()`, `.mysql()`, `.bigquery()`, `.sqlite()`. They are shorthand for two independent
-choices — how to quote an identifier, and how to spell a date literal — so an engine with
-no preset is still expressible: ``SqlDialect("`", "`", "date")``.
+`.tsql()`, `.mysql()`, `.bigquery()`, `.sqlite()`. They are shorthand for a few independent
+choices — quote characters, literal style, which case the engine `folds` unquoted names to,
+and `quoting="needed"` or `"always"` — so an engine with no preset is still expressible.
 
 **Printing never shows the exclusive end.** `str(r)` reports the last day *inside* the
 range, because `[2025-09-04, 2025-09-05)` reads as two days however correct the bracket is:
@@ -151,6 +166,42 @@ It applies to `this/last/next week`, multi-week spans, and `this Tuesday` — wh
 "the one in the current week". It deliberately does **not** apply to `this weekend`: a
 weekend is the Saturday–Sunday pair, and on a Sunday-start calendar that pair straddles the
 week boundary, so following the setting would split it.
+
+Nor to **numbered weeks**. `week 42`, `2026-W42`, `CW42` and `KW 42` are ISO 8601 weeks,
+which are Monday to Sunday by definition — renumbering them from Sunday would make one label
+mean different days under different settings. The ISO year is not the calendar year
+either: `2026-W01` begins on 29 December 2025, and some years have a week 53 and others do
+not. Asking for one that does not exist is refused with a diagnostic, not rounded into the
+next year. A bare `W42` is treated like a bare month name and needs a cue (`in W42`),
+because on its own it is just as likely a part number.
+
+### Business days
+
+```python
+parse("5 business days ago")                 # one day, weekends skipped
+parse("last business day of the month")      # the close date, not the 31st if that's a Sunday
+parse("first working day of next month")
+parse("last 10 business days")               # a window holding exactly ten working days
+```
+
+Weekend and holidays are configuration, never guessed:
+
+```python
+WranglerConfig(
+    weekend=(4, 5),                                   # Friday–Saturday
+    holidays=frozenset({date(2026, 12, 25), ...}),    # yours, from wherever you keep them
+)
+```
+
+Which days are holidays depends on a country, a region, an industry and sometimes one
+company's handbook. A built-in list would be wrong somewhere and confident everywhere, so
+the default counts weekends only and you supply the rest.
+
+A business-day **window** is contiguous and keeps any weekend inside it, because a date
+filter has to be one range. Both ends land on a working day, though — asked on a Monday,
+`last business day` is Friday, not Friday to Sunday. `r.business_days(weekend=..., holidays=...)`
+says how many of a range's days are working ones; it takes the calendar as arguments for the
+same reason `split()` does, since a range does not carry configuration.
 
 ### Open-ended ranges
 
@@ -242,6 +293,8 @@ WranglerConfig(
     date_order=DateOrder.MDY,             # how to read 03/04/2024
     month_number=MonthNumber.YEAR,        # what "jan 24" means
     week_starts_on=6,                     # 0=Monday (default), 6=Sunday for the US
+    weekend=(5, 6),                       # non-working days, for "business days"
+    holidays=frozenset(),                 # yours to supply; never guessed
     bare_period_basis=Basis.FISCAL,       # what a bare "Q1" means
     two_digit_pivot=68,                   # "99" -> 1999, not 2099
     strictness="balanced",
@@ -315,7 +368,10 @@ plausible.
 | Point-in-time | `as of 31 March 2024` |
 | Relative year | `Q1 last year`, `March last year`, `H2 next year` |
 | Part of a period | `first half of March`, `early 2024`, `mid March`, `end of Q1` |
-| Day in a period | `1st of next month`, `15th of March` |
+| Day in a period | `1st of next month`, `15th of March`, `the last day of the month` |
+| Nth weekday | `first Monday of March`, `last Friday of the month`, `3rd Thursday of November` |
+| Week numbers | `week 42`, `2026-W42`, `CW42`, `KW 42`, `week 42 of 2026` |
+| Business days | `5 business days ago`, `next business day`, `last business day of the month` |
 | Same period back | `same quarter last year`, `this time last year` |
 | Weekend | `this weekend`, `next weekend`, `last weekend` |
 | Period edges | `month end`, `EOM`, `EOQ`, `end of the quarter`, `year start` |
@@ -490,6 +546,21 @@ make_formatter(closed="[{start}, {end}]", inclusive_end=False)(r)
 `inclusive_end` decides which day `{end}` names. It defaults to `True`, so a human-facing
 string says the last day *inside* the period (`2024-06-30`); set it `False` to emit the
 exclusive bound (`2024-07-01`) for a machine.
+
+**A coarse `date_format` never overstates a range.** With `date_format="%B %Y"`, a YTD
+asked on 15 October would read `April 2026 to October 2026` — which says all of October,
+sixteen days it does not cover. When the format cannot show a day *and* the range does not
+sit on whole months, both ends fall back to `day_format` (`"%Y-%m-%d"` by default):
+
+```python
+fmt = make_formatter(date_format="%B %Y")
+fmt(last_quarter)   # 'July 2026 to September 2026'   — whole months, as asked
+fmt(ytd)            # '2026-04-01 to 2026-10-15'      — partial, so days
+make_formatter(date_format="%B %Y", day_format=None)(ytd)
+                    # 'April 2026 to October 2026'    — you asked for exactly this
+```
+
+The default `date_format` already shows days, so nothing changes unless yours is coarse.
 
 **3. Any callable.** A formatter is just `DateRange -> str`:
 

@@ -53,6 +53,7 @@ _TRIGGERS = (
         # carries no digit and no unit word, so without these it never reaches the
         # scanner at all.
         "weekend", "eom", "eoq", "eoy", "eow", "eod", "cob", "eob",
+        "wk", "cw", "kw",
         "beginning", "start", "early", "mid", "middle", "late", "end", "close",
     }
 )
@@ -181,7 +182,7 @@ _MONTH_NOUNS = frozenset({
 })
 
 #: Rules whose matches are weak enough to need a cue in "balanced" mode.
-_WEAK_RULES = frozenset({"month", "bare_year", "weekday", "ordinal_day"})
+_WEAK_RULES = frozenset({"month", "bare_year", "weekday", "ordinal_day", "week_bare"})
 
 #: Words that change which days a period covers. Left unread beside a match, the answer is
 #: not the one the writer asked for -- "March 2024 to date" is not all of March 2024. We

@@ -10,7 +10,15 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from .arith import DateRangeOverflow, _check_year, add_months
+from .arith import (
+    DEFAULT_WEEKEND,
+    DateRangeOverflow,
+    _check_year,
+    add_business_days,
+    add_months,
+    count_business_days,
+    is_business_day,
+)
 from .config import FiscalCalendar, YearLabel
 from .types import Basis, DateRange, Grain
 
@@ -25,6 +33,11 @@ __all__ = [
     "month_range",
     "fiscal_month_range",
     "week_range",
+    "iso_week_range",
+    "DEFAULT_WEEKEND",
+    "is_business_day",
+    "add_business_days",
+    "count_business_days",
     "day_range",
     "DateRangeOverflow",
 ]
@@ -126,6 +139,28 @@ def week_range(day: date, week_starts_on: int = 0) -> DateRange:
     if not 0 <= week_starts_on <= 6:
         raise ValueError(f"week_starts_on must be 0-6, got {week_starts_on}")
     start = day - timedelta(days=(day.weekday() - week_starts_on) % 7)
+    return DateRange(start, start + timedelta(days=7), Grain.WEEK, Basis.CALENDAR)
+
+
+def iso_week_range(iso_year: int, week: int) -> DateRange:
+    """ISO 8601 week ``week`` of ``iso_year``: "2026-W42", "week 42".
+
+    Always Monday to Sunday, whatever ``week_starts_on`` says, because that is what the
+    standard defines a numbered week to be -- renumbering them from Sunday would make the
+    same label mean different days in different configurations.
+
+    The ISO year is not the calendar year. 2026-W01 begins on 29 December 2025, and a
+    year has 52 or 53 weeks depending on which weekday it starts on, so week 53 exists in
+    some years and not others. Asking for one that does not exist is refused rather than
+    rounded into the next year.
+    """
+    if not 1 <= week <= 53:
+        raise ValueError(f"ISO week must be 1-53, got {week}")
+    _check_year(iso_year, f"{iso_year}-W{week:02d}")
+    try:
+        start = date.fromisocalendar(iso_year, week, 1)
+    except ValueError as exc:
+        raise DateRangeOverflow(f"{iso_year} has no week {week}") from exc
     return DateRange(start, start + timedelta(days=7), Grain.WEEK, Basis.CALENDAR)
 
 

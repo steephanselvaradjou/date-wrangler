@@ -8,12 +8,12 @@ and ``end=None`` has an obvious meaning. Use :attr:`DateRange.end_inclusive` for
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from enum import Enum
 
-from .arith import DateRangeOverflow, add_months
+from .arith import DEFAULT_WEEKEND, DateRangeOverflow, add_months, count_business_days
 
 __all__ = ["Grain", "Basis", "Anchor", "Mod", "SqlDialect", "DateRange", "DateMatch"]
 
@@ -340,6 +340,23 @@ class DateRange:
         if self.start is None or self.end is None:
             return None
         return (self.end - self.start).days
+
+    def business_days(
+        self,
+        *,
+        weekend: Sequence[int] = DEFAULT_WEEKEND,
+        holidays: Collection[date] = (),
+    ) -> int | None:
+        """Working days in the range, or None when either end is unbounded.
+
+        Takes the calendar as arguments rather than reading configuration, for the same
+        reason :meth:`split` does: a range does not carry one, and the answer should not
+        depend on settings that are not visible at the call site. Pass the same
+        ``weekend`` and ``holidays`` as the :class:`WranglerConfig` you parsed with.
+        """
+        if self.start is None or self.end is None:
+            return None
+        return count_business_days(self.start, self.end, weekend, holidays)
 
     # ---- operations ---------------------------------------------------------
 
