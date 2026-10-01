@@ -73,8 +73,13 @@ class Spec:
     year_offset: int | None = None
     #: A slice of the period rather than all of it: "first half of March".
     part: Part | None = None
-    #: A single day inside the period: "1st of next month".
+    #: A single day inside the period: "1st of next month". Counted from the start, except
+    #: that a negative index counts back from the end, so -1 is "the last day of".
     day_of_period: int | None = None
+    #: An ``(index, weekday)`` pair: "third Thursday of November" is ``(3, 3)``. The index
+    #: follows the same convention as ``day_of_period``, so "last Friday of the month" is
+    #: ``(-1, 4)``.
+    nth_weekday: tuple[int, int] | None = None
     #: None => take it from configuration. Only relative periods can roll.
     anchor: Anchor | None = None
 

@@ -622,6 +622,75 @@ def _p_part_of(text: str, cfg: WranglerConfig) -> Spec | None:
     return target.with_(part=part)
 
 
+_WEEKDAY_ALT = alt(WEEKDAY_NAMES)
+#: An ordinal that may also count from the end: "third Thursday", "last Friday".
+_NTH = rf"(?:{_ORD}|last|final)"
+#: These two rules insist on the preposition, and a bare unit target has to carry "the".
+#: Without that, "the first Monday in months" -- ordinary English, not a date at all --
+#: reads as the first Monday of this month.
+_NTH_OF = r"\s+(?:of|in)\s+"
+_NTH_TARGET = (
+    rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
+    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_YEAR}"
+    rf"|(?:the\s+)?(?:{_DIRWORD}|this|current)\s+{_UNIT}|the\s+{_UNIT})"
+)
+
+
+def _nth_index(word: str) -> int | None:
+    """An ordinal as a signed index. "last" and "final" count back from the end."""
+    if word.lower() in ("last", "final"):
+        return -1
+    return ordinal_to_int(word)
+
+
+def _nth_target(tail: str, cfg: WranglerConfig) -> Spec | None:
+    """The period an nth-of phrase indexes into. The article is ours, not the period's."""
+    return _target_spec(re.sub(r"^\s*the\s+", "", tail, flags=re.IGNORECASE), cfg)
+
+
+def _p_nth_weekday(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"third Thursday of November", "last Friday of the month".
+
+    Before this the weekday and the period were separate matches and the period won, so
+    "first Monday of March" answered with all 31 days of March -- confidently, since
+    nothing was left over for the safety net to notice. "last Friday of the month" was
+    worse: the weekday rule read it as the last Friday *before today* and dropped the
+    month, giving a date three weeks out.
+    """
+    m = re.match(
+        rf"\s*(?:the\s+)?({_NTH})\s+({_WEEKDAY_ALT}){_NTH_OF}(.+)$", text, re.IGNORECASE
+    )
+    if not m:
+        return None
+    index = _nth_index(m.group(1))
+    # A month holds at most five of any weekday, and a year fifty-three; beyond five this
+    # is not a date phrase.
+    if index is None or index == 0 or index > 5:
+        return None
+    target = _nth_target(m.group(3), cfg)
+    if target is None:
+        return None
+    return target.with_(nth_weekday=(index, WEEKDAYS[m.group(2).lower()]))
+
+
+def _p_edge_day(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"the last day of the month", "first day of next quarter".
+
+    "last day" on its own was read as "last 1 day" -- yesterday -- and the period it
+    belonged to was discarded, so the answer was not a rounding of the right date but a
+    different one entirely.
+    """
+    m = re.match(
+        rf"\s*(?:the\s+)?(first|1st|last|final)\s+day{_NTH_OF}(.+)$", text, re.IGNORECASE
+    )
+    if not m:
+        return None
+    target = _nth_target(m.group(2), cfg)
+    if target is None:
+        return None
+    return target.with_(day_of_period=1 if m.group(1).lower() in ("first", "1st") else -1)
+
+
 def _p_nth_of(text: str, cfg: WranglerConfig) -> Spec | None:
     """"1st of next month", "15th of March" -- one day inside a named period."""
     m = re.match(rf"\s*(?:the\s+)?({_ORD})\s+(?:of\s+)?(.+)$", text, re.IGNORECASE)
@@ -813,6 +882,19 @@ RULES: tuple[Rule, ...] = (
         _p_rolling,
     ),
     # Before "fiscal_month" and "day_month_year", both of which open with a number.
+    # Both must precede "relative" and the weekday rules, which otherwise claim the
+    # opening words from the same position and win the alternation: "last day" scans as
+    # "last 1 day" and "last Friday" as the weekday on its own.
+    Rule(
+        "edge_day",
+        rf"\b(?:the\s+)?(?:first|1st|last|final)\s+day{_NTH_OF}{_NTH_TARGET}\b",
+        _p_edge_day,
+    ),
+    Rule(
+        "nth_weekday",
+        rf"\b(?:the\s+)?{_NTH}\s+(?:{_WEEKDAY_ALT}){_NTH_OF}{_NTH_TARGET}\b",
+        _p_nth_weekday,
+    ),
     Rule("nth_of", rf"\b(?:the\s+)?{_ORD}\s+of\s+{_PART_TARGET}\b", _p_nth_of),
     Rule(
         "day_month_year",

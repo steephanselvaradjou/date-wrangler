@@ -118,6 +118,9 @@ _MOD_SUFFIXES: tuple[tuple[re.Pattern[str], Mod | None], ...] = (
 #: substitution ungrammatical ("between from April to September").
 _RANGE_LEAD = re.compile(r"\b(?:from|between|betwn|b/w)\s+$", re.IGNORECASE)
 
+#: An "and" anywhere in the text joining the two endpoints of a merged span.
+_AND_JOIN = re.compile(r"\band\b|&", re.IGNORECASE)
+
 #: Words that make a bare month or year read as a date rather than a noun.
 _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|between|before|after|"
@@ -214,6 +217,22 @@ _QUALIFIER_BEFORE = re.compile(
     rf"|\b{_CLOCK}\s*(?:and|to|till|until|-)\s*{_CLOCK}\s*\W*$"
     rf"|\b{_CLOCK}\s*\W*$",
     re.IGNORECASE,
+)
+
+
+#: An nth-of phrase whose period went unread: "last day of term", "the last Friday of her
+#: career", "last 3 months of the year". The rules that cover the targets we *can* read run
+#: first, so anything still shaped like this had its target dropped -- and the answer is
+#: then a different date, not a rounder one. "last day of term" resolves to yesterday.
+_NTH_LEAD = re.compile(
+    r"^(?:the\s+)?(?:last|first|final|second|third|fourth|fifth|"
+    r"\d{1,2}(?:st|nd|rd|th))\b",
+    re.IGNORECASE,
+)
+#: Takes a word or two past the preposition, so the diagnostic can name what it dropped --
+#: "of her career" rather than "of h".
+_NTH_TAIL = re.compile(
+    r"^\W*(?:of|in)\s+(?:the\s+)?[a-z]+(?:\s+[a-z]+)?", re.IGNORECASE
 )
 
 
@@ -577,6 +596,8 @@ def _flag_unread_qualifiers(
         prev_end = spans[idx - 1][1] if idx else 0
         before = norm.original[max(prev_end, lo - 24) : lo]
         dropped = _QUALIFIER_AFTER.match(after) or _QUALIFIER_BEFORE.search(before)
+        if dropped is None and _NTH_LEAD.match(norm.original[lo:hi]):
+            dropped = _NTH_TAIL.match(after)
         if dropped is None:
             out.append(m)
             continue
@@ -732,7 +753,10 @@ def _merge(
         and ra.end is not None
         and rb.start is not None
         and ra.end < rb.start
-        and body[a.end : b.start].strip().lower() == "and"
+        # Anywhere in the join, not just the whole of it: a chain of three or more is
+        # merged from its first and last endpoints, so "Q1 and Q3 and last month" puts
+        # "and Q3 and" in between and an equality test saw no "and" at all.
+        and _AND_JOIN.search(body[a.end : b.start]) is not None
     ):
         confidence = min(confidence, 0.5)
         if diags is not None:
@@ -786,14 +810,32 @@ def substitute(
     tz: tzinfo | None = None,
     config: WranglerConfig = DEFAULT_CONFIG,
     formatter: Callable[[DateRange], str] | None = None,
+    min_confidence: float = 0.0,
 ) -> str:
-    """Rewrite every date expression in ``text``. Only the matched phrase changes."""
+    """Rewrite every date expression in ``text``. Only the matched phrase changes.
+
+    ``min_confidence`` leaves anything below it exactly as the writer typed it. Raise it
+    whenever the output will be read as fact -- by a person or by a model -- because this
+    is the one function that turns a flagged guess into a confident sentence:
+
+        >>> substitute("revenue Q1 and Q3", today=today)
+        'revenue April 2026 to December 2026'          # Q2 is in there, unremarked
+        >>> substitute("revenue Q1 and Q3", today=today, min_confidence=0.9)
+        'revenue Q1 and Q3'
+
+    Both of those phrases come back from :func:`diagnose` at confidence 0.5 with an
+    explanation. Rewriting them discards that explanation and leaves prose that reads as
+    settled, which is worse than leaving the original words alone. The default stays 0.0
+    so existing callers are unaffected; a future major version will raise it.
+    """
     from .format import format_range
 
     render = formatter or format_range
     found = parse(text, today=today, tz=tz, config=config)
     out = text
     for match in reversed(found):
+        if match.confidence < min_confidence:
+            continue
         lo, hi = match.span
         out = out[:lo] + render(match.range) + out[hi:]
     return out

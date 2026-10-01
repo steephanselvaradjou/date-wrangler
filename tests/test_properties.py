@@ -175,10 +175,32 @@ def test_substitution_can_fuse_with_an_adjacent_number():
     today = date(2025, 9, 4)
     once = substitute("sales 15 Q1", today=today)
     assert once == "sales 15 April 2025 to June 2025"
-    # "15 April 2025" now reads as a day, so a second pass differs -- but then settles.
+    # "15 April 2025" now reads as a day, so the range no longer starts on a month
+    # boundary and the second pass names days at both ends rather than months -- which is
+    # the honest rendering of a period that begins on the 15th. Then it settles.
     twice = substitute(once, today=today)
-    assert twice == "sales April 2025 to June 2025"
+    assert twice == "sales 15 April 2025 to 30 June 2025"
     assert substitute(twice, today=today) == twice
+
+
+def test_substitute_leaves_flagged_matches_as_they_were_typed():
+    """`substitute` is the one function that turns a flagged guess into a confident
+    sentence, so it has to be able to decline. Both of these come back from `diagnose` at
+    0.5 with an explanation that rewriting would throw away."""
+    today = date(2025, 9, 4)
+    assert substitute("revenue Q1 and Q3", today=today) == (
+        "revenue April 2025 to December 2025"  # Q2 silently included
+    )
+    assert substitute("revenue Q1 and Q3", today=today, min_confidence=0.9) == (
+        "revenue Q1 and Q3"
+    )
+    assert substitute("claims yesterday at 2pm", today=today, min_confidence=0.9) == (
+        "claims yesterday at 2pm"
+    )
+    # Confident matches are rewritten as before.
+    assert substitute("revenue last month", today=today, min_confidence=0.9) == (
+        "revenue August 2025"
+    )
 
 
 @given(text=texts, cfg=configs, today=todays)

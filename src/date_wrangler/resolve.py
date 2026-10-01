@@ -25,6 +25,7 @@ from .calendars import (
 from .config import WranglerConfig
 from .spec import Kind, Part, Spec
 from .types import Anchor, Basis, DateRange, Grain, Mod
+from .vocab import WEEKDAY_DISPLAY
 
 __all__ = ["resolve", "default_year_for", "UnresolvableSpec"]
 
@@ -64,7 +65,7 @@ def _period_start(today: date, cfg: WranglerConfig, unit: Grain, basis: Basis) -
     if unit is Grain.DAY:
         return today
     if unit is Grain.WEEK:
-        start = week_range(today).start
+        start = week_range(today, cfg.week_starts_on).start
         assert start is not None
         return start
     if unit is Grain.MONTH:
@@ -134,6 +135,8 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
             base = _shift_years(base, spec.year_offset)
         if spec.part is not None:
             base = _slice_part(base, spec.part)
+        if spec.nth_weekday is not None:
+            base = _pick_weekday(base, *spec.nth_weekday)
         if spec.day_of_period is not None:
             base = _pick_day(base, spec.day_of_period)
     except (ValueError, OverflowError) as exc:
@@ -198,15 +201,57 @@ def _slice_part(r: DateRange, part: Part) -> DateRange:
 
 
 def _pick_day(r: DateRange, day_of_period: int) -> DateRange:
-    """One day counted from the start of a period. "1st of next month"."""
+    """One day inside a period. "1st of next month", "the last day of the month".
+
+    Positive counts from the start, negative from the end, matching the way people index
+    in both directions. There is no day zero, which is what the guard is for.
+    """
     if r.start is None or r.end is None:
         raise UnresolvableSpec("cannot index into an unbounded range")
-    target = r.start + timedelta(days=day_of_period - 1)
-    if target >= r.end:
+    if day_of_period == 0:
+        raise UnresolvableSpec("there is no day 0 of a period; days count from 1")
+    if day_of_period > 0:
+        target = r.start + timedelta(days=day_of_period - 1)
+    else:
+        # end is exclusive, so end - 1 day is the last day inside the period.
+        target = r.end + timedelta(days=day_of_period)
+    if not r.start <= target < r.end:
         raise UnresolvableSpec(
             f"day {day_of_period} falls outside the period {r.start}..{r.end}"
         )
     return day_range(target)
+
+
+def _pick_weekday(r: DateRange, index: int, weekday: int) -> DateRange:
+    """The nth weekday of a period. "third Thursday of November", "last Friday".
+
+    ``index`` counts forward from 1 and backward from -1, like :func:`_pick_day`. Counting
+    from the correct end matters: a month holds four or five of any given weekday, so the
+    last one is not the fourth.
+    """
+    if r.start is None or r.end is None:
+        raise UnresolvableSpec("cannot index into an unbounded range")
+    if index == 0:
+        raise UnresolvableSpec("there is no 0th weekday of a period")
+    if index > 0:
+        first = r.start + timedelta(days=(weekday - r.start.weekday()) % 7)
+        target = first + timedelta(days=7 * (index - 1))
+    else:
+        last_day = r.end - timedelta(days=1)
+        last = last_day - timedelta(days=(last_day.weekday() - weekday) % 7)
+        target = last - timedelta(days=7 * (-index - 1))
+    if not r.start <= target < r.end:
+        name = WEEKDAY_DISPLAY[weekday]
+        raise UnresolvableSpec(
+            f"there is no {_ordinal_word(index)} {name} in {r.start}..{r.end}"
+        )
+    return day_range(target)
+
+
+def _ordinal_word(index: int) -> str:
+    if index < 0:
+        return "last" if index == -1 else f"{-index}th-from-last"
+    return {1: "1st", 2: "2nd", 3: "3rd"}.get(index, f"{index}th")
 
 
 def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
@@ -265,7 +310,7 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         return _resolve_to_date(spec, today, cfg, basis)
 
     if spec.kind is Kind.WEEKDAY:
-        return _resolve_weekday(spec, today)
+        return _resolve_weekday(spec, today, cfg)
 
     if spec.kind is Kind.WEEKEND:
         return _resolve_weekend(spec, today)
@@ -283,16 +328,18 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     raise UnresolvableSpec(f"unhandled spec kind {spec.kind}")
 
 
-def _resolve_weekday(spec: Spec, today: date) -> DateRange:
+def _resolve_weekday(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     """"last Monday", "next Friday", "this Tuesday".
 
     Past and future are strict -- on a Thursday, "last Thursday" is a week ago. "This
-    Tuesday" is the one in the current week, either side of today.
+    Tuesday" is the one in the current week, either side of today, so which week that is
+    depends on ``week_starts_on``: on a Sunday-start calendar the Tuesday just gone is
+    still "this Tuesday" a day later than it would be on a Monday-start one.
     """
     if spec.index is None:
         raise UnresolvableSpec("a weekday spec needs a weekday")
     if spec.direction == 0:
-        week_start = week_range(today).start
+        week_start = week_range(today, cfg.week_starts_on).start
         assert week_start is not None
         return day_range(week_start + timedelta(days=spec.index))
     delta = (spec.index - today.weekday()) % 7
@@ -305,8 +352,12 @@ def _resolve_weekday(spec: Spec, today: date) -> DateRange:
 def _resolve_weekend(spec: Spec, today: date) -> DateRange:
     """Saturday and Sunday of the week meant.
 
-    Weeks start on Monday here, so "this weekend" is always ahead of a weekday and the
-    weekend you are standing in if it is already Saturday -- never the one just gone.
+    Deliberately measured from a Monday week whatever ``week_starts_on`` says. A weekend
+    is the Saturday-Sunday pair, and on a Sunday-start calendar that pair straddles the
+    week boundary -- so following the setting would split "this weekend" across two weeks
+    and hand back a Sunday from one and a Saturday from the other. Anchoring on Monday
+    means "this weekend" is the one ahead of a weekday, and the one you are standing in
+    if it is already Saturday, on either calendar.
     """
     week_start = week_range(today).start
     assert week_start is not None

@@ -41,6 +41,17 @@ def _point(d: date, grain: Grain) -> str:
     return format_month(d)
 
 
+def _whole_months(r: DateRange) -> bool:
+    """Whether the range covers whole calendar months, so naming months is honest.
+
+    A to-date period does not. "MTD" on the 15th is half of October, and rendering it as
+    "October 2026" claims the other half: a 15-day window described as a 31-day one, with
+    nothing to show it was rounded. Half-open makes the test exact -- a range ending on a
+    month boundary ends on the 1st.
+    """
+    return r.start is not None and r.end is not None and r.start.day == 1 == r.end.day
+
+
 def format_range(r: DateRange) -> str:
     """A readable phrase for ``r``, at the grain it was expressed at."""
     if r.start is None and r.end is None:
@@ -67,7 +78,7 @@ def format_range(r: DateRange) -> str:
 
     if r.grain is Grain.DAY and r.days == 1:
         return format_day(r.start)
-    if r.grain in (Grain.DAY, Grain.WEEK):
+    if r.grain in (Grain.DAY, Grain.WEEK) or not _whole_months(r):
         return f"{format_day(r.start)} to {format_day(last)}"
     if (r.start.year, r.start.month) == (last.year, last.month):
         return format_month(r.start)
@@ -123,12 +134,12 @@ def make_formatter(
             edge = fmt(r.end) if r.mod is Mod.BEFORE else end
             template = before if r.mod is Mod.BEFORE else until
             return template.format(start=start, end=edge)
-        if r.grain is not Grain.DAY and (r.start.year, r.start.month) == (
-            end_day.year,  # type: ignore[union-attr]
-            end_day.month,  # type: ignore[union-attr]
-        ):
-            return single.format(start=start, end=end)
-        if r.grain is Grain.DAY and r.days == 1:
+        # `single` prints {start} alone, so it is only honest when {end} would render the
+        # same text. One day always qualifies. Otherwise it depends on what `date_format`
+        # can actually show: "%B %Y" collapses any range inside one month to the same
+        # string, while "%d %B %Y" does not -- which is how a week came back as its
+        # Monday and a month as its 1st.
+        if start == end:
             return single.format(start=start, end=end)
         return closed.format(start=start, end=end)
 

@@ -22,10 +22,10 @@ from .config import (
 )
 from .format import format_iso, format_range, make_formatter
 from .resolve import UnresolvableSpec
-from .types import Anchor, Basis, DateMatch, DateRange, Grain, Mod
+from .types import Anchor, Basis, DateMatch, DateRange, Grain, Mod, SqlDialect
 from .wrangler import Diagnostic, diagnose, parse, parse_one, substitute
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     # Values
@@ -35,6 +35,7 @@ __all__ = [
     "Basis",
     "Anchor",
     "Mod",
+    "SqlDialect",
     # Configuration
     "WranglerConfig",
     "FiscalCalendar",

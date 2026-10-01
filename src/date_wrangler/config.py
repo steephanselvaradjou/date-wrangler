@@ -139,6 +139,11 @@ class WranglerConfig:
     #: so "99" is 1999.
     two_digit_pivot: int = 68
 
+    #: Which day a week begins on, 0=Monday through 6=Sunday. Monday is the ISO default
+    #: and most of the world; set 6 for a US workspace, where "last week" means Sunday to
+    #: Saturday and the Monday reading is a day out at both ends.
+    week_starts_on: int = 0
+
     #: How eagerly to claim bare month names in running prose. "strict" requires a year
     #: or an explicit period marker; "greedy" matches any month name anywhere.
     strictness: str = "balanced"
@@ -152,6 +157,11 @@ class WranglerConfig:
             raise TypeError("WranglerConfig.anchor must be an Anchor")
         if not isinstance(self.month_number, MonthNumber):
             raise TypeError("WranglerConfig.month_number must be a MonthNumber")
+        if not isinstance(self.week_starts_on, int) or not 0 <= self.week_starts_on <= 6:
+            raise ValueError(
+                "WranglerConfig.week_starts_on must be 0-6 (0=Monday), got "
+                f"{self.week_starts_on!r}"
+            )
         if not 0 <= self.two_digit_pivot <= 99:
             raise ValueError(
                 f"WranglerConfig.two_digit_pivot must be 0-99, got {self.two_digit_pivot}"

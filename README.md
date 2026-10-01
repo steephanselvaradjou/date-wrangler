@@ -84,6 +84,25 @@ can't see which it is, and `<` is right for both. When you know it's a `DATE`:
 r.sql("order_date", inclusive=True)   # ... AND order_date <= '2025-06-30'
 ```
 
+**Quoting and literals per engine.** The default quotes nothing and writes a bare string,
+which most engines accept. Two things break that: a column named `order`, `date` or with a
+space in it, and Oracle, which converts a bare `'2026-07-01'` using the session's
+`NLS_DATE_FORMAT` and so raises or reads a different date.
+
+```python
+from date_wrangler import SqlDialect
+
+r.sql("order date", dialect=SqlDialect.postgres())
+# "order date" >= DATE '2025-04-01' AND "order date" < DATE '2025-07-01'
+r.sql("order date", dialect=SqlDialect.tsql())
+# [order date] >= CAST('2025-04-01' AS DATE) AND [order date] < CAST('2025-07-01' AS DATE)
+```
+
+Presets: `.plain()` (the default), `.ansi()`, `.postgres()`, `.oracle()`, `.snowflake()`,
+`.tsql()`, `.mysql()`, `.bigquery()`, `.sqlite()`. They are shorthand for two independent
+choices — how to quote an identifier, and how to spell a date literal — so an engine with
+no preset is still expressible: ``SqlDialect("`", "`", "date")``.
+
 **Printing never shows the exclusive end.** `str(r)` reports the last day *inside* the
 range, because `[2025-09-04, 2025-09-05)` reads as two days however correct the bracket is:
 
@@ -117,6 +136,21 @@ twelve *completed* months. Day-grain phrases like `last 30 days` are the same ei
 a day is its own unit, so there is nothing to snap to.
 
 `r.anchor` is on the range, so callers can tell which they got.
+
+### Which day a week starts on
+
+Monday by default, which is ISO and most of the world. A US workspace wants Sunday, and the
+difference is a whole day of data at each end of every weekly report:
+
+```python
+parse("last week")                                            # Mon 5 – Sun 11 Oct
+parse("last week", config=WranglerConfig(week_starts_on=6))   # Sun 4 – Sat 10 Oct
+```
+
+It applies to `this/last/next week`, multi-week spans, and `this Tuesday` — which means
+"the one in the current week". It deliberately does **not** apply to `this weekend`: a
+weekend is the Saturday–Sunday pair, and on a Sunday-start calendar that pair straddles the
+week boundary, so following the setting would split it.
 
 ### Open-ended ranges
 
@@ -207,6 +241,7 @@ WranglerConfig(
     anchor=Anchor.ANCHORED,               # what "last month" means
     date_order=DateOrder.MDY,             # how to read 03/04/2024
     month_number=MonthNumber.YEAR,        # what "jan 24" means
+    week_starts_on=6,                     # 0=Monday (default), 6=Sunday for the US
     bare_period_basis=Basis.FISCAL,       # what a bare "Q1" means
     two_digit_pivot=68,                   # "99" -> 1999, not 2099
     strictness="balanced",
@@ -323,6 +358,17 @@ matches, diags = diagnose("5000 years ago", today=today)
 ```
 
 `parse()` never raises on user input.
+
+`substitute()` is the one function that turns a flagged guess into a confident sentence, so
+it can decline:
+
+```python
+substitute("revenue Q1 and Q3")                      # 'revenue April 2026 to December 2026'
+substitute("revenue Q1 and Q3", min_confidence=0.9)  # 'revenue Q1 and Q3'
+```
+
+Raise `min_confidence` whenever the output will be read as fact — by a person or a model.
+The default is 0.0, so nothing changes unless you ask.
 
 A match whose neighbouring words change the period but could not be read comes back with
 **confidence 0.5** and an explanation, rather than a confident answer to a question nobody
