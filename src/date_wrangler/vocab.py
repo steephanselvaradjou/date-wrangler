@@ -14,6 +14,7 @@ __all__ = [
     "MONTH_NAMES",
     "WEEKDAYS",
     "WEEKDAY_NAMES",
+    "WEEKDAY_DISPLAY",
     "MONTH_DISPLAY",
     "CARDINALS",
     "ORDINALS",
@@ -89,6 +90,12 @@ WEEKDAYS: dict[str, int] = {
 
 #: Longest first, for the same reason as :data:`MONTH_NAMES`.
 WEEKDAY_NAMES: tuple[str, ...] = tuple(sorted(WEEKDAYS, key=len, reverse=True))
+
+#: For display, indexed by ``date.weekday()``. Not ``strftime('%A')``, for the same
+#: locale reason as :data:`MONTH_DISPLAY`.
+WEEKDAY_DISPLAY: tuple[str, ...] = (
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+)
 
 #: Words that name a period length, mapped to the Grain value name.
 UNIT_WORDS: dict[str, str] = {

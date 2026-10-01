@@ -217,6 +217,22 @@ _QUALIFIER_BEFORE = re.compile(
 )
 
 
+#: An nth-of phrase whose period went unread: "last day of term", "the last Friday of her
+#: career", "last 3 months of the year". The rules that cover the targets we *can* read run
+#: first, so anything still shaped like this had its target dropped -- and the answer is
+#: then a different date, not a rounder one. "last day of term" resolves to yesterday.
+_NTH_LEAD = re.compile(
+    r"^(?:the\s+)?(?:last|first|final|second|third|fourth|fifth|"
+    r"\d{1,2}(?:st|nd|rd|th))\b",
+    re.IGNORECASE,
+)
+#: Takes a word or two past the preposition, so the diagnostic can name what it dropped --
+#: "of her career" rather than "of h".
+_NTH_TAIL = re.compile(
+    r"^\W*(?:of|in)\s+(?:the\s+)?[a-z]+(?:\s+[a-z]+)?", re.IGNORECASE
+)
+
+
 def _looks_like_a_person(text: str, start: int, end: int) -> bool:
     """Whether a month word is being used as somebody's name.
 
@@ -577,6 +593,8 @@ def _flag_unread_qualifiers(
         prev_end = spans[idx - 1][1] if idx else 0
         before = norm.original[max(prev_end, lo - 24) : lo]
         dropped = _QUALIFIER_AFTER.match(after) or _QUALIFIER_BEFORE.search(before)
+        if dropped is None and _NTH_LEAD.match(norm.original[lo:hi]):
+            dropped = _NTH_TAIL.match(after)
         if dropped is None:
             out.append(m)
             continue
