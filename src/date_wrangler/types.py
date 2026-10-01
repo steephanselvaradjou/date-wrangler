@@ -7,6 +7,7 @@ and ``end=None`` has an obvious meaning. Use :attr:`DateRange.end_inclusive` for
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
@@ -116,6 +117,26 @@ def _advance(day: date, grain: Grain, periods: int) -> date:
         ) from exc
 
 
+#: A name needing no quotes anywhere: a letter or underscore, then word characters.
+_PLAIN_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: Words common enough as column names to be worth quoting, and reserved somewhere that
+#: matters. Deliberately not an exhaustive per-engine list: over-quoting one of these is
+#: harmless now that quoting folds to the stored case, while missing a common one is not.
+_RESERVED = frozenset({
+    "all", "and", "any", "as", "asc", "begin", "between", "by", "case", "check", "column",
+    "comment", "create", "cross", "current", "date", "day", "dec", "default", "desc",
+    "distinct", "drop", "else", "end", "exists", "false", "from", "full", "group",
+    "having", "in", "index", "inner", "insert", "interval", "into", "is", "join", "key",
+    "left", "level", "like", "limit", "minus", "mode", "month", "natural", "not", "null",
+    "number", "of", "offset", "on", "or", "order", "outer", "over", "partition",
+    "percent", "primary", "range", "rank", "right", "row", "rows", "select", "session",
+    "set", "size", "start", "table", "then", "time", "timestamp", "to", "true", "union",
+    "unique", "update", "user", "using", "value", "values", "when", "where", "window",
+    "with", "year",
+})
+
+
 @dataclass(frozen=True, slots=True)
 class SqlDialect:
     """How one engine spells an identifier and a date literal.
@@ -134,20 +155,60 @@ class SqlDialect:
     quote_close: str = ""
     #: "plain" -> '2026-07-01'; "date" -> DATE '2026-07-01'; "cast" -> CAST(... AS DATE).
     literal: str = "plain"
+    #: Which case the engine stores an *unquoted* identifier in: "upper" for Oracle,
+    #: Snowflake, HANA and DB2, "lower" for Postgres, "none" for the rest.
+    folds: str = "none"
+    #: Quote identifiers "always", or only when "needed". Needed is the safe default --
+    #: see :meth:`identifier`.
+    quoting: str = "needed"
 
     def __post_init__(self) -> None:
         if self.literal not in ("plain", "date", "cast"):
             raise ValueError(
                 f"SqlDialect.literal must be plain/date/cast, got {self.literal!r}"
             )
+        if self.folds not in ("upper", "lower", "none"):
+            raise ValueError(f"SqlDialect.folds must be upper/lower/none, got {self.folds!r}")
+        if self.quoting not in ("always", "needed"):
+            raise ValueError(
+                f"SqlDialect.quoting must be always/needed, got {self.quoting!r}"
+            )
         if bool(self.quote_open) != bool(self.quote_close):
             raise ValueError("SqlDialect needs both quote characters, or neither")
 
     def identifier(self, column: str) -> str:
-        """``column``, quoted for this engine. A closing quote inside it is doubled."""
+        """``column``, quoted for this engine only where quoting is actually required.
+
+        **Quoting everything is not safe.** Oracle, Snowflake, HANA and DB2 store an
+        unquoted name in upper case, so ``CREATE TABLE t (claim_date DATE)`` holds
+        ``CLAIM_DATE`` and the quoted ``"claim_date"`` is an invalid identifier. Bare
+        ``claim_date`` is correct on every engine, so a plain name is left alone.
+
+        A name that *needs* quoting falls in two groups, and they are not treated alike.
+        One that is not a plain identifier at all -- a space, a hyphen, a leading digit --
+        must have been created quoted, so it is quoted exactly as given. One that is plain
+        but happens to be a reserved word was almost certainly created unquoted, so it is
+        folded to the case the engine stored it in: ``"DATE"`` on Oracle, ``"date"`` on
+        Postgres.
+
+        A qualified name is quoted part by part. ``m.claim_date`` is a table and a column,
+        not one column with a dot in its name, and quoting it whole produces SQL that
+        looks right and refers to nothing.
+        """
+        return ".".join(self._one(part) for part in column.split("."))
+
+    def _one(self, part: str) -> str:
         if not self.quote_open:
-            return column
-        inner = column.replace(self.quote_close, self.quote_close * 2)
+            return part
+        plain = _PLAIN_IDENTIFIER.match(part) is not None
+        if self.quoting == "needed" and plain and part.lower() not in _RESERVED:
+            return part
+        if plain:
+            # Quoted only because it is reserved, so match how an unquoted CREATE stored it.
+            part = part.upper() if self.folds == "upper" else (
+                part.lower() if self.folds == "lower" else part
+            )
+        inner = part.replace(self.quote_close, self.quote_close * 2)
         return f"{self.quote_open}{inner}{self.quote_close}"
 
     def date_literal(self, day: date) -> str:
@@ -171,15 +232,15 @@ class SqlDialect:
 
     @classmethod
     def postgres(cls) -> SqlDialect:
-        return cls('"', '"', "date")
+        return cls('"', '"', "date", folds="lower")
 
     @classmethod
     def oracle(cls) -> SqlDialect:
-        return cls('"', '"', "date")
+        return cls('"', '"', "date", folds="upper")
 
     @classmethod
     def snowflake(cls) -> SqlDialect:
-        return cls('"', '"', "date")
+        return cls('"', '"', "date", folds="upper")
 
     @classmethod
     def tsql(cls) -> SqlDialect:
