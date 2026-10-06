@@ -89,17 +89,53 @@ def test_a_day_precision_format_never_collapses_a_multi_day_range(text, shown):
 @pytest.mark.parametrize(
     "text,shown",
     [
-        ("yesterday", "October 2026"),
-        ("last week", "October 2026"),
         ("last month", "September 2026"),
         ("last quarter", "July 2026 to September 2026"),
+        ("FY27", "April 2026 to March 2027"),
     ],
 )
-def test_a_month_precision_format_may_collapse(text, shown):
-    """With "%B %Y" both ends of a within-month range render identically, so printing one
-    of them loses nothing. That is the actual rule -- what the format can show -- rather
-    than a guess from the grain."""
+def test_a_month_precision_format_keeps_months_for_whole_months(text, shown):
+    """Whole-month ranges are exactly what "%B %Y" can describe, so it is used as asked."""
     assert make_formatter(date_format="%B %Y")(rng(text)) == shown
+
+
+@pytest.mark.parametrize(
+    "text,shown",
+    [
+        ("yesterday", "2026-10-14"),
+        ("last week", "2026-10-05 to 2026-10-11"),
+        ("MTD", "2026-10-01 to 2026-10-15"),
+        ("YTD", "2026-04-01 to 2026-10-15"),
+    ],
+)
+def test_a_coarse_format_falls_back_to_days_rather_than_overstate(text, shown):
+    """REGRESSION: with "%B %Y", YTD rendered as "April 2026 to October 2026" -- which reads
+    as all of October, sixteen days the range does not cover -- and a single week as
+    "October 2026". The format cannot show a day and the range does not sit on whole
+    months, so naming months would claim more than was parsed."""
+    assert make_formatter(date_format="%B %Y")(rng(text)) == shown
+
+
+def test_day_format_none_renders_exactly_what_was_asked():
+    """The escape hatch, for bucket labels where the overstatement is intended."""
+    assert make_formatter(date_format="%B %Y", day_format=None)(rng("YTD")) == (
+        "April 2026 to October 2026"
+    )
+
+
+def test_the_default_format_is_unaffected_by_the_fallback():
+    """"%Y-%m-%d" already shows days, so nothing changes unless the format is coarse."""
+    fmt = make_formatter()
+    assert fmt(rng("YTD")) == "2026-04-01 to 2026-10-15"
+    assert fmt(rng("last month")) == "2026-09-01 to 2026-09-30"
+
+
+def test_a_one_day_range_at_any_grain_prints_one_day():
+    """REGRESSION: "MTD" asked on the 1st is one day at MONTH grain, and printed as
+    "1 October 2026 to 1 October 2026" -- a range with one end."""
+    first = parse_one("MTD", today=date(2026, 10, 1))
+    assert first is not None and first.range.days == 1
+    assert format_range(first.range) == "1 October 2026"
 
 
 def test_single_is_used_exactly_when_the_two_ends_render_alike():

@@ -11,12 +11,15 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from .calendars import (
+    add_business_days,
     add_months,
     day_range,
     fiscal_month_range,
     fiscal_year_of,
     fiscal_year_start,
     half_range,
+    is_business_day,
+    iso_week_range,
     month_range,
     quarter_range,
     week_range,
@@ -138,7 +141,10 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         if spec.nth_weekday is not None:
             base = _pick_weekday(base, *spec.nth_weekday)
         if spec.day_of_period is not None:
-            base = _pick_day(base, spec.day_of_period)
+            if spec.pick_business_day:
+                base = _pick_business_day(base, spec.day_of_period, cfg)
+            else:
+                base = _pick_day(base, spec.day_of_period)
     except (ValueError, OverflowError) as exc:
         if isinstance(exc, UnresolvableSpec):
             raise
@@ -222,6 +228,28 @@ def _pick_day(r: DateRange, day_of_period: int) -> DateRange:
     return day_range(target)
 
 
+def _pick_business_day(r: DateRange, index: int, cfg: WranglerConfig) -> DateRange:
+    """The nth working day of a period. "the last business day of the month".
+
+    Month-end close, payroll cut-off and settlement dates are all phrased this way, and
+    the calendar last day is wrong for every one of them whenever it lands on a weekend.
+    """
+    if r.start is None or r.end is None:
+        raise UnresolvableSpec("cannot index into an unbounded range")
+    if index == 0:
+        raise UnresolvableSpec("there is no 0th business day of a period")
+    days = [
+        r.start + timedelta(days=i)
+        for i in range((r.end - r.start).days)
+        if is_business_day(r.start + timedelta(days=i), cfg.weekend, cfg.holidays)
+    ]
+    if abs(index) > len(days):
+        raise UnresolvableSpec(
+            f"{r.start}..{r.end} has {len(days)} business days, not {abs(index)}"
+        )
+    return day_range(days[index - 1] if index > 0 else days[index])
+
+
 def _pick_weekday(r: DateRange, index: int, weekday: int) -> DateRange:
     """The nth weekday of a period. "third Thursday of November", "last Friday".
 
@@ -301,9 +329,13 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         return DateRange(start, _shift(start, unit, 1), unit, basis)
 
     if spec.kind is Kind.RELATIVE:
+        if spec.business:
+            return _business_window(spec, today, cfg)
         return _resolve_relative(spec, today, cfg, basis)
 
     if spec.kind is Kind.AGO:
+        if spec.business:
+            return _business_day(spec, today, cfg)
         return _resolve_ago(spec, today, cfg, basis)
 
     if spec.kind is Kind.TO_DATE:
@@ -314,6 +346,14 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
 
     if spec.kind is Kind.WEEKEND:
         return _resolve_weekend(spec, today)
+
+    if spec.kind is Kind.ISO_WEEK:
+        if spec.index is None:
+            raise UnresolvableSpec("a week number spec needs a week")
+        # The ISO year, not the calendar year: on 31 December 2026 the current week is
+        # week 53 of 2026, but on 1 January 2027 it is still week 53 of *2026*.
+        year = spec.year if spec.year is not None else today.isocalendar()[0]
+        return iso_week_range(year, spec.index)
 
     if spec.kind is Kind.DECADE:
         if spec.year is None:
@@ -381,6 +421,35 @@ def _resolve_period_ending(
         raise UnresolvableSpec("a period-ending spec needs a month or a year to end at")
     assert end is not None
     return DateRange(_shift(end, unit, -1), end, unit, basis)
+
+
+def _business_window(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
+    """"last 10 business days" -- the span holding that many working days.
+
+    The range is contiguous and includes any weekend *inside* it, because that is what a
+    date filter has to be; :meth:`DateRange.business_days` says how many of its days are
+    working ones. Both ends sit on a working day, though. Asked on a Monday, "last
+    business day" is Friday -- ending the window at today, the way "last 10 days" does,
+    would make it Friday to Sunday.
+    """
+    n = spec.count if spec.count is not None else 1
+    if n < 1:
+        raise UnresolvableSpec(f"a business-day count must be at least 1, got {n}")
+    if spec.direction < 0:
+        start = add_business_days(today, -n, cfg.weekend, cfg.holidays)
+        latest = add_business_days(today, -1, cfg.weekend, cfg.holidays)
+        return DateRange(start, latest + timedelta(days=1), Grain.DAY, Basis.CALENDAR)
+    first = add_business_days(today, 1, cfg.weekend, cfg.holidays)
+    last = add_business_days(today, n, cfg.weekend, cfg.holidays)
+    return DateRange(first, last + timedelta(days=1), Grain.DAY, Basis.CALENDAR)
+
+
+def _business_day(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
+    """"5 business days ago", "in 3 working days", "next business day" -- one day."""
+    n = spec.count if spec.count is not None else 1
+    if n < 0:
+        raise UnresolvableSpec(f"a business-day count cannot be negative, got {n}")
+    return day_range(add_business_days(today, n * spec.direction, cfg.weekend, cfg.holidays))
 
 
 def _resolve_relative(spec: Spec, today: date, cfg: WranglerConfig, basis: Basis) -> DateRange:

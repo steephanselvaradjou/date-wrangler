@@ -8,6 +8,7 @@ names the field it came from instead of failing later inside ``date()``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import date
 from enum import Enum
 from typing import Any
 
@@ -144,6 +145,16 @@ class WranglerConfig:
     #: Saturday and the Monday reading is a day out at both ends.
     week_starts_on: int = 0
 
+    #: Non-working weekdays for business-day phrases, 0=Monday. Saturday and Sunday by
+    #: default; (4, 5) for a Friday-Saturday weekend.
+    weekend: tuple[int, ...] = (5, 6)
+
+    #: Dates that are not working days, for "5 business days ago" and friends. Supplied,
+    #: never guessed: which days are holidays depends on a country, a region, an industry
+    #: and sometimes a single company, so a built-in list would be wrong somewhere and
+    #: confident everywhere. Empty by default, which counts weekends only.
+    holidays: frozenset[date] = frozenset()
+
     #: How eagerly to claim bare month names in running prose. "strict" requires a year
     #: or an explicit period marker; "greedy" matches any month name anywhere.
     strictness: str = "balanced"
@@ -162,6 +173,15 @@ class WranglerConfig:
                 "WranglerConfig.week_starts_on must be 0-6 (0=Monday), got "
                 f"{self.week_starts_on!r}"
             )
+        if not all(isinstance(d, int) and 0 <= d <= 6 for d in self.weekend):
+            raise ValueError(f"WranglerConfig.weekend must be weekdays 0-6, got {self.weekend!r}")
+        if len(set(self.weekend)) >= 7:
+            raise ValueError("WranglerConfig.weekend must leave at least one working day")
+        if not isinstance(self.holidays, frozenset):
+            # A list or set would make the config unhashable, or mutable after the fact.
+            object.__setattr__(self, "holidays", frozenset(self.holidays))
+        if not all(isinstance(d, date) for d in self.holidays):
+            raise TypeError("WranglerConfig.holidays must hold datetime.date values")
         if not 0 <= self.two_digit_pivot <= 99:
             raise ValueError(
                 f"WranglerConfig.two_digit_pivot must be 0-99, got {self.two_digit_pivot}"

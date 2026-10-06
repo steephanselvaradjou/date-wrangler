@@ -681,14 +681,112 @@ def _p_edge_day(text: str, cfg: WranglerConfig) -> Spec | None:
     different one entirely.
     """
     m = re.match(
-        rf"\s*(?:the\s+)?(first|1st|last|final)\s+day{_NTH_OF}(.+)$", text, re.IGNORECASE
+        rf"\s*(?:the\s+)?(first|1st|last|final)\s+({_BIZ_WORD}\s+)?day{_NTH_OF}(.+)$",
+        text,
+        re.IGNORECASE,
     )
     if not m:
         return None
-    target = _nth_target(m.group(2), cfg)
+    target = _nth_target(m.group(3), cfg)
     if target is None:
         return None
-    return target.with_(day_of_period=1 if m.group(1).lower() in ("first", "1st") else -1)
+    # "the last business day of the month" is the close date, and the calendar last day is
+    # wrong for it whenever that lands on a weekend.
+    return target.with_(
+        day_of_period=1 if m.group(1).lower() in ("first", "1st") else -1,
+        pick_business_day=m.group(2) is not None,
+    )
+
+
+#: What people write in front of a week number. "cw"/"kw" are the German and Scandinavian
+#: abbreviations, which turn up in any supply chain that touches Europe.
+_WEEK_WORD = r"(?:calendar\s+week|cal\s+week|week|wk|cw|kw)"
+#: "week 42, 2026" is how a spreadsheet heading reads; the comma is not the
+#: period's, so it is allowed here and stripped before the year is read.
+_WEEK_YEAR_SUFFIX = rf"(?:\s*,)?{_YEAR_SUFFIX}"
+
+
+def _p_iso_week_compact(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"2026-W42", "2026W42" -- the ISO 8601 form, which carries its own year."""
+    m = re.match(r"\s*((?:19|20)\d{2})\s*-?\s*w\s*(\d{1,2})\b", text, re.IGNORECASE)
+    if not m:
+        return None
+    week = int(m.group(2))
+    if not 1 <= week <= 53:
+        return None
+    return Spec(Kind.ISO_WEEK, year=int(m.group(1)), index=week)
+
+
+def _p_week_number(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"week 42", "wk 42", "CW42", "week 42 of 2026"."""
+    m = re.match(rf"\s*{_WEEK_WORD}\s*\.?\s*#?\s*(\d{{1,2}})\b(.*)$", text, re.IGNORECASE)
+    if not m:
+        return None
+    week = int(m.group(1))
+    if not 1 <= week <= 53:
+        return None
+    year, _ = _year_from_suffix(m.group(2).lstrip(" ,"), cfg)
+    return Spec(Kind.ISO_WEEK, year=year, index=week)
+
+
+def _p_week_bare(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"W42" with nothing to say it is a week.
+
+    Weak on purpose: an uppercase W and two digits is just as likely to be a part number,
+    a room or a bus route, so in balanced mode this needs a cue the way a bare month does.
+    """
+    # The scanner lowers ASCII text before matching, so the pattern cannot test case --
+    # the fragment handed here keeps the original, which is where the check belongs.
+    # Same arrangement as the bare COB acronym.
+    if not text.lstrip().startswith("W"):
+        return None
+    m = re.match(r"\s*W\s*(\d{1,2})\b(.*)$", text)
+    if not m:
+        return None
+    week = int(m.group(1))
+    if not 1 <= week <= 53:
+        return None
+    year, _ = _year_from_suffix(m.group(2).lstrip(" ,"), cfg)
+    return Spec(Kind.ISO_WEEK, year=year, index=week)
+
+
+#: "business day", "working days", "trading day". Weekend and holidays come from config.
+_BIZ_WORD = r"(?:business|working|trading|work)"
+_BIZ = rf"{_BIZ_WORD}\s+days?"
+
+
+def _p_business_relative(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"last 10 business days", "next business day"."""
+    m = re.match(rf"\s*({_DIRWORD})\s+(?:({_NUM})\s+)?{_BIZ}\b", text, re.IGNORECASE)
+    if not m:
+        return None
+    count = word_to_int(m.group(2)) if m.group(2) else 1
+    if count is None:
+        return None
+    return Spec(
+        Kind.RELATIVE, count=count, unit=Grain.DAY,
+        direction=_direction_of(m.group(1)), business=True,
+    )
+
+
+def _p_business_ago(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"5 business days ago", "3 working days from now", "in 2 business days"."""
+    m = re.match(rf"\s*in\s+({_NUM})\s+{_BIZ}\b", text, re.IGNORECASE)
+    if m:
+        count, direction = word_to_int(m.group(1)), 1
+    else:
+        m = re.match(
+            rf"\s*({_NUM})\s+{_BIZ}\s+(from\s+(?:now|today)|{_AGO_WORDS})\b",
+            text, re.IGNORECASE,
+        )
+        if not m:
+            return None
+        tail = m.group(2).lower()
+        direction = 1 if tail.startswith("from") or tail in _AGO_FUTURE else -1
+        count = word_to_int(m.group(1))
+    if count is None:
+        return None
+    return Spec(Kind.AGO, count=count, unit=Grain.DAY, direction=direction, business=True)
 
 
 def _p_nth_of(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -882,13 +980,30 @@ RULES: tuple[Rule, ...] = (
         _p_rolling,
     ),
     # Before "fiscal_month" and "day_month_year", both of which open with a number.
+    # Before "iso", whose \d{4}-\d{1,2} opening would otherwise claim "2026-W42" as far
+    # as the dash and leave "W42" behind.
+    Rule("iso_week_compact", r"\b(?:19|20)\d{2}\s*-?\s*w\s*\d{1,2}\b", _p_iso_week_compact),
+    Rule(
+        "week_number",
+        rf"\b{_WEEK_WORD}\s*\.?\s*#?\s*\d{{1,2}}\b{_WEEK_YEAR_SUFFIX}",
+        _p_week_number,
+    ),
     # Both must precede "relative" and the weekday rules, which otherwise claim the
     # opening words from the same position and win the alternation: "last day" scans as
     # "last 1 day" and "last Friday" as the weekday on its own.
     Rule(
         "edge_day",
-        rf"\b(?:the\s+)?(?:first|1st|last|final)\s+day{_NTH_OF}{_NTH_TARGET}\b",
+        rf"\b(?:the\s+)?(?:first|1st|last|final)\s+(?:{_BIZ_WORD}\s+)?day{_NTH_OF}"
+        rf"{_NTH_TARGET}\b",
         _p_edge_day,
+    ),
+    # After edge_day, so "the last business day of the month" is a day inside the month
+    # and not the window of one business day before today.
+    Rule("business_relative", rf"\b{_DIRWORD}\s+(?:{_NUM}\s+)?{_BIZ}\b", _p_business_relative),
+    Rule(
+        "business_ago",
+        rf"\b(?:in\s+{_NUM}\s+{_BIZ}|{_NUM}\s+{_BIZ}\s+(?:from\s+(?:now|today)|{_AGO_WORDS}))\b",
+        _p_business_ago,
     ),
     Rule(
         "nth_weekday",
@@ -953,6 +1068,9 @@ RULES: tuple[Rule, ...] = (
     Rule("year", rf"\b{_YEAR_WORD}{_SEP}'?\d{{2,4}}\b", _p_year),
     Rule("month", rf"\b{_MONTH}\b", _p_month),
     Rule("weekday", rf"\b{alt(WEEKDAY_NAMES)}\b", _p_weekday),
+    # Weak, like a bare month: "W42" is as likely a part number as a week, so in balanced
+    # mode it needs a cue. The explicit forms above never do.
+    Rule("week_bare", rf"\bw\s*\d{{1,2}}\b{_WEEK_YEAR_SUFFIX}", _p_week_bare),
     Rule("bare_year", rf"\b{_BARE_YEAR}\b", _p_bare_year),
     # Last, and starting at the digit rather than at "the": the scanner takes the leftmost
     # match, so swallowing the article would beat the quarter rule to "the 5th quarter"

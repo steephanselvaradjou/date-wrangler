@@ -147,7 +147,7 @@ def test_a_closing_quote_inside_an_identifier_is_doubled():
 
 def test_dialect_composes_with_inclusive():
     assert Q2.sql("d", inclusive=True, dialect=SqlDialect.tsql()) == (
-        "[d] >= CAST('2025-04-01' AS DATE) AND [d] <= CAST('2025-06-30' AS DATE)"
+        "d >= CAST('2025-04-01' AS DATE) AND d <= CAST('2025-06-30' AS DATE)"
     )
 
 
@@ -193,4 +193,70 @@ def test_from_dict_ignores_the_derived_keys():
            "basis": "fiscal", "end_inclusive": "nonsense", "days": -1}
     assert DateRange.from_dict(raw) == DateRange(
         date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER, Basis.FISCAL
+    )
+
+
+# ---------------------------------------------------------------------------
+# Identifiers: quote only where it is required
+# ---------------------------------------------------------------------------
+
+ALL_QUOTING = [
+    SqlDialect.oracle(), SqlDialect.snowflake(), SqlDialect.postgres(),
+    SqlDialect.tsql(), SqlDialect.mysql(), SqlDialect.bigquery(),
+]
+
+
+@pytest.mark.parametrize("dialect", ALL_QUOTING)
+def test_a_plain_name_is_never_quoted(dialect):
+    """REGRESSION: always quoting broke Oracle and Snowflake, which store an unquoted name
+    in upper case -- so "claim_date" is an invalid identifier for a column created as
+    claim_date. Bare is correct on every engine."""
+    assert dialect.identifier("claim_date") == "claim_date"
+
+
+@pytest.mark.parametrize(
+    "dialect,column,expected",
+    [
+        (SqlDialect.postgres(), "m.claim_date", "m.claim_date"),
+        (SqlDialect.oracle(), "m.date", 'm."DATE"'),
+        (SqlDialect.tsql(), "order date.claim_date", "[order date].claim_date"),
+        (SqlDialect.postgres(), "s.t.order date", 's.t."order date"'),
+    ],
+)
+def test_a_qualified_name_is_quoted_part_by_part(dialect, column, expected):
+    """REGRESSION: "m.claim_date" quoted whole is one column with a dot in its name, which
+    looks right and refers to nothing."""
+    assert dialect.identifier(column) == expected
+
+
+@pytest.mark.parametrize(
+    "dialect,expected",
+    [
+        (SqlDialect.oracle(), '"DATE"'),
+        (SqlDialect.snowflake(), '"DATE"'),
+        (SqlDialect.postgres(), '"date"'),
+        (SqlDialect.tsql(), "[date]"),
+        (SqlDialect.mysql(), "`date`"),
+    ],
+)
+def test_a_reserved_word_is_quoted_in_the_case_the_engine_stored_it(dialect, expected):
+    """Quoted only because it is reserved, so it was created unquoted and stored folded:
+    DATE on Oracle, date on Postgres."""
+    assert dialect.identifier("date") == expected
+
+
+def test_a_name_that_needs_quoting_keeps_its_case():
+    """A space or punctuation means it was created quoted, so it is stored verbatim."""
+    assert SqlDialect.oracle().identifier("Order Date") == '"Order Date"'
+
+
+def test_always_quoting_is_still_available():
+    always = SqlDialect('"', '"', "date", quoting="always")
+    assert always.identifier("claim_date") == '"claim_date"'
+
+
+def test_the_full_predicate_on_oracle():
+    q = DateRange(date(2026, 4, 1), date(2026, 7, 1), Grain.QUARTER)
+    assert q.sql("m.claim_date", dialect=SqlDialect.oracle()) == (
+        "m.claim_date >= DATE '2026-04-01' AND m.claim_date < DATE '2026-07-01'"
     )
