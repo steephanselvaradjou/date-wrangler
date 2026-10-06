@@ -360,6 +360,7 @@ plausible.
 | Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` |
 | Weekdays | `last Monday`, `next Friday`, `this Tuesday` |
 | To-date | `YTD`, `MTD`, `QTD`, `last YTD` (the same window a year earlier) |
+| Period to date | `this year to date`, `Q3 to date`, `October to date`, `March 2024 to date` |
 | Reporting shorthand | `TTM`, `LTM`, `T12M`, `L3M`, `trailing 12 months`, `rolling 3 months` |
 | Period-ending | `quarter ending June 2024`, `year ended March 2024` |
 | Absolute | `2024-03-15`, `15 January 2024`, `January 15, 2024`, `03/04/2024` |
@@ -385,6 +386,14 @@ plausible.
 
 Connectors include `to`, `through`, `thru`, `until`, `till`, `upto`, `and`, and hyphen, en
 dash or em dash — the last three matter because editors rewrite `-` as `–` on sight.
+
+**`<period> to date` runs from the start of the period up to and including today.** For
+the current period that is the period so far — `this year to date` is the same window as
+`YTD`. For one that has already ended it carries on to today, because that is what "to
+date" says: `March 2024 to date` is everything since 1 March 2024, not March alone. With no
+year written, a period that would start in the future means the last one instead, so
+`December to date` asked in October starts last December. An explicit future period —
+`FY28 to date` — has nothing to date yet and is refused with a diagnostic.
 
 ### What it deliberately does not read
 
@@ -431,9 +440,9 @@ A match whose neighbouring words change the period but could not be read comes b
 asked:
 
 ```python
-matches, diags = diagnose("March 2024 to date", today=today)
+matches, diags = diagnose("two years from March 2024", today=today)
 matches[0].confidence   # 0.5
-diags[0].reason         # "read 'March 2024' but not 'to date', which changes the period"
+diags[0].reason         # "read 'March 2024' but not 'two years from', which changes the period"
 ```
 
 Filter on `confidence` when a wrong range is worse than no range.

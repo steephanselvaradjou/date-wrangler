@@ -89,6 +89,9 @@ class Spec:
     #: relative ("next month"), and one flag read both ways turned "first working day of
     #: next month" into the next working day.
     pick_business_day: bool = False
+    #: "this year to date", "Q3 to date", "March 2024 to date": from the start of the
+    #: period up to and including today.
+    through_today: bool = False
     #: None => take it from configuration. Only relative periods can roll.
     anchor: Anchor | None = None
 

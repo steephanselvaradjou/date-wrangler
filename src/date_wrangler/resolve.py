@@ -136,6 +136,13 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         base = _resolve_core(spec, today, cfg)
         if spec.year_offset:
             base = _shift_years(base, spec.year_offset)
+        if spec.through_today:
+            # With no year written, "December to date" in October means the December just
+            # gone, not the one coming -- the same choice "YTD March" already makes. An
+            # explicit year is taken at its word, so "FY28 to date" is still refused.
+            if base.start is not None and base.start > today and not spec.has_explicit_year:
+                base = _shift_years(base, -1)
+            base = _through_today(base, today)
         if spec.part is not None:
             base = _slice_part(base, spec.part)
         if spec.nth_weekday is not None:
@@ -150,6 +157,26 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
             raise
         raise UnresolvableSpec(str(exc)) from exc
     return _apply_mod(base, spec.mod, today)
+
+
+def _through_today(r: DateRange, today: date) -> DateRange:
+    """A period "to date": from its start up to and including today.
+
+    For the current period that is the period so far -- "this year to date" is the same
+    window as YTD. For one that has already ended it runs on to today, because that is
+    what "to date" says: "revenue from March 2024 to date" is everything since March 2024,
+    not March 2024 alone. One reading covers both, so there is no case to pick.
+
+    A period that has not started yet has nothing to date, and is refused rather than
+    turned into an empty or inverted range.
+    """
+    if r.start is None:
+        raise UnresolvableSpec("a period with no start has nothing to count to date from")
+    if r.start > today:
+        raise UnresolvableSpec(
+            f"the period starts on {r.start}, after today, so there is nothing to date yet"
+        )
+    return DateRange(r.start, today + timedelta(days=1), r.grain, r.basis, r.mod, r.anchor)
 
 
 def _shift_years(r: DateRange, offset: int) -> DateRange:

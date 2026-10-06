@@ -348,6 +348,34 @@ def _p_to_date(text: str, cfg: WranglerConfig) -> Spec | None:
     return spec
 
 
+#: "to date", "-to-date", "to-date".
+_TO_DATE = r"(?:\s+|\s*-\s*)to(?:\s+|\s*-\s*)date"
+
+#: The periods "<period> to date" is written with. Deliberately not "last year" or a bare
+#: "year": "last year to date" is last year's YTD -- the same window a year earlier -- and
+#: the to_date rule already reads both that way.
+_TD_TARGET = (
+    rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
+    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_YEAR}|(?:this|current|present)\s+{_UNIT})"
+)
+
+
+def _p_period_to_date(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"this year to date", "Q3 to date", "March 2024 to date".
+
+    Only the abbreviations and "year to date" were read before. Spelled out with "this",
+    or with a named period, the period was read and "to date" was left over -- so the
+    safety net flagged it at 0.5 and the answer was the whole period, future included.
+    """
+    m = re.match(rf"\s*(.+?){_TO_DATE}\b", text, re.IGNORECASE)
+    if not m:
+        return None
+    target = _target_spec(m.group(1), cfg)
+    if target is None:
+        return None
+    return target.with_(through_today=True)
+
+
 def _p_trailing_months(text: str, cfg: WranglerConfig) -> Spec | None:
     """Reporting shorthand: TTM, LTM, T12M, L3M."""
     low = text.strip().lower()
@@ -942,6 +970,10 @@ RULES: tuple[Rule, ...] = (
         rf"|quarter\s*to\s*date)(?:\s+(?:of\s+)?{_YEAR})?\b",
         _p_to_date,
     ),
+    # After to_date, so "year to date" and "last year to date" keep their YTD reading, and
+    # ahead of every plain period rule, which would otherwise claim "this year" or "Q3"
+    # from the same position and leave "to date" behind.
+    Rule("period_to_date", rf"\b{_TD_TARGET}{_TO_DATE}\b", _p_period_to_date),
     Rule(
         "period_ending",
         rf"\b(?:the\s+)?{_UNIT}\s+end(?:ing|ed|s)?\s+(?:{_MONTH}{_YEAR_SUFFIX}|{_YEAR})\b",

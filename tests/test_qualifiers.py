@@ -200,7 +200,9 @@ def test_rolling_months_land_on_the_same_day_of_month():
 
 
 def test_unread_qualifier_lowers_confidence_and_explains():
-    matches, diags = diagnose("March 2024 to date", today=TODAY)
+    # "March 2024 to date" was the example here until 0.7.1 learned to read it. A future
+    # period still has nothing "to date", so this one stays a partial read.
+    matches, diags = diagnose("next month to date", today=TODAY)
     assert matches and matches[0].confidence <= 0.5
     assert any("to date" in d.reason for d in diags)
 
@@ -434,3 +436,57 @@ def test_a_comma_separated_list_still_comes_back_as_separate_periods():
     found = parse("Q1, Q2 and Q3", today=TODAY)
     assert len(found) == 3
     assert all(m.confidence == 1.0 for m in found)
+
+
+# ---------------------------------------------------------------------------
+# <period> to date
+# ---------------------------------------------------------------------------
+
+OCT6 = date(2026, 10, 6)  # FY27 Q3 on an April start
+
+
+@pytest.mark.parametrize(
+    "text,start",
+    [
+        ("this year to date", date(2026, 4, 1)),
+        ("current year to date", date(2026, 4, 1)),
+        ("this month to date", date(2026, 10, 1)),
+        ("this quarter to date", date(2026, 10, 1)),
+        ("Q3 to date", date(2026, 10, 1)),
+        ("FY27 to date", date(2026, 4, 1)),
+        ("October to date", date(2026, 10, 1)),
+        ("March 2024 to date", date(2024, 3, 1)),
+        ("March 2024-to-date", date(2024, 3, 1)),
+    ],
+)
+def test_a_period_to_date_runs_from_its_start_through_today(text, start):
+    """REGRESSION: only the abbreviations and "year to date" were read. "this year to
+    date" read "this year", left "to date" over, and answered with the whole fiscal year
+    at confidence 0.5 -- April 2026 to March 2027, five months of it in the future."""
+    m = parse_one(text, today=OCT6)
+    assert m is not None and m.confidence == 1.0, text
+    assert (m.range.start, m.range.end) == (start, date(2026, 10, 7))
+
+
+def test_this_year_to_date_is_the_same_window_as_ytd():
+    assert parse_one("this year to date", today=OCT6).range == parse_one("YTD", today=OCT6).range
+
+
+def test_last_year_to_date_keeps_its_ytd_reading():
+    """"last year to date" is last year's YTD -- the same window a year earlier -- not the
+    span from the start of last year to today. The to_date rule reads it first."""
+    r = parse_one("last year to date", today=OCT6).range
+    assert (r.start, r.end) == (date(2025, 4, 1), date(2025, 10, 7))
+
+
+def test_an_undated_period_in_the_future_means_the_last_one():
+    """The same choice "YTD March" makes: the most recent one, not the coming one."""
+    assert parse_one("December to date", today=OCT6).range.start == date(2025, 12, 1)
+    assert parse_one("Q4 to date", today=OCT6).range.start == date(2026, 1, 1)
+
+
+@pytest.mark.parametrize("text", ["FY28 to date", "December 2026 to date"])
+def test_an_explicitly_future_period_has_nothing_to_date(text):
+    matches, diags = diagnose(text, today=OCT6)
+    assert matches == []
+    assert any("after today" in d.reason for d in diags)
