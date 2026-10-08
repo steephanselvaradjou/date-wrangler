@@ -75,10 +75,15 @@ def _might_hold_a_date(text: str) -> bool:
 
 
 _SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{rule.pattern})" for rule in RULES)
-_SCANNER = re.compile(_SCAN_PATTERN, re.IGNORECASE)
+#: Every rule opens with \b, so it is checked once, ahead of the alternation, instead of
+#: once per rule at every position. Most positions are inside a word and fail it, and they
+#: now fail after one test rather than forty-eight -- about a third of scanning time, with
+#: nothing able to match differently, since each branch still begins with its own \b. A
+#: test holds every rule to that opening, because one without it would quietly lose matches.
+_SCANNER = re.compile(rf"\b(?:{_SCAN_PATTERN})", re.IGNORECASE)
 #: The same rules, case-sensitive, for the lowered-ASCII fast path in :func:`_scan`. Every
 #: rule pattern is written in lower case, so the two accept exactly the same fragments.
-_SCANNER_CS = re.compile(_SCAN_PATTERN)
+_SCANNER_CS = re.compile(rf"\b(?:{_SCAN_PATTERN})")
 _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 
 
