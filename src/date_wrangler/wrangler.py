@@ -19,7 +19,7 @@ from .config import DEFAULT_CONFIG, WranglerConfig
 from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
 from .rules import RULES, Rule
-from .spec import Spec
+from .spec import Kind, Part, Spec
 from .types import DateMatch, DateRange, Mod, grain_rank
 from .vocab import (
     FUTURE_WORDS,
@@ -103,11 +103,42 @@ _COMPARISON_LEAD = re.compile(
 
 _MOD_PREFIXES: tuple[tuple[re.Pattern[str], Mod], ...] = (
     (re.compile(r"\bas\s+(?:of|on|at)\s+$", re.IGNORECASE), Mod.AS_OF),
+    # Inclusive and negated bounds come first. Each ends in a word a plain prefix below
+    # would claim on its own -- "on or after" ends in "after", "not before" in "before" --
+    # and read that way the boundary day is lost ("on or after 1 April" began on the 2nd)
+    # or the meaning is reversed ("not before 1 April" meant up to 31 March).
+    (
+        re.compile(
+            r"\b(?:on\s+or\s+after|not\s+before|no\s+earlier\s+than|from\s+and\s+including)"
+            r"\s+$",
+            re.IGNORECASE,
+        ),
+        Mod.SINCE,
+    ),
+    (
+        re.compile(
+            r"\b(?:on\s+or\s+before|not\s+after|no\s+later\s+than"
+            r"|up\s+to\s+and\s+including|by)\s+$",
+            re.IGNORECASE,
+        ),
+        Mod.UNTIL,
+    ),
     (re.compile(r"\bsince\s+$", re.IGNORECASE), Mod.SINCE),
     (re.compile(r"\b(?:prior\s+to|earlier\s+than|before)\s+$", re.IGNORECASE), Mod.BEFORE),
-    (re.compile(r"\b(?:up\s*to|upto|until|till)\s+$", re.IGNORECASE), Mod.UNTIL),
+    # "through 31 March" on its own is a deadline, inclusive. Inside a range ("Jan through
+    # Mar") the two ends are merged before any modifier is looked for, so this never sees it.
+    (re.compile(r"\b(?:up\s*to|upto|until|till|through|thru)\s+$", re.IGNORECASE), Mod.UNTIL),
     (re.compile(r"\bafter\s+$", re.IGNORECASE), Mod.AFTER),
 )
+
+#: "from" starts something only when what follows is a single day: "from 1 April",
+#: "from Monday". After a period it more often names a source -- "the figures from Q1" are
+#: Q1's figures, not everything since -- so a period after "from" is left as it is.
+_FROM_PREFIX = re.compile(r"\bfrom\s+$", re.IGNORECASE)
+_DAY_KINDS = frozenset({Kind.ABS_DAY, Kind.DAY_KEYWORD, Kind.WEEKDAY})
+
+#: "before the end of March" is a deadline for all of March, not "before its last third".
+_END_OF = re.compile(r"(?:the\s+)?end\s+of\b", re.IGNORECASE)
 _MOD_SUFFIXES: tuple[tuple[re.Pattern[str], Mod | None], ...] = (
     (re.compile(r"^\s*onwards?\b", re.IGNORECASE), Mod.SINCE),
     (re.compile(r"^\s*or\s+later\b", re.IGNORECASE), Mod.SINCE),
@@ -125,6 +156,7 @@ _AND_JOIN = re.compile(r"\band\b|&", re.IGNORECASE)
 #: Words that make a bare month or year read as a date rather than a noun.
 _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|between|before|after|"
+    r"no\s+(?:later|earlier)\s+than|"
     r"vs|versus|compared\s+(?:to|with)|"
     r"sales|revenue|profit|data|report|numbers|figures|results|performance|growth|"
     r"spend|cost|budget|forecast|actuals|"
@@ -464,7 +496,19 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
     for pattern, mod in _MOD_PREFIXES:
         m = pattern.search(before)
         if m:
-            return _Raw(raw.rule, raw.spec.with_(mod=mod), window + m.start(), raw.end)
+            spec = raw.spec.with_(mod=mod)
+            # "before / by / until the end of March" means by the close of March. Read
+            # literally it was "before the last third of March", which ended on the 20th.
+            if (
+                mod in (Mod.BEFORE, Mod.UNTIL)
+                and spec.part is Part.LATE
+                and _END_OF.match(text[raw.start : raw.end])
+            ):
+                spec = spec.with_(part=None, mod=Mod.UNTIL)
+            return _Raw(raw.rule, spec, window + m.start(), raw.end)
+    m = _FROM_PREFIX.search(before)
+    if m and raw.spec.kind in _DAY_KINDS and raw.spec.mod is None:
+        return _Raw(raw.rule, raw.spec.with_(mod=Mod.SINCE), window + m.start(), raw.end)
     return raw
 
 

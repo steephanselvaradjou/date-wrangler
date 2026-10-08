@@ -452,7 +452,25 @@ def _p_fiscal_month(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.FISCAL_MONTH, year=year, index=index, basis=basis or Basis.FISCAL)
 
 
+#: "1h" and "2h" are hours far more often than halves -- "a 2h drive" read as H2 -- and
+#: "4q" is rarely a quarter. A digit written *before* the letter is the finance shorthand
+#: when the letter is a capital (1H, 3Q), the rule the bare COB acronym follows, or when a
+#: year comes after it ("from 1q 2024 to 3q 2024"). "1h 30m" and "1h24" have neither. The
+#: scanner lowers text before matching, so case is checked on the original fragment.
+_DIGIT_FIRST = re.compile(r"\b[1-4]\s*([qQhH])(?![a-zA-Z])")
+_YEAR_AFTER = re.compile(r"\s+(?:(?:'\d{2}|(?:19|20)\d{2})\b|[fFcC]\.?[yY])")
+
+
+def _digit_first_is_capital(text: str) -> bool:
+    m = _DIGIT_FIRST.search(text)
+    if m is None or m.group(1).isupper():
+        return True
+    return _YEAR_AFTER.match(text, m.end()) is not None
+
+
 def _p_quarter(text: str, cfg: WranglerConfig) -> Spec | None:
+    if not _digit_first_is_capital(text):
+        return None
     low = text.lower()
     index: int | None = None
     m = re.search(rf"{_QWORD}\s*([1-4])(?!\d)", low)
@@ -468,7 +486,73 @@ def _p_quarter(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.ABS_QUARTER, year=year, index=index, basis=basis, year_offset=offset)
 
 
+#: A quarter or half as a label: Q3, 3Q, H1, 1H.
+_QH = r"(?:q\s*[1-4]|[1-4]\s*q|h\s*[12]|[12]\s*h)"
+#: A basis written beside one: "fiscal Q3", "Q3 FY", "calendar H1".
+_BASIS_TAG = r"(?:fiscal|financial|calendar|fy|cy)"
+
+#: The spellings that the quarter and half rules either split apart or never saw, each a
+#: full match on the fragment so the label and the year cannot be confused -- "3Q24" read
+#: left to right has a "Q2" in it.
+_LABELLED_FORMS = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        rf"\s*(?P<basis>{_BASIS_TAG})\s+(?P<qh>{_QH})(?P<tail>.*)",          # fiscal Q3 [2024]
+        rf"\s*(?P<qh>{_QH})\s+(?P<basis>fiscal|financial|calendar|fy|cy)\s*",  # Q3 fiscal
+        rf"\s*(?P<qh>{_QH})['-](?P<yr>\d{{2}}(?:\d{{2}})?)\s*",                 # Q3'24 Q3-2024
+        rf"\s*(?P<yr>(?:19|20)\d{{2}})\s*-?\s*(?P<qh>{_QH})\s*",                # 2024-Q3 2024Q3
+        rf"\s*(?P<basis>{_FY_WORD}|{_CY_WORD})\s*'?(?P<yr>\d{{2,4}})\s*-?\s*(?P<qh>{_QH})\s*",
+        r"\s*(?P<qh>[1-4]\s*q|[12]\s*h)\s*'?(?P<yr>\d{2,4})\s*",             # 3Q24 1H2024
+    )
+)
+
+
+def _p_labelled_period(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"fiscal Q3", "Q3 FY", "Q3'24", "Q3-2024", "2024-Q3", "FY24 Q3", "3Q24", "1H24".
+
+    Each of these used to lose part of itself, and confidently. A stated basis was dropped,
+    so "fiscal Q3" followed the configured default and became a calendar quarter under a
+    calendar one. An attached year was dropped, so "Q3'24" meant Q3 of *this* year. And
+    a dash between year and quarter read as a range, so "2024-Q3" ran from January 2024
+    to the end of Q3.
+
+    The result is the same shape "Q3 2024" produces, so with no basis written it follows
+    ``bare_period_basis`` exactly as that does.
+    """
+    if not _digit_first_is_capital(text):
+        return None
+    for form in _LABELLED_FORMS:
+        m = form.fullmatch(text)
+        if m:
+            break
+    else:
+        return None
+    groups = m.groupdict()
+    qh = re.sub(r"\s+", "", groups["qh"]).lower()
+    digit = int(re.search(r"\d", qh).group(0))  # type: ignore[union-attr]
+    kind = Kind.ABS_QUARTER if "q" in qh else Kind.ABS_HALF
+    if not (1 <= digit <= (4 if kind is Kind.ABS_QUARTER else 2)):
+        return None
+
+    basis: Basis | None = None
+    word = (groups.get("basis") or "").strip().lower()
+    if word:
+        basis = Basis.CALENDAR if word.startswith("c") else Basis.FISCAL
+
+    year: int | None = None
+    if groups.get("yr"):
+        year = _pivot_year(groups["yr"], cfg)
+    elif groups.get("tail"):
+        year, tail_basis = _year_from_suffix(groups["tail"], cfg)
+        if groups["tail"].strip() and year is None:
+            return None  # something follows that is not a year; leave it to other rules
+        basis = basis or tail_basis
+    return Spec(kind, year=year, index=digit, basis=basis)
+
+
 def _p_half(text: str, cfg: WranglerConfig) -> Spec | None:
+    if not _digit_first_is_capital(text):
+        return None
     low = text.lower()
     index: int | None = None
     m = re.search(r"\bh\s*([12])(?!\d)", low) or re.search(r"\bhalf\s*([12])(?!\d)", low)
@@ -1013,6 +1097,20 @@ RULES: tuple[Rule, ...] = (
     Rule("iso", r"\b\d{4}-\d{1,2}-\d{1,2}(?!\d)", _p_iso),
     Rule("dashed_day", rf"\b\d{{1,2}}-{_MONTH}-'?\d{{2,4}}\b", _p_dashed_day),
     Rule("fy_range", rf"\b{_FY_WORD}\s*'?\d{{2,4}}\s*[-/]\s*'?\d{{2,4}}\b", _p_fy_range),
+    # Ahead of the year, quarter and half rules, which start at the same place and would
+    # each take one piece: "FY24" out of "FY24 Q3", "2024" out of "2024-Q3", "Q3" out of
+    # "Q3'24". (?!\w) rather than \b, because "Q3'24" ends on a digit after a quote.
+    Rule(
+        "labelled_period",
+        rf"\b(?:{_BASIS_TAG}\s+{_QH}{_YEAR_SUFFIX}"
+        rf"|{_QH}\s+(?:fiscal|financial|calendar)\b"
+        rf"|{_QH}\s+(?:fy|cy)\b(?!\s*'?\d)"
+        rf"|{_QH}['-]\d{{2}}(?:\d{{2}})?(?!\d)"
+        rf"|(?:19|20)\d{{2}}\s*-?\s*{_QH}"
+        rf"|(?:{_FY_WORD}|{_CY_WORD})\s*'?\d{{2,4}}\s*-?\s*{_QH}"
+        rf"|(?:[1-4]\s*q|[12]\s*h)\s*'?\d{{2,4}})(?!\w)",
+        _p_labelled_period,
+    ),
     Rule("numeric", r"\b\d{1,4}[/.]\d{1,2}[/.]\d{1,4}\b", _p_numeric),
     Rule(
         "ytd_period",
