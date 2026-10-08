@@ -307,6 +307,20 @@ Fiscal years follow the pandas `Q-MAR` convention by default — labelled by the
 **end**, so with an April start FY2024 runs Apr 2023 – Mar 2024 and Apr–Jun is Q1. Set
 `label_by=YearLabel.START_YEAR` for the US corporate convention.
 
+**Which basis a phrase is read on** comes down to what it says, never to which rule
+happened to match it:
+
+| phrase | basis |
+|---|---|
+| `2013`, `in 2013`, `the year 2013`, `end of the year 2013` | calendar — a year on its own is a calendar year |
+| `FY2013`, `fiscal year 2013`, `this fiscal year`, `last FY` | fiscal — it says so |
+| `CY2013`, `this calendar year`, `next calendar quarter` | calendar — it says so |
+| `Q1`, `this year`, `last quarter` | `bare_period_basis` — nothing was said |
+| `Q1 of 2013`, `Q1 of the year 2013` | `of_year_basis` — a year labelling a quarter is genuinely ambiguous |
+
+So an explicit `fiscal` or `calendar` always beats the configured default, and the word
+"year" on its own never makes anything fiscal.
+
 Invalid configuration fails on construction with a message naming the field, not later
 from inside `date()` on the first request that mentions a quarter.
 
@@ -355,9 +369,10 @@ plausible.
 | | |
 |---|---|
 | Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `fy-24`, `F.Y. 2024` |
-| Calendar periods | `CY2024`, `Q1 of 2024`, `January 2024`, `2024` |
+| Calendar periods | `CY2024`, `Q1 of 2024`, `January 2024`, `2024`, `the year 2024` |
 | Fiscal month index | `third month of FY24`, `twelfth month` |
 | Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` |
+| Stated basis | `this fiscal year`, `this FY`, `last 2 fiscal quarters`, `next calendar year` |
 | Weekdays | `last Monday`, `next Friday`, `this Tuesday` |
 | To-date | `YTD`, `MTD`, `QTD`, `last YTD` (the same window a year earlier) |
 | Period to date | `this year to date`, `Q3 to date`, `October to date`, `March 2024 to date` |
