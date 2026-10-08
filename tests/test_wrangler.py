@@ -92,8 +92,11 @@ def test_two_digit_years_use_the_pivot():
     assert rng("fy24") == (date(2023, 4, 1), date(2024, 4, 1))
 
 
-def test_bare_year_is_a_calendar_year():
-    assert rng("2024") == (date(2024, 1, 1), date(2025, 1, 1))
+def test_bare_year_follows_year_basis():
+    """No FY or CY on it, so year_basis decides -- calendar here, fiscal by default."""
+    calendar = WranglerConfig(year_basis=Basis.CALENDAR)
+    assert rng("2024", calendar) == (date(2024, 1, 1), date(2025, 1, 1))
+    assert rng("2024") == (date(2023, 4, 1), date(2024, 4, 1))
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +210,7 @@ def test_numeric_date_order_is_configurable():
         ("Q1 to Q2 FY24", (date(2023, 4, 1), date(2023, 10, 1))),
         ("from Jan 2024 to Mar 2024", (date(2024, 1, 1), date(2024, 4, 1))),
         ("FY24 to FY25", (date(2023, 4, 1), date(2025, 4, 1))),
-        ("2023 to 2024", (date(2023, 1, 1), date(2025, 1, 1))),
+        ("2023 to 2024", (date(2022, 4, 1), date(2024, 4, 1))),  # FY2023 to FY2024
     ],
 )
 def test_ranges(text, expected):
@@ -288,7 +291,7 @@ def test_and_still_joins_a_plain_pair():
         ("after FY24", date(2024, 4, 1), None, Mod.AFTER),
         ("up to March 2024", None, date(2024, 4, 1), Mod.UNTIL),
         ("till March 2024", None, date(2024, 4, 1), Mod.UNTIL),
-        ("before 2024", None, date(2024, 1, 1), Mod.BEFORE),
+        ("before 2024", None, date(2023, 4, 1), Mod.BEFORE),  # before FY2024 begins
         ("prior to Q3", None, date(2025, 10, 1), Mod.BEFORE),
     ],
 )
@@ -821,7 +824,7 @@ def test_make_formatter_handles_open_ranges():
     fmt = make_formatter()
     assert fmt(parse_one("since April 2024", today=TODAY).range) == "2024-04-01 onwards"
     assert fmt(parse_one("up to March 2024", today=TODAY).range) == "up to 2024-03-31"
-    assert fmt(parse_one("before 2024", today=TODAY).range) == "before 2024-01-01"
+    assert fmt(parse_one("before CY2024", today=TODAY).range) == "before 2024-01-01"
     assert fmt(parse_one("as of March 2024", today=TODAY).range) == "as of 2024-03-31"
 
 

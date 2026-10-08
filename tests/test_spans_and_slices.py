@@ -105,7 +105,7 @@ def test_a_countdown_is_not_a_period(text):
         ("the last week of March", date(2026, 3, 25), date(2026, 4, 1)),
         ("the last 10 days of March", date(2026, 3, 22), date(2026, 4, 1)),
         ("the first 2 weeks of next month", date(2026, 11, 1), date(2026, 11, 15)),
-        ("the first 3 months of 2024", date(2024, 1, 1), date(2024, 4, 1)),
+        ("the first 3 months of 2024", date(2023, 4, 1), date(2023, 7, 1)),  # FY2024
         ("the last 6 months of the year", date(2026, 10, 1), date(2027, 4, 1)),
         ("last 3 months of the year", date(2027, 1, 1), date(2027, 4, 1)),
         ("the last month of the quarter", date(2026, 12, 1), date(2027, 1, 1)),

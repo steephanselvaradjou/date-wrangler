@@ -46,9 +46,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="fiscal year start month (default 4)")
     p.add_argument("--label-by", choices=[y.value for y in YearLabel], default="end_year")
     p.add_argument("--basis", choices=[b.value for b in Basis], default="fiscal",
-                   help="what a bare Q1/H1 means (default fiscal)")
+                   help="default for --year-basis (default fiscal)")
     p.add_argument("--year-basis", choices=[b.value for b in Basis], default=None,
-                   help="what 'this year', 'last year' and YTD mean (default: follow --basis)")
+                   help="how every year and period that does not say fiscal or calendar is "
+                        "read (default: follow --basis)")
     p.add_argument("--anchor", choices=[a.value for a in Anchor], default="anchored",
                    help="what 'last month' means (default anchored)")
     p.add_argument("--date-order", choices=[d.value for d in DateOrder], default="DMY")

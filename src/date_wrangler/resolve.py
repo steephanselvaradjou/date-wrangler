@@ -102,18 +102,18 @@ _FROM_TODAY = frozenset({Kind.RELATIVE, Kind.THIS_PERIOD, Kind.TO_DATE, Kind.AGO
 
 
 def _basis_for(spec: Spec, cfg: WranglerConfig) -> Basis:
-    """The calendar a period is measured on.
+    """The calendar a period is measured on: what the phrase says, else ``year_basis``.
 
-    A basis the phrase states always wins. Otherwise a year counted from today -- "this
-    year", "last 2 years", "YTD" -- takes ``year_basis``, and everything else, a bare "Q1"
-    included, takes ``bare_period_basis``. Both default to the same thing, so the split
-    only shows when someone asks for it.
+    One rule, with no per-phrase exceptions. "FY2024", "fiscal Q3" and "this fiscal year"
+    say fiscal; "CY2024" and "this calendar year" say calendar; everything else -- "2024",
+    "Q4 2024", "Q1", "last quarter", "this year", "YTD", "the second half of 2024" --
+    follows ``year_basis``. Earlier versions decided this phrase by phrase, and the
+    phrases disagreed: "the second half of 2024" was calendar while "the last quarter of
+    2024" was fiscal, and "Q1 2024" and "Q1 of 2024" could land a year apart.
     """
     if spec.basis is not None:
         return spec.basis
-    if spec.kind in _FROM_TODAY and spec.unit is Grain.YEAR:
-        return cfg.effective_year_basis
-    return cfg.bare_period_basis
+    return cfg.effective_year_basis
 
 
 def _default_year(today: date, cfg: WranglerConfig, basis: Basis) -> int:

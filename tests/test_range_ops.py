@@ -334,7 +334,7 @@ def test_shift_rejects_a_non_grain():
 def test_split_then_shift_gives_the_prior_year_axis():
     """The shape a year-on-year chart actually needs: one bucket per month, each paired
     with the same month a year earlier."""
-    this_year = rng("2024").split(Grain.MONTH)
+    this_year = rng("CY2024").split(Grain.MONTH)
     pairs = [(b, b.shift(-1, Grain.YEAR)) for b in this_year]
     assert len(pairs) == 12
     assert (pairs[0][1].start, pairs[0][1].end) == (date(2023, 1, 1), date(2023, 2, 1))
@@ -540,7 +540,7 @@ def test_algebra_holds_for_arbitrary_ranges(a, b):
         ("last month", "2025-08-01 .. 2025-08-31 (31 days)"),
         ("last quarter", "2025-04-01 .. 2025-06-30 (91 days)"),
         ("since March", "2025-03-01 onwards"),
-        ("before 2024", "up to 2023-12-31"),
+        ("before CY2024", "up to 2023-12-31"),
     ],
 )
 def test_printing_a_range_shows_the_last_day_inside_it(text, shown):

@@ -23,6 +23,8 @@ from date_wrangler import (
 
 TODAY = date(2025, 9, 4)  # a Thursday, in fiscal Q2 of FY2026 on an April start
 ROLLING = WranglerConfig(anchor=Anchor.ROLLING)
+#: Fiscal quarters, calendar years -- the split year_basis exists for.
+CALENDAR_YEARS = WranglerConfig(year_basis=Basis.CALENDAR)
 
 
 def rng(text, cfg=None):
@@ -74,9 +76,6 @@ def test_relative_year_is_one_match():
         ("mid March", date(2025, 3, 11), date(2025, 3, 21)),
         ("end of March", date(2025, 3, 21), date(2025, 4, 1)),
         # Months, because a year divides evenly into halves and thirds.
-        ("early 2024", date(2024, 1, 1), date(2024, 5, 1)),
-        ("late 2024", date(2024, 9, 1), date(2025, 1, 1)),
-        ("first half of 2024", date(2024, 1, 1), date(2024, 7, 1)),
     ],
 )
 def test_part_of_period(text, start, end):
@@ -91,15 +90,36 @@ def test_parts_tile_the_period_exactly():
     second = rng("second half of June")
     assert first[0] == date(2025, 3, 1) and first[1] == date(2025, 3, 16)
     assert second[1] == date(2025, 7, 1)
-    early, mid, late = rng("early 2024"), rng("mid 2024"), rng("late 2024")
-    assert early[1] == mid[0]
-    assert mid[1] == late[0]
-    assert early[0] == date(2024, 1, 1) and late[1] == date(2025, 1, 1)
+    for cfg, year_start, year_end in (
+        (CALENDAR_YEARS, date(2024, 1, 1), date(2025, 1, 1)),
+        (WranglerConfig(), date(2023, 4, 1), date(2024, 4, 1)),
+    ):
+        early, mid, late = rng("early 2024", cfg), rng("mid 2024", cfg), rng("late 2024", cfg)
+        assert early[1] == mid[0]
+        assert mid[1] == late[0]
+        assert early[0] == year_start and late[1] == year_end
 
 
-def test_bare_year_part_is_a_calendar_year():
-    """"early 2024" must not quietly mean the fiscal year and start in 2023."""
-    assert rng("early 2024")[0].year == 2024
+@pytest.mark.parametrize(
+    "text,calendar,fiscal",
+    [
+        ("early 2024", (date(2024, 1, 1), date(2024, 5, 1)), (date(2023, 4, 1), date(2023, 8, 1))),
+        ("late 2024", (date(2024, 9, 1), date(2025, 1, 1)), (date(2023, 12, 1), date(2024, 4, 1))),
+        ("first half of 2024", (date(2024, 1, 1), date(2024, 7, 1)),
+         (date(2023, 4, 1), date(2023, 10, 1))),
+    ],
+)
+def test_a_part_of_a_numbered_year_follows_year_basis(text, calendar, fiscal):
+    """A year with a part taken out of it is read the way year_basis reads years.
+
+    0.3.0 forced it to the calendar year -- "early 2024" starting in 2023 was treated as
+    a bug -- which left "the second half of 2024" on the calendar and "the last quarter of
+    2024" on the fiscal setting, a year apart. Both now follow year_basis, so with it set
+    to calendar "early 2024" is January to April, and with the default fiscal setting it
+    is the first third of FY2024.
+    """
+    assert rng(text, CALENDAR_YEARS) == calendar
+    assert rng(text) == fiscal
 
 
 # ---------------------------------------------------------------------------

@@ -159,7 +159,7 @@ def test_custom_templates_still_apply():
     [
         ("since March", "from March 2026 onwards"),
         ("after FY24", "from April 2024 onwards"),
-        ("before 2024", "before January 2024"),
+        ("before CY2024", "before January 2024"),
         ("up to March 2026", "up to March 2026"),
     ],
 )

@@ -611,12 +611,8 @@ def _p_year(text: str, cfg: WranglerConfig) -> Spec | None:
     year, basis = parse_year_token(text, cfg)
     if year is None:
         return None
-    # No FY and no CY, so the only word was "year": "the year 2013". That says nothing
-    # fiscal, and a year on its own is a calendar year -- exactly as a bare "2013" is.
-    # Leaving the basis unset handed it to bare_period_basis, which exists for a bare
-    # "Q1", and "the year 2013" came back as April 2012 to March 2013.
-    if basis is None:
-        basis = Basis.CALENDAR
+    # FY or CY sets the basis; with only the word "year" -- "the year 2013" -- it stays
+    # unset and year_basis decides, the same as for a bare "2013".
     return Spec(Kind.ABS_YEAR, year=year, basis=basis)
 
 
@@ -624,9 +620,9 @@ def _p_bare_year(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.fullmatch(rf"\s*({_BARE_YEAR})\s*", text)
     if not m:
         return None
-    # A year on its own is a calendar year. Only a quarter or half labelled with one
-    # inherits the configured basis, because that case is genuinely ambiguous.
-    return Spec(Kind.ABS_YEAR, year=int(m.group(1)), basis=Basis.CALENDAR, confidence=0.8)
+    # Nothing says which kind of year, so year_basis decides -- "2024", "in 2024" and "the
+    # year 2024" are read alike, and alike with "Q4 2024" and "the second half of 2024".
+    return Spec(Kind.ABS_YEAR, year=int(m.group(1)), confidence=0.8)
 
 
 def _p_ago(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -787,14 +783,17 @@ def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
             return spec
     year, basis = _year_from_suffix(tail, cfg)
     if year is not None:
-        # A year standing alone is a calendar year, as in the bare_year rule -- otherwise
-        # "early 2024" quietly means the fiscal year and starts in 2023. "the year 2024"
-        # is the same year with a word in front of it, and "end of the year 2013" landed
-        # on December 2012 to March 2013 until it was treated the same way.
+        # This is always a year with a part taken out of it -- "the second half of 2024",
+        # "early 2024", "the first 3 months of 2024" -- because a year standing alone never
+        # reaches here. Such a year follows of_year_basis, which inherits year_basis, so
+        # "the second half of 2024" and "the last quarter of 2024" are read on the same
+        # calendar: they used to disagree, one forced to the calendar year and the other
+        # following the fiscal setting. A year that says what it is -- FY2024, CY2024 --
+        # keeps the basis it states.
         if basis is None and re.fullmatch(
             rf"\s*(?:the\s+)?(?:year\s+)?{_BARE_YEAR}\s*", tail, re.IGNORECASE
         ):
-            basis = Basis.CALENDAR
+            basis = cfg.effective_of_year_basis
         return Spec(Kind.ABS_YEAR, year=year, basis=basis)
     bare = re.fullmatch(rf"\s*({_UNIT})\s*", tail, re.IGNORECASE)
     if bare:

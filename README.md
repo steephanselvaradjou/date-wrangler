@@ -310,8 +310,7 @@ WranglerConfig(
     week_starts_on=6,                     # 0=Monday (default), 6=Sunday for the US
     weekend=(5, 6),                       # non-working days, for "business days"
     holidays=frozenset(),                 # yours to supply; never guessed
-    bare_period_basis=Basis.FISCAL,       # what a bare "Q1" means
-    year_basis=Basis.CALENDAR,            # what "this year" and YTD mean
+    year_basis=Basis.CALENDAR,            # every year and period that doesn't say fiscal/calendar
     two_digit_pivot=68,                   # "99" -> 1999, not 2099
     strictness="balanced",
 )
@@ -323,33 +322,50 @@ Fiscal years follow the pandas `Q-MAR` convention by default — labelled by the
 **end**, so with an April start FY2024 runs Apr 2023 – Mar 2024 and Apr–Jun is Q1. Set
 `label_by=YearLabel.START_YEAR` for the US corporate convention.
 
-**Which basis a phrase is read on** comes down to what it says, never to which rule
-happened to match it:
+**Which calendar a phrase is read on** follows one rule: **what it says, otherwise
+`year_basis`.**
 
-| phrase | basis |
+| phrase | read on |
 |---|---|
-| `2013`, `in 2013`, `the year 2013`, `end of the year 2013` | calendar — a year on its own is a calendar year |
-| `FY2013`, `fiscal year 2013`, `this fiscal year`, `last FY` | fiscal — it says so |
-| `CY2013`, `this calendar year`, `next calendar quarter` | calendar — it says so |
-| `this year`, `last year`, `YTD`, `this year to date` | `year_basis` — nothing was said |
-| `Q1`, `H1`, `last quarter`, `QTD` | `bare_period_basis` — nothing was said |
-| `Q1 of 2013`, `Q1 of the year 2013`, `the last quarter of 2013` | `of_year_basis` — a year labelling a quarter is genuinely ambiguous |
-| `the second half of 2013`, `the first 3 months of 2013` | calendar — a slice of the year 2013, which is a calendar year |
+| `FY2024`, `FY24 Q3`, `fiscal year 2024`, `fiscal Q3`, `this fiscal year`, `last FY` | fiscal — it says so |
+| `CY2024`, `CY24`, `CY Q3`, `calendar year 2024`, `this calendar year` | calendar — it says so |
+| everything else — `2024`, `the year 2024`, `Q4 2024`, `Q3'24`, `Q1`, `H1`, `last quarter`, `QTD`, `this year`, `YTD`, `the second half of 2024`, `the last quarter of 2024` | `year_basis` |
 
-So an explicit `fiscal` or `calendar` always beats the configured default, and the word
-"year" on its own never makes anything fiscal.
+There are no per-phrase exceptions, which is the point: earlier versions decided this phrase
+by phrase, and the phrases disagreed — `the second half of 2024` came back on the calendar
+while `the last quarter of 2024` followed the fiscal setting. Now every spelling of a year
+agrees, and every part of a year lies inside it.
 
-`year_basis` exists for the team whose "Q1" is the fiscal quarter but whose "this year" is
-January to December. It defaults to `None`, which follows `bare_period_basis`, so the two
-only come apart when you ask. A value from a form or select works as-is — `"calendar"` and
-`"fiscal"` are accepted in any case — and anything else fails on construction, by name.
+`year_basis` defaults to `None`, which takes `bare_period_basis` — fiscal. So **out of the
+box a bare year is the fiscal year**: with an April fiscal year, `in 2024` is April 2023 to
+March 2024. For general prose, where a year almost always means January to December, set
+`year_basis="calendar"`:
+
+| phrase | `year_basis="calendar"` | default (fiscal), April start |
+|---|---|---|
+| `2024`, `the year 2024` | Jan – Dec 2024 | Apr 2023 – Mar 2024 |
+| `Q4 2024`, `the last quarter of 2024` | Oct – Dec 2024 | Jan – Mar 2024 |
+| `the second half of 2024` | Jul – Dec 2024 | Oct 2023 – Mar 2024 |
+| `Q1` | Jan – Mar 2026 | Apr – Jun 2026 |
+| `this year` | Jan – Dec 2026 | Apr 2026 – Mar 2027 |
+| `FY2024` | Apr 2023 – Mar 2024 | Apr 2023 – Mar 2024 |
+| `CY2024` | Jan – Dec 2024 | Jan – Dec 2024 |
+
+Only the last two rows hold still — they say which calendar they mean. A value from a form
+or select works as-is: `"calendar"` and `"fiscal"` are accepted in any case, and anything
+else fails on construction, by name.
 
 ```python
-cfg = WranglerConfig(year_basis="calendar")       # April fiscal year, calendar "this year"
-parse("this year", config=cfg)                     # January 2026 to December 2026
-parse("Q1", config=cfg)                            # April 2026 to June 2026 — still fiscal
-parse("FY2013", config=cfg)                        # April 2012 to March 2013 — says so
+cfg = WranglerConfig(year_basis="calendar")
+parse("in 2024", config=cfg)               # January to December 2024
+parse("Q1", config=cfg)                    # January to March
+parse("FY2024", config=cfg)                # April 2023 to March 2024 — it says fiscal
 ```
+
+`bare_period_basis` is now only the default for `year_basis`, kept under its old name so
+older configurations mean what they did. `of_year_basis` remains as an optional override
+for "*a period* of *a year*" — `Q1 of 2024`, `the second half of 2024` — and inherits
+`year_basis` unless set; you will rarely want it.
 
 Invalid configuration fails on construction with a message naming the field, not later
 from inside `date()` on the first request that mentions a quarter.
@@ -400,7 +416,7 @@ plausible.
 |---|---|
 | Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `fy-24`, `F.Y. 2024` |
 | Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `fiscal Q3`, `Q3 FY` |
-| Calendar periods | `CY2024`, `Q1 of 2024`, `January 2024`, `2024`, `the year 2024` |
+| Years and labelled periods | `2024`, `the year 2024`, `Q1 of 2024`, `January 2024`, `CY2024` — see [which calendar](#configuration) for how a year is read |
 | Fiscal month index | `third month of FY24`, `twelfth month` |
 | Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` |
 | Stated basis | `this fiscal year`, `this FY`, `last 2 fiscal quarters`, `next calendar year` |
