@@ -89,6 +89,14 @@ class Spec:
     #: relative ("next month"), and one flag read both ways turned "first working day of
     #: next month" into the next working day.
     pick_business_day: bool = False
+    #: "this year to date", "Q3 to date", "March 2024 to date": from the start of the
+    #: period up to and including today.
+    through_today: bool = False
+    #: First and last day of a run inside a month: "1-15 March" is ``(1, 15)``.
+    day_span: tuple[int, int] | None = None
+    #: A run of whole units inside the period: ``(index, count, unit)``. "the first week
+    #: of April" is ``(1, 1, WEEK)``; "the last 3 months of the year" is ``(-1, 3, MONTH)``.
+    sub_period: tuple[int, int, Grain] | None = None
     #: None => take it from configuration. Only relative periods can roll.
     anchor: Anchor | None = None
 

@@ -19,7 +19,7 @@ from .config import DEFAULT_CONFIG, WranglerConfig
 from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
 from .rules import RULES, Rule
-from .spec import Spec
+from .spec import Kind, Part, Spec
 from .types import DateMatch, DateRange, Mod, grain_rank
 from .vocab import (
     FUTURE_WORDS,
@@ -27,6 +27,7 @@ from .vocab import (
     PAST_WORDS,
     UNIT_WORDS,
     WEEKDAY_NAMES,
+    alt,
 )
 
 __all__ = ["parse", "parse_one", "substitute", "diagnose", "Diagnostic"]
@@ -74,10 +75,15 @@ def _might_hold_a_date(text: str) -> bool:
 
 
 _SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{rule.pattern})" for rule in RULES)
-_SCANNER = re.compile(_SCAN_PATTERN, re.IGNORECASE)
+#: Every rule opens with \b, so it is checked once, ahead of the alternation, instead of
+#: once per rule at every position. Most positions are inside a word and fail it, and they
+#: now fail after one test rather than forty-eight -- about a third of scanning time, with
+#: nothing able to match differently, since each branch still begins with its own \b. A
+#: test holds every rule to that opening, because one without it would quietly lose matches.
+_SCANNER = re.compile(rf"\b(?:{_SCAN_PATTERN})", re.IGNORECASE)
 #: The same rules, case-sensitive, for the lowered-ASCII fast path in :func:`_scan`. Every
 #: rule pattern is written in lower case, so the two accept exactly the same fragments.
-_SCANNER_CS = re.compile(_SCAN_PATTERN)
+_SCANNER_CS = re.compile(rf"\b(?:{_SCAN_PATTERN})")
 _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 
 
@@ -103,11 +109,49 @@ _COMPARISON_LEAD = re.compile(
 
 _MOD_PREFIXES: tuple[tuple[re.Pattern[str], Mod], ...] = (
     (re.compile(r"\bas\s+(?:of|on|at)\s+$", re.IGNORECASE), Mod.AS_OF),
+    # Inclusive and negated bounds come first. Each ends in a word a plain prefix below
+    # would claim on its own -- "on or after" ends in "after", "not before" in "before" --
+    # and read that way the boundary day is lost ("on or after 1 April" began on the 2nd)
+    # or the meaning is reversed ("not before 1 April" meant up to 31 March).
+    (
+        re.compile(
+            r"\b(?:on\s+or\s+after|not\s+before|no\s+earlier\s+than|from\s+and\s+including)"
+            r"\s+$",
+            re.IGNORECASE,
+        ),
+        Mod.SINCE,
+    ),
+    (
+        re.compile(
+            r"\b(?:on\s+or\s+before|not\s+after|no\s+later\s+than"
+            r"|up\s+to\s+and\s+including|by)\s+$",
+            re.IGNORECASE,
+        ),
+        Mod.UNTIL,
+    ),
     (re.compile(r"\bsince\s+$", re.IGNORECASE), Mod.SINCE),
     (re.compile(r"\b(?:prior\s+to|earlier\s+than|before)\s+$", re.IGNORECASE), Mod.BEFORE),
-    (re.compile(r"\b(?:up\s*to|upto|until|till)\s+$", re.IGNORECASE), Mod.UNTIL),
+    # "through 31 March" on its own is a deadline, inclusive. Inside a range ("Jan through
+    # Mar") the two ends are merged before any modifier is looked for, so this never sees it.
+    (re.compile(r"\b(?:up\s*to|upto|until|till|through|thru)\s+$", re.IGNORECASE), Mod.UNTIL),
     (re.compile(r"\bafter\s+$", re.IGNORECASE), Mod.AFTER),
 )
+
+#: "from" starts something only when what follows is a single day: "from 1 April",
+#: "from Monday". After a period it more often names a source -- "the figures from Q1" are
+#: Q1's figures, not everything since -- so a period after "from" is left as it is.
+_FROM_PREFIX = re.compile(r"\bfrom\s+$", re.IGNORECASE)
+_DAY_KINDS = frozenset({Kind.ABS_DAY, Kind.DAY_KEYWORD, Kind.WEEKDAY})
+#: "two weeks from Friday" counts on from Friday; it does not start there. A duration
+#: ahead of "from" leaves the word for the safety net, which flags the phrase as partial.
+_DURATION_FROM = re.compile(
+    r"\b(?:a|an|\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+    r"\s+(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+$",
+    re.IGNORECASE,
+)
+
+#: "before the end of March" is a deadline for all of March, not "before its last third".
+_END_OF = re.compile(r"(?:the\s+)?end\s+of\b", re.IGNORECASE)
 _MOD_SUFFIXES: tuple[tuple[re.Pattern[str], Mod | None], ...] = (
     (re.compile(r"^\s*onwards?\b", re.IGNORECASE), Mod.SINCE),
     (re.compile(r"^\s*or\s+later\b", re.IGNORECASE), Mod.SINCE),
@@ -125,6 +169,7 @@ _AND_JOIN = re.compile(r"\band\b|&", re.IGNORECASE)
 #: Words that make a bare month or year read as a date rather than a noun.
 _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|between|before|after|"
+    r"no\s+(?:later|earlier)\s+than|"
     r"vs|versus|compared\s+(?:to|with)|"
     r"sales|revenue|profit|data|report|numbers|figures|results|performance|growth|"
     r"spend|cost|budget|forecast|actuals|"
@@ -200,8 +245,19 @@ _QUALIFIER_AFTER = re.compile(
     # Only a preposition counts: a clock time sitting straight against a date is part of a
     # timestamp -- "2024-03-15T14:30:00Z", "Mar 15 14:30:00" -- where the day is the
     # documented answer and nothing was overlooked.
-    rf"|^\W*(?:at|by|around|@)\s*{_CLOCK}(?!\w)",
+    rf"|^\W*(?:at|by|around|@)\s*{_CLOCK}(?!\w)"
+    # A part of the day needs no preposition: "tomorrow morning" is half a day at most.
+    r"|^\s+(?:morning|afternoon|evening|night|lunchtime|midday|noon)\b",
     re.IGNORECASE,
+)
+
+#: "next Monday week", "Monday week" -- British for the Monday after next. Read as the
+#: weekday alone it is a week early, so a weekday followed by "week" is a partial read.
+_WEEKDAY_THEN_WEEK = re.compile(r"^\s+week\b(?!\s*\d)", re.IGNORECASE)
+_ENDS_IN_WEEKDAY = re.compile(rf"\b(?:{alt(WEEKDAY_NAMES)})\s*$", re.IGNORECASE)
+#: "a week on Monday", "two weeks from Friday" -- a weekday pushed on by a stated count.
+_WEEKS_ON = re.compile(
+    r"\b(?:a|one|two|three|\d+)\s+weeks?\s+(?:on|from)\s+$", re.IGNORECASE
 )
 _QUALIFIER_BEFORE = re.compile(
     r"\b(?:first\s+half|second\s+half|latter\s+half|beginning|start|early|middle|mid|late|"
@@ -464,7 +520,24 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
     for pattern, mod in _MOD_PREFIXES:
         m = pattern.search(before)
         if m:
-            return _Raw(raw.rule, raw.spec.with_(mod=mod), window + m.start(), raw.end)
+            spec = raw.spec.with_(mod=mod)
+            # "before / by / until the end of March" means by the close of March. Read
+            # literally it was "before the last third of March", which ended on the 20th.
+            if (
+                mod in (Mod.BEFORE, Mod.UNTIL)
+                and spec.part is Part.LATE
+                and _END_OF.match(text[raw.start : raw.end])
+            ):
+                spec = spec.with_(part=None, mod=Mod.UNTIL)
+            return _Raw(raw.rule, spec, window + m.start(), raw.end)
+    m = _FROM_PREFIX.search(before)
+    if (
+        m
+        and raw.spec.kind in _DAY_KINDS
+        and raw.spec.mod is None
+        and not _DURATION_FROM.search(before)
+    ):
+        return _Raw(raw.rule, raw.spec.with_(mod=Mod.SINCE), window + m.start(), raw.end)
     return raw
 
 
@@ -560,7 +633,7 @@ def parse(
         while j < len(links) and links[j] == "range" and (j + 1) in kept:
             j += 1
         if j > i:
-            merged = _merge(raws[i], raws[j], day, config, body, norm, diagnostics, floor)
+            merged = _merge(raws[i : j + 1], day, config, body, norm, diagnostics, floor)
             if merged is not None:
                 matches.append(merged)
                 floor = raws[j].end
@@ -599,6 +672,8 @@ def _flag_unread_qualifiers(
         dropped = _QUALIFIER_AFTER.match(after) or _QUALIFIER_BEFORE.search(before)
         if dropped is None and _NTH_LEAD.match(norm.original[lo:hi]):
             dropped = _NTH_TAIL.match(after)
+        if dropped is None and _ENDS_IN_WEEKDAY.search(norm.original[lo:hi]):
+            dropped = _WEEKDAY_THEN_WEEK.match(after) or _WEEKS_ON.search(before)
         if dropped is None:
             out.append(m)
             continue
@@ -663,8 +738,7 @@ def _single(
 
 
 def _merge(
-    a: _Raw,
-    b: _Raw,
+    chain: list[_Raw],
     day: date,
     cfg: WranglerConfig,
     body: str,
@@ -672,7 +746,25 @@ def _merge(
     diags: list[Diagnostic] | None,
     floor: int = 0,
 ) -> DateMatch | None:
-    """Resolve two endpoints as one span, wrapping a year if they invert."""
+    """Resolve a chain of joined periods as one range.
+
+    The words between them decide which of two things it is. A *span* -- "Q1 to Q3",
+    "from March to June", "between March and June" -- runs from the start of the first to
+    the end of the last, wrapping a year if they invert. A *list* -- "Q1 and Q2" -- is the
+    union of the periods in it, because "and" says which periods and nothing about order.
+    """
+    a, b = chain[0], chain[-1]
+    start = a.start
+    window = max(floor, a.start - 12)
+    lead = _RANGE_LEAD.search(body[window : a.start])
+    if lead:
+        start = window + lead.start()
+    # "and" anywhere in the join -- a chain of three is merged from both ends, so "Q1 and
+    # Q3 and last month" carries "and Q3 and" between them -- and no "between" or "from"
+    # ahead of it to make the whole thing a span.
+    if lead is None and _AND_JOIN.search(body[a.end : b.start]) is not None:
+        return _merge_list(chain, start, day, cfg, body, norm, diags)
+
     sa, sb = _unify(a.spec, b.spec)
     try:
         ra, rb = resolve(sa, day, cfg), resolve(sb, day, cfg)
@@ -734,30 +826,18 @@ def _merge(
             )
         return None
 
-    start = a.start
-    window = max(floor, a.start - 12)
-    before = body[window : a.start]
-    lead = _RANGE_LEAD.search(before)
-    if lead:
-        start = window + lead.start()
-
     confidence = min(a.spec.confidence, b.spec.confidence)
-    # "Q1 and Q3" is two periods, not one span. Read as a hull it quietly swallows Q2 --
-    # a quarter of data nobody asked about, returned at full confidence. Joining is still
-    # the right default, because "Q1 and Q2" does mean Apr-Sep and adjacent periods are how
-    # people write a span; it is only a gap between them that makes the hull a guess.
-    #
-    # An explicit lead-in settles it either way: "between March and June" is a span by
-    # construction, and so is "from March to June".
+    # "from the start of A to the end of B" is a sensible thing to ask even when B lies
+    # inside A -- "Q1 to 15 March" stops partway through Q1. It stops being sensible when
+    # B begins no later than A does: "Q1 to January" is just January, and A has said
+    # nothing at all. Keep the literal range, but do not vouch for it.
     if (
-        lead is None
+        ra.start is not None
         and ra.end is not None
         and rb.start is not None
-        and ra.end < rb.start
-        # Anywhere in the join, not just the whole of it: a chain of three or more is
-        # merged from its first and last endpoints, so "Q1 and Q3 and last month" puts
-        # "and Q3 and" in between and an equality test saw no "and" at all.
-        and _AND_JOIN.search(body[a.end : b.start]) is not None
+        and rb.end is not None
+        and rb.start <= ra.start
+        and rb.end < ra.end
     ):
         confidence = min(confidence, 0.5)
         if diags is not None:
@@ -766,12 +846,76 @@ def _merge(
                     body[start : b.end],
                     (start, b.end),
                     "range",
-                    f"read {body[start : b.end]!r} as one span, which also covers "
-                    f"{ra.end.isoformat()} to {rb.start.isoformat()} in between; "
-                    "write 'to' for a span, or separate the periods with a comma",
+                    f"read {body[start : b.end]!r} as {merged}, but it ends inside the "
+                    "period it starts with, so the first period adds nothing",
                 )
             )
     return _emit(merged, start, b.end, norm, confidence)
+
+
+def _merge_list(
+    chain: list[_Raw],
+    start: int,
+    day: date,
+    cfg: WranglerConfig,
+    body: str,
+    norm: Normalized,
+    diags: list[Diagnostic] | None,
+) -> DateMatch | None:
+    """The union of a list of periods: "Q1 and Q2", "this year and Q1".
+
+    Each period is resolved on its own -- a year written on the last reaches the others,
+    so "Q1 and Q2 2024" is both in 2024 -- and the answer covers all of them. There is no
+    year-wrap: a list says nothing about order, so "Q3 and Q1" is two quarters of one year.
+
+    REGRESSION: lists were merged like spans, from the start of the first period to the
+    end of the last. Where a later period sat inside an earlier one that cut the answer
+    short at full confidence -- "this year and Q1" came back as Q1 alone.
+    """
+    last = chain[-1].spec
+    specs = [_unify(raw.spec, last)[0] for raw in chain[:-1]]
+    specs.append(_unify(chain[0].spec, last)[1])
+    try:
+        ranges = [resolve(s, day, cfg) for s in specs]
+    except UnresolvableSpec as exc:
+        if diags is not None:
+            diags.append(
+                Diagnostic(body[start : chain[-1].end], (start, chain[-1].end), "range", str(exc))
+            )
+        return None
+    if any(r.start is None or r.end is None for r in ranges):
+        return None
+
+    ordered = sorted(ranges, key=lambda r: r.start)  # type: ignore[arg-type,return-value]
+    lo = ordered[0].start
+    hi = max(r.end for r in ordered)  # type: ignore[type-var]
+    assert lo is not None and hi is not None
+    grain = max((r.grain for r in ordered), key=_grain_rank)
+    merged = DateRange(lo, hi, grain, ranges[0].basis)
+
+    confidence = min(raw.spec.confidence for raw in chain)
+    # A gap between the periods means the single range also covers days nobody named:
+    # "Q1 and Q3" holds Q2. Joining is still the useful answer, but not a confident one.
+    reach = ordered[0].end
+    for r in ordered[1:]:
+        assert reach is not None and r.start is not None and r.end is not None
+        if r.start > reach:
+            confidence = min(confidence, 0.5)
+            if diags is not None:
+                text = body[start : chain[-1].end]
+                diags.append(
+                    Diagnostic(
+                        text,
+                        (start, chain[-1].end),
+                        "range",
+                        f"read {text!r} as one span, which also covers "
+                        f"{reach.isoformat()} to {r.start.isoformat()} in between; "
+                        "write 'to' for a span, or separate the periods with a comma",
+                    )
+                )
+            break
+        reach = max(reach, r.end)
+    return _emit(merged, start, chain[-1].end, norm, confidence)
 
 
 #: Coarsest grain wins when a range joins two resolutions. The ordering itself lives beside

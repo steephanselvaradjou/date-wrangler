@@ -49,7 +49,10 @@ def _whole_months(r: DateRange) -> bool:
     nothing to show it was rounded. Half-open makes the test exact -- a range ending on a
     month boundary ends on the 1st.
     """
-    return r.start is not None and r.end is not None and r.start.day == 1 == r.end.day
+    # Each end that exists must sit on a boundary. An unbounded end has nothing to round,
+    # so it cannot make the range overstated -- requiring both ends meant "since March",
+    # which names its month exactly, fell back to "01 March 2026" in make_formatter.
+    return (r.start is None or r.start.day == 1) and (r.end is None or r.end.day == 1)
 
 
 def format_range(r: DateRange) -> str:

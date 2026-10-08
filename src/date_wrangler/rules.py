@@ -52,6 +52,15 @@ _DIRWORD = rf"(?:{_PAST}|{_FUTURE})"
 _FY_WORD = r"(?:f\.?y\.?|financial\s+year|fiscal\s+year)"
 _CY_WORD = r"(?:c\.?y\.?|calendar\s+year)"
 _YEAR_WORD = rf"(?:{_FY_WORD}|{_CY_WORD}|year)"
+#: A basis said outright in front of a unit: "this fiscal year", "last calendar quarter".
+_BASIS_WORD = r"(?:fiscal|financial|calendar)"
+
+
+def _basis_of(word: str | None) -> Basis | None:
+    """The basis a "fiscal"/"financial"/"calendar" word names, or None when absent."""
+    if word is None:
+        return None
+    return Basis.CALENDAR if word.lower().startswith("c") else Basis.FISCAL
 _SEP = r"[\s-]*"
 
 #: A bare two-digit number is never a year -- that is how a day-of-month becomes one.
@@ -71,7 +80,10 @@ _BARE_YEAR = r"(?:19|20|21)\d{2}"
 _REL_YEAR = rf"(?:{_DIRWORD}|this|current)\s+year"
 
 #: A marked year may abut ("Q1FY24"); an unmarked one may not, or "Q12024" splits.
-_YEAR_SUFFIX = rf"(?:\s*{_MARKED_YEAR}|\s+(?:of\s+)?{_YEAR}|\s+(?:of\s+)?{_REL_YEAR})?"
+_YEAR_SUFFIX = (
+    rf"(?:\s*{_MARKED_YEAR}|\s+(?:of\s+)?(?:the\s+(?=year\b))?{_YEAR}"
+    rf"|\s+(?:of\s+)?{_REL_YEAR})?"
+)
 
 _QWORD = r"(?:quarters?|qtrs?\.?|q)"
 _HWORD = r"(?:halves|half|h)"
@@ -219,7 +231,9 @@ def _p_dashed_month(text: str, cfg: WranglerConfig) -> Spec | None:
 
 def _p_decade(text: str, cfg: WranglerConfig) -> Spec | None:
     """"the 1990s" -- ten years, starting at the zero."""
-    m = re.search(r"\b((?:1[89]|20)\d)0s\b", text)
+    # Case-insensitive: the scanner lowered the text to find this, but the fragment here
+    # is the original, and a heading in capitals -- "THE 1990S" -- has a capital S.
+    m = re.search(r"\b((?:1[89]|20)\d)0s\b", text, re.IGNORECASE)
     if not m:
         return None
     return Spec(Kind.DECADE, year=int(m.group(1)) * 10)
@@ -348,6 +362,35 @@ def _p_to_date(text: str, cfg: WranglerConfig) -> Spec | None:
     return spec
 
 
+#: "to date", "-to-date", "to-date".
+_TO_DATE = r"(?:\s+|\s*-\s*)to(?:\s+|\s*-\s*)date"
+
+#: The periods "<period> to date" is written with. Deliberately not "last year" or a bare
+#: "year": "last year to date" is last year's YTD -- the same window a year earlier -- and
+#: the to_date rule already reads both that way.
+_TD_TARGET = (
+    rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
+    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_YEAR}"
+    rf"|(?:this|current|present)\s+(?:(?:{_BASIS_WORD}\s+)?{_UNIT}|{_FY_WORD}|{_CY_WORD}))"
+)
+
+
+def _p_period_to_date(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"this year to date", "Q3 to date", "March 2024 to date".
+
+    Only the abbreviations and "year to date" were read before. Spelled out with "this",
+    or with a named period, the period was read and "to date" was left over -- so the
+    safety net flagged it at 0.5 and the answer was the whole period, future included.
+    """
+    m = re.match(rf"\s*(.+?){_TO_DATE}\b", text, re.IGNORECASE)
+    if not m:
+        return None
+    target = _target_spec(m.group(1), cfg)
+    if target is None:
+        return None
+    return target.with_(through_today=True)
+
+
 def _p_trailing_months(text: str, cfg: WranglerConfig) -> Spec | None:
     """Reporting shorthand: TTM, LTM, T12M, L3M."""
     low = text.strip().lower()
@@ -369,18 +412,43 @@ def _p_trailing_months(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 def _p_period_ending(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"quarter ending June 2024", "year ended March 2024"."""
-    m = re.match(rf"\s*(?:the\s+)?({_UNIT})\s+end", text, re.IGNORECASE)
+    """"quarter ending June 2024", "the 12 months to March 2024", "six months ended 30 June".
+
+    Annual-report phrasing names a period by where it stops, and two parts of it were
+    lost. A count was dropped, so "12 months ending March 2024" came back as one month;
+    and "to" was not read at all, so "six months to June 2024" and "the year to March
+    2024" came back as the month alone.
+    """
+    m = re.match(
+        rf"\s*(?:the\s+)?(?:({_NUM})\s+)?(half[\s-]?years?|{_UNIT})\s+"
+        rf"(end(?:ing|ed|s)?|to)\s+(.+)$",
+        text,
+        re.IGNORECASE,
+    )
     if not m:
         return None
-    unit = _unit_of(m.group(1))
-    if unit is None:
+    word = m.group(2).lower()
+    unit = Grain.HALF if word.startswith("half") else _unit_of(m.group(2))
+    count = word_to_int(m.group(1)) if m.group(1) else 1
+    if unit is None or count is None or count < 1:
         return None
-    month = find_month(text)
-    year, basis = _year_from_suffix(text, cfg)
+    # "3 days to March" counts down to something; it is not a period that ends in March.
+    if m.group(3).lower() == "to" and unit in (Grain.DAY, Grain.WEEK):
+        return None
+    count *= _scale_of(m.group(2))
+    tail = m.group(4)
+    # An end given as a day -- "30 June 2024", "June 30, 2024" -- rather than a month.
+    day = _p_day_month_year(tail, cfg)
+    if day is None and re.match(rf"\s*{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\d)", tail, re.I):
+        day = _p_month_day_year(tail, cfg)
+    if day is not None and day.kind is Kind.ABS_DAY:
+        return Spec(Kind.PERIOD_ENDING, unit=unit, count=count, month=day.month,
+                    day=day.day, year=day.year)
+    month = find_month(tail)
+    year, basis = _year_from_suffix(tail, cfg)
     if month is None and year is None:
         return None
-    return Spec(Kind.PERIOD_ENDING, unit=unit, month=month, year=year, basis=basis)
+    return Spec(Kind.PERIOD_ENDING, unit=unit, count=count, month=month, year=year, basis=basis)
 
 
 def _p_weekday(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -411,7 +479,25 @@ def _p_fiscal_month(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.FISCAL_MONTH, year=year, index=index, basis=basis or Basis.FISCAL)
 
 
+#: "1h" and "2h" are hours far more often than halves -- "a 2h drive" read as H2 -- and
+#: "4q" is rarely a quarter. A digit written *before* the letter is the finance shorthand
+#: when the letter is a capital (1H, 3Q), the rule the bare COB acronym follows, or when a
+#: year comes after it ("from 1q 2024 to 3q 2024"). "1h 30m" and "1h24" have neither. The
+#: scanner lowers text before matching, so case is checked on the original fragment.
+_DIGIT_FIRST = re.compile(r"\b[1-4]\s*([qQhH])(?![a-zA-Z])")
+_YEAR_AFTER = re.compile(r"\s+(?:(?:'\d{2}|(?:19|20)\d{2})\b|[fFcC]\.?[yY])")
+
+
+def _digit_first_is_capital(text: str) -> bool:
+    m = _DIGIT_FIRST.search(text)
+    if m is None or m.group(1).isupper():
+        return True
+    return _YEAR_AFTER.match(text, m.end()) is not None
+
+
 def _p_quarter(text: str, cfg: WranglerConfig) -> Spec | None:
+    if not _digit_first_is_capital(text):
+        return None
     low = text.lower()
     index: int | None = None
     m = re.search(rf"{_QWORD}\s*([1-4])(?!\d)", low)
@@ -427,7 +513,73 @@ def _p_quarter(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.ABS_QUARTER, year=year, index=index, basis=basis, year_offset=offset)
 
 
+#: A quarter or half as a label: Q3, 3Q, H1, 1H.
+_QH = r"(?:q\s*[1-4]|[1-4]\s*q|h\s*[12]|[12]\s*h)"
+#: A basis written beside one: "fiscal Q3", "Q3 FY", "calendar H1".
+_BASIS_TAG = r"(?:fiscal|financial|calendar|fy|cy)"
+
+#: The spellings that the quarter and half rules either split apart or never saw, each a
+#: full match on the fragment so the label and the year cannot be confused -- "3Q24" read
+#: left to right has a "Q2" in it.
+_LABELLED_FORMS = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        rf"\s*(?P<basis>{_BASIS_TAG})\s+(?P<qh>{_QH})(?P<tail>.*)",          # fiscal Q3 [2024]
+        rf"\s*(?P<qh>{_QH})\s+(?P<basis>fiscal|financial|calendar|fy|cy)\s*",  # Q3 fiscal
+        rf"\s*(?P<qh>{_QH})['-](?P<yr>\d{{2}}(?:\d{{2}})?)\s*",                 # Q3'24 Q3-2024
+        rf"\s*(?P<yr>(?:19|20)\d{{2}})\s*-?\s*(?P<qh>{_QH})\s*",                # 2024-Q3 2024Q3
+        rf"\s*(?P<basis>{_FY_WORD}|{_CY_WORD})\s*'?(?P<yr>\d{{2,4}})\s*-?\s*(?P<qh>{_QH})\s*",
+        r"\s*(?P<qh>[1-4]\s*q|[12]\s*h)\s*'?(?P<yr>\d{2,4})\s*",             # 3Q24 1H2024
+    )
+)
+
+
+def _p_labelled_period(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"fiscal Q3", "Q3 FY", "Q3'24", "Q3-2024", "2024-Q3", "FY24 Q3", "3Q24", "1H24".
+
+    Each of these used to lose part of itself, and confidently. A stated basis was dropped,
+    so "fiscal Q3" followed the configured default and became a calendar quarter under a
+    calendar one. An attached year was dropped, so "Q3'24" meant Q3 of *this* year. And
+    a dash between year and quarter read as a range, so "2024-Q3" ran from January 2024
+    to the end of Q3.
+
+    The result is the same shape "Q3 2024" produces, so with no basis written it follows
+    ``bare_period_basis`` exactly as that does.
+    """
+    if not _digit_first_is_capital(text):
+        return None
+    for form in _LABELLED_FORMS:
+        m = form.fullmatch(text)
+        if m:
+            break
+    else:
+        return None
+    groups = m.groupdict()
+    qh = re.sub(r"\s+", "", groups["qh"]).lower()
+    digit = int(re.search(r"\d", qh).group(0))  # type: ignore[union-attr]
+    kind = Kind.ABS_QUARTER if "q" in qh else Kind.ABS_HALF
+    if not (1 <= digit <= (4 if kind is Kind.ABS_QUARTER else 2)):
+        return None
+
+    basis: Basis | None = None
+    word = (groups.get("basis") or "").strip().lower()
+    if word:
+        basis = Basis.CALENDAR if word.startswith("c") else Basis.FISCAL
+
+    year: int | None = None
+    if groups.get("yr"):
+        year = _pivot_year(groups["yr"], cfg)
+    elif groups.get("tail"):
+        year, tail_basis = _year_from_suffix(groups["tail"], cfg)
+        if groups["tail"].strip() and year is None:
+            return None  # something follows that is not a year; leave it to other rules
+        basis = basis or tail_basis
+    return Spec(kind, year=year, index=digit, basis=basis)
+
+
 def _p_half(text: str, cfg: WranglerConfig) -> Spec | None:
+    if not _digit_first_is_capital(text):
+        return None
     low = text.lower()
     index: int | None = None
     m = re.search(r"\bh\s*([12])(?!\d)", low) or re.search(r"\bhalf\s*([12])(?!\d)", low)
@@ -459,6 +611,12 @@ def _p_year(text: str, cfg: WranglerConfig) -> Spec | None:
     year, basis = parse_year_token(text, cfg)
     if year is None:
         return None
+    # No FY and no CY, so the only word was "year": "the year 2013". That says nothing
+    # fiscal, and a year on its own is a calendar year -- exactly as a bare "2013" is.
+    # Leaving the basis unset handed it to bare_period_basis, which exists for a bare
+    # "Q1", and "the year 2013" came back as April 2012 to March 2013.
+    if basis is None:
+        basis = Basis.CALENDAR
     return Spec(Kind.ABS_YEAR, year=year, basis=basis)
 
 
@@ -504,12 +662,32 @@ def _p_relative_fy(text: str, cfg: WranglerConfig) -> Spec | None:
     )
 
 
+def _period_basis(word: str | None, unit: Grain) -> Basis | None:
+    """A stated basis, where it can change anything.
+
+    Only years, halves and quarters have a fiscal form. "this fiscal month" is this month
+    -- months, weeks and days are calendar facts -- so the word is accepted and ignored
+    rather than stamping a fiscal label on a calendar month.
+    """
+    if unit in (Grain.YEAR, Grain.HALF, Grain.QUARTER):
+        return _basis_of(word)
+    return None
+
+
 def _p_relative(text: str, cfg: WranglerConfig) -> Spec | None:
-    m = re.match(rf"\s*({_DIRWORD})\s+(?:({_NUM})\s+)?({_UNIT})\b", text, re.IGNORECASE)
+    m = re.match(
+        rf"\s*({_DIRWORD})\s+(?:({_NUM})\s+)?(?:({_BASIS_WORD})\s+)?({_UNIT})\b",
+        text,
+        re.IGNORECASE,
+    )
     if not m:
         return None
+    # A plural with no number is vague, not one unit: "in the coming months" came back as
+    # exactly one month at full confidence. Nothing is a better answer than a made-up one.
+    if not m.group(2) and re.search(r"(?:s|halves)$", m.group(4), re.IGNORECASE):
+        return None
     count = word_to_int(m.group(2)) if m.group(2) else 1
-    unit = _unit_of(m.group(3))
+    unit = _unit_of(m.group(4))
     if count is None or unit is None:
         return None
     # "trailing 12 months" is TTM spelled out, and "rolling" says what it means; both name
@@ -518,28 +696,48 @@ def _p_relative(text: str, cfg: WranglerConfig) -> Spec | None:
     anchor = {"trailing": Anchor.ANCHORED, "rolling": Anchor.ROLLING}.get(word)
     return Spec(
         Kind.RELATIVE,
-        count=count * _scale_of(m.group(3)),
+        count=count * _scale_of(m.group(4)),
         unit=unit,
         direction=_direction_of(m.group(1)),
         anchor=anchor,
+        basis=_period_basis(m.group(3), unit),
     )
 
 
 def _p_this(text: str, cfg: WranglerConfig) -> Spec | None:
-    m = re.match(rf"\s*(?:this|current|present)\s+({_UNIT})\b", text, re.IGNORECASE)
-    if not m:
-        return None
-    unit = _unit_of(m.group(1))
-    if unit is None:
-        return None
-    return Spec(Kind.THIS_PERIOD, unit=unit)
+    """"this year", "this fiscal year", "current quarter", "this FY".
+
+    The basis word used to be read only after "last"/"next" ("last fiscal year"), so
+    "this fiscal year" -- the commonest of them -- matched nothing at all.
+    """
+    m = re.match(
+        rf"\s*(?:this|current|present)\s+(?:({_BASIS_WORD})\s+)?({_UNIT})\b",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        unit = _unit_of(m.group(2))
+        if unit is None:
+            return None
+        return Spec(Kind.THIS_PERIOD, unit=unit, basis=_period_basis(m.group(1), unit))
+    m = re.match(rf"\s*(?:this|current|present)\s+({_FY_WORD}|{_CY_WORD})\b", text, re.I)
+    if m:
+        calendar = m.group(1).strip().lower().startswith("c")
+        return Spec(
+            Kind.THIS_PERIOD,
+            unit=Grain.YEAR,
+            basis=Basis.CALENDAR if calendar else Basis.FISCAL,
+        )
+    return None
 
 
 #: Words naming a slice of a period. "middle" before "mid" would never match, so the
 #: longer spelling of each pair comes first.
 _PART_WORDS: tuple[tuple[str, Part], ...] = (
     (r"first\s+half|1st\s+half", Part.FIRST_HALF),
-    (r"second\s+half|2nd\s+half|latter\s+half", Part.SECOND_HALF),
+    # "last half of 2024" was read as "last half" -- the previous half-year, counted back
+    # from today -- plus a stray 2024. It means the second half, as "latter half" does.
+    (r"second\s+half|2nd\s+half|latter\s+half|last\s+half|final\s+half", Part.SECOND_HALF),
     (r"beginning|start|early", Part.EARLY),
     (r"middle|mid", Part.MID),
     (r"end|late|close", Part.LATE),
@@ -549,7 +747,8 @@ _PART_ALT = "|".join(p for p, _ in _PART_WORDS)
 #: The period a part or an ordinal day can be taken from.
 _PART_TARGET = (
     rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
-    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_YEAR}|{_DIRWORD}\s+{_UNIT}|this\s+{_UNIT}|{_UNIT})"
+    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_YEAR}|{_DIRWORD}\s+(?:{_BASIS_WORD}\s+)?{_UNIT}"
+    rf"|this\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|{_UNIT})"
 )
 
 
@@ -579,21 +778,22 @@ def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
         spec = reader(tail, cfg)
         if spec is not None:
             return spec
-    rel = re.match(rf"\s*({_DIRWORD})\s+({_UNIT})\b", tail, re.IGNORECASE)
-    if rel:
-        unit = _unit_of(rel.group(2))
-        if unit is not None:
-            return Spec(Kind.RELATIVE, count=1, unit=unit, direction=_direction_of(rel.group(1)))
-    this = re.match(rf"\s*(?:this|current|present)\s+({_UNIT})\b", tail, re.IGNORECASE)
-    if this:
-        unit = _unit_of(this.group(1))
-        if unit is not None:
-            return Spec(Kind.THIS_PERIOD, unit=unit)
+    # The rules' own readers, so a target understands exactly what the rule does --
+    # "end of this fiscal year" and "first day of next fiscal quarter" included. A
+    # private copy of these regexes is how the basis word got missed here before.
+    for reader in (_p_relative, _p_this):
+        spec = reader(tail, cfg)
+        if spec is not None:
+            return spec
     year, basis = _year_from_suffix(tail, cfg)
     if year is not None:
         # A year standing alone is a calendar year, as in the bare_year rule -- otherwise
-        # "early 2024" quietly means the fiscal year and starts in 2023.
-        if basis is None and re.fullmatch(rf"\s*{_BARE_YEAR}\s*", tail):
+        # "early 2024" quietly means the fiscal year and starts in 2023. "the year 2024"
+        # is the same year with a word in front of it, and "end of the year 2013" landed
+        # on December 2012 to March 2013 until it was treated the same way.
+        if basis is None and re.fullmatch(
+            rf"\s*(?:the\s+)?(?:year\s+)?{_BARE_YEAR}\s*", tail, re.IGNORECASE
+        ):
             basis = Basis.CALENDAR
         return Spec(Kind.ABS_YEAR, year=year, basis=basis)
     bare = re.fullmatch(rf"\s*({_UNIT})\s*", tail, re.IGNORECASE)
@@ -632,7 +832,7 @@ _NTH_OF = r"\s+(?:of|in)\s+"
 _NTH_TARGET = (
     rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
     rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_YEAR}"
-    rf"|(?:the\s+)?(?:{_DIRWORD}|this|current)\s+{_UNIT}|the\s+{_UNIT})"
+    rf"|(?:the\s+)?(?:{_DIRWORD}|this|current)\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|the\s+{_UNIT})"
 )
 
 
@@ -789,6 +989,97 @@ def _p_business_ago(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.AGO, count=count, unit=Grain.DAY, direction=direction, business=True)
 
 
+#: Between the two days of a run: "1-15", "1st to 15th", "1 through 15".
+_DAY_JOIN = r"\s*(?:-|to|until|till|through|thru)\s*"
+_DAY_NUM = r"\d{1,2}(?:st|nd|rd|th)?"
+
+
+def _p_day_span(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"1-15 March", "1st to 15th March", "March 1-15", "March 1 to 15, 2024".
+
+    The run used to collapse to one of its ends: "1-15 March" was the 15th alone, and
+    "March 1-15" the 1st, each at full confidence, because the other number had no rule.
+    """
+    m = re.match(
+        rf"\s*(\d{{1,2}})(?:st|nd|rd|th)?{_DAY_JOIN}(\d{{1,2}})(?:st|nd|rd|th)?"
+        rf"\s+(?:of\s+)?(.+)$",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        first, last, rest = int(m.group(1)), int(m.group(2)), m.group(3)
+    else:
+        m = re.match(
+            rf"\s*({_MONTH})\s+(\d{{1,2}})(?:st|nd|rd|th)?{_DAY_JOIN}(\d{{1,2}})"
+            rf"(?:st|nd|rd|th)?(.*)$",
+            text,
+            re.IGNORECASE,
+        )
+        if not m:
+            return None
+        first, last, rest = int(m.group(2)), int(m.group(3)), f"{m.group(1)}{m.group(4)}"
+    if not 1 <= first <= last <= 31:
+        return None
+    month = find_month(rest)
+    if month is None:
+        return None
+    year, _, offset = _period_suffix(rest.replace(",", " "), cfg)
+    return Spec(
+        Kind.ABS_MONTH, month=month, year=year, year_offset=offset, day_span=(first, last)
+    )
+
+
+#: The units a run can be measured in, "the first 3 months of", "the last week of".
+_SUB_UNIT = r"(?:days?|weeks?|months?|quarters?|qtrs?)"
+#: An ordinal that says so: a word or a suffixed number. A bare "3" is a count, and "3
+#: months of 2024" must not become "the third month of 2024".
+_NTH_STRICT = rf"(?:{alt(ORDINALS)}|\d{{1,2}}(?:st|nd|rd|th)|last|final)"
+
+
+def _p_sub_period(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"the first week of April", "the last month of the year", "the last quarter of 2024",
+    "the first 3 months of 2024".
+
+    The ordinal used to be lost along with its unit. "the first week of April" came back
+    as all of April, and "the last quarter of 2024" as two matches -- "last quarter",
+    counted back from today, and 2024 -- the first of them confidently wrong.
+    """
+    m = re.match(
+        rf"\s*(?:the\s+)?({_NTH_STRICT})\s+(?:({_NUM})\s+)?({_SUB_UNIT}){_NTH_OF}(.+)$",
+        text,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    index = _nth_index(m.group(1))
+    count = word_to_int(m.group(2)) if m.group(2) else 1
+    word = m.group(3).lower()
+    unit = Grain.QUARTER if word.startswith("q") else _unit_of(word)
+    if index is None or index == 0 or count is None or count < 1 or unit is None:
+        return None
+    # A run of several units can only be counted from one end or the other.
+    if m.group(2) and index not in (1, -1):
+        return None
+    limit = {Grain.DAY: 31, Grain.WEEK: 5, Grain.MONTH: 12, Grain.QUARTER: 4}.get(unit, 0)
+    if index > limit:
+        return None
+    target = _nth_target(m.group(4), cfg)
+    if target is None:
+        return None
+    if unit is Grain.QUARTER:
+        # A quarter of a year is a quarter labelled with that year, so it is read exactly
+        # as "the fourth quarter of 2024" is -- of_year_basis and all -- rather than by
+        # slicing the calendar year. Only "last"/"final" reach here; "the third quarter of
+        # 2024" is the quarter rule's, and the two must not disagree.
+        if index != -1 or count != 1:
+            return None
+        if not (target.kind is Kind.ABS_YEAR or target.unit is Grain.YEAR):
+            return None
+        tail = re.sub(r"^\s*the\s+(?=year\b)", "", m.group(4), flags=re.IGNORECASE)
+        return _p_quarter(f"fourth quarter of {tail}", cfg)
+    return target.with_(sub_period=(index, count, unit))
+
+
 def _p_nth_of(text: str, cfg: WranglerConfig) -> Spec | None:
     """"1st of next month", "15th of March" -- one day inside a named period."""
     m = re.match(rf"\s*(?:the\s+)?({_ORD})\s+(?:of\s+)?(.+)$", text, re.IGNORECASE)
@@ -930,6 +1221,20 @@ RULES: tuple[Rule, ...] = (
     Rule("iso", r"\b\d{4}-\d{1,2}-\d{1,2}(?!\d)", _p_iso),
     Rule("dashed_day", rf"\b\d{{1,2}}-{_MONTH}-'?\d{{2,4}}\b", _p_dashed_day),
     Rule("fy_range", rf"\b{_FY_WORD}\s*'?\d{{2,4}}\s*[-/]\s*'?\d{{2,4}}\b", _p_fy_range),
+    # Ahead of the year, quarter and half rules, which start at the same place and would
+    # each take one piece: "FY24" out of "FY24 Q3", "2024" out of "2024-Q3", "Q3" out of
+    # "Q3'24". (?!\w) rather than \b, because "Q3'24" ends on a digit after a quote.
+    Rule(
+        "labelled_period",
+        rf"\b(?:{_BASIS_TAG}\s+{_QH}{_YEAR_SUFFIX}"
+        rf"|{_QH}\s+(?:fiscal|financial|calendar)\b"
+        rf"|{_QH}\s+(?:fy|cy)\b(?!\s*'?\d)"
+        rf"|{_QH}['-]\d{{2}}(?:\d{{2}})?(?!\d)"
+        rf"|(?:19|20)\d{{2}}\s*-?\s*{_QH}"
+        rf"|(?:{_FY_WORD}|{_CY_WORD})\s*'?\d{{2,4}}\s*-?\s*{_QH}"
+        rf"|(?:[1-4]\s*q|[12]\s*h)\s*'?\d{{2,4}})(?!\w)",
+        _p_labelled_period,
+    ),
     Rule("numeric", r"\b\d{1,4}[/.]\d{1,2}[/.]\d{1,4}\b", _p_numeric),
     Rule(
         "ytd_period",
@@ -942,9 +1247,16 @@ RULES: tuple[Rule, ...] = (
         rf"|quarter\s*to\s*date)(?:\s+(?:of\s+)?{_YEAR})?\b",
         _p_to_date,
     ),
+    # After to_date, so "year to date" and "last year to date" keep their YTD reading, and
+    # ahead of every plain period rule, which would otherwise claim "this year" or "Q3"
+    # from the same position and leave "to date" behind.
+    Rule("period_to_date", rf"\b{_TD_TARGET}{_TO_DATE}\b", _p_period_to_date),
     Rule(
         "period_ending",
-        rf"\b(?:the\s+)?{_UNIT}\s+end(?:ing|ed|s)?\s+(?:{_MONTH}{_YEAR_SUFFIX}|{_YEAR})\b",
+        rf"\b(?:the\s+)?(?:{_NUM}\s+)?(?:half[\s-]?years?|{_UNIT})\s+(?:end(?:ing|ed|s)?|to)\s+"
+        rf"(?:\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}(?:\s+\d{{4}})?"
+        rf"|{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\d)(?:,?\s+\d{{4}})?"
+        rf"|{_MONTH}{_YEAR_SUFFIX}|{_YEAR})\b",
         _p_period_ending,
     ),
     Rule("trailing_months", r"\b(?:ttm|ltm|[tl]\d{1,2}m)\b", _p_trailing_months),
@@ -988,6 +1300,17 @@ RULES: tuple[Rule, ...] = (
         rf"\b{_WEEK_WORD}\s*\.?\s*#?\s*\d{{1,2}}\b{_WEEK_YEAR_SUFFIX}",
         _p_week_number,
     ),
+    # Ahead of month_day_year, which takes "March 1" out of "March 1-15" from the same
+    # place. The day-first form starts at the digit, so it is leftmost anyway.
+    Rule(
+        "day_span",
+        rf"\b\d{{1,2}}(?:st|nd|rd|th)?{_DAY_JOIN}\d{{1,2}}(?:st|nd|rd|th)?\s+(?:of\s+)?"
+        rf"{_MONTH}{_YEAR_SUFFIX}"
+        rf"|\b{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?{_DAY_JOIN}\d{{1,2}}(?:st|nd|rd|th)?"
+        # "March 1 to 15 April" runs across two months; leave that to the range merge.
+        rf"(?!\d)(?!\s+(?:of\s+)?{_MONTH})(?:,?\s*\d{{4}})?\b",
+        _p_day_span,
+    ),
     # Both must precede "relative" and the weekday rules, which otherwise claim the
     # opening words from the same position and win the alternation: "last day" scans as
     # "last 1 day" and "last Friday" as the weekday on its own.
@@ -1009,6 +1332,18 @@ RULES: tuple[Rule, ...] = (
         "nth_weekday",
         rf"\b(?:the\s+)?{_NTH}\s+(?:{_WEEKDAY_ALT}){_NTH_OF}{_NTH_TARGET}\b",
         _p_nth_weekday,
+    ),
+    # After edge_day, which keeps "the last day of", and ahead of relative, fiscal_month
+    # and month -- "the last week of March" otherwise scans as "last week" and a stray
+    # March, and "the third month of the quarter" as the third month of the fiscal year.
+    # Quarters only as "last"/"final": an ordinal quarter belongs to the quarter rule, and
+    # claiming it here as well left "the first quarter of 2024" matched by this rule and
+    # resolved by none.
+    Rule(
+        "sub_period",
+        rf"\b(?:the\s+)?(?:{_NTH_STRICT}\s+(?:{_NUM}\s+)?(?:days?|weeks?|months?)"
+        rf"|(?:last|final)\s+(?:quarter|qtr)){_NTH_OF}{_NTH_TARGET}\b",
+        _p_sub_period,
     ),
     Rule("nth_of", rf"\b(?:the\s+)?{_ORD}\s+of\s+{_PART_TARGET}\b", _p_nth_of),
     Rule(
@@ -1038,8 +1373,14 @@ RULES: tuple[Rule, ...] = (
         rf"\b{_DIRWORD}\s+(?:{_NUM}\s+)?(?:{_FY_WORD}|{_CY_WORD})\b",
         _p_relative_fy,
     ),
-    Rule("relative", rf"\b{_DIRWORD}\s+(?:{_NUM}\s+)?{_UNIT}\b", _p_relative),
-    Rule("this_period", rf"\b(?:this|current|present)\s+{_UNIT}\b", _p_this),
+    Rule(
+        "relative", rf"\b{_DIRWORD}\s+(?:{_NUM}\s+)?(?:{_BASIS_WORD}\s+)?{_UNIT}\b", _p_relative
+    ),
+    Rule(
+        "this_period",
+        rf"\b(?:this|current|present)\s+(?:(?:{_BASIS_WORD}\s+)?{_UNIT}|{_FY_WORD}|{_CY_WORD})\b",
+        _p_this,
+    ),
     Rule(
         "day_keyword",
         r"\b(?:(?:the\s+)?day\s+(?:before\s+yesterday|after\s+tomorrow)"
@@ -1061,7 +1402,9 @@ RULES: tuple[Rule, ...] = (
     Rule("decade", r"\b(?:the\s+)?(?:1[89]|20)\d0s\b", _p_decade),
     Rule("cob", r"\b(?:eod|cob|eob)(?:\s+(?:on\s+)?" + alt(WEEKDAY_NAMES) + r")?\b",
          _p_close_of_business),
-    Rule("month_year", rf"\b{_MONTH}\s+(?:of\s+)?{_YEAR}\b", _p_month),
+    # "the" only before "year": "March of the year 2013". Without it the month had no cue,
+    # was dropped by strictness, and the answer was the whole year at full confidence.
+    Rule("month_year", rf"\b{_MONTH}\s+(?:of\s+)?(?:the\s+(?=year\b))?{_YEAR}\b", _p_month),
     # "March last year" -- without this the month has no cue, is dropped by strictness,
     # and the answer becomes the whole of last year.
     Rule("month_rel_year", rf"\b{_MONTH}\s+(?:of\s+)?{_REL_YEAR}\b", _p_month),

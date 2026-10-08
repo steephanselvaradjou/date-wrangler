@@ -544,6 +544,36 @@ def test_prefilter_never_hides_a_match():
             assert _might_hold_a_date(text), f"prefilter would drop {text!r}"
 
 
+def test_every_rule_opens_with_a_word_boundary():
+    """The scanner checks \\b once, ahead of the whole alternation, instead of once per rule
+    at every position -- about a third of scanning time. That is only the same pattern if
+    every rule opens with \\b itself; one that did not would silently stop matching
+    anywhere a boundary is absent."""
+    from date_wrangler.rules import RULES
+
+    for rule in RULES:
+        assert rule.pattern.startswith(r"\b"), f"rule {rule.name!r} must open with \\b"
+
+
+def test_the_factored_scanner_finds_exactly_what_the_rules_do():
+    """Belt and braces for the above: the shared \\b changes speed, never matches."""
+    import re
+
+    from date_wrangler.wrangler import _SCAN_PATTERN, _SCANNER
+
+    plain = re.compile(_SCAN_PATTERN, re.IGNORECASE)
+    texts = [
+        "sales for Q1 FY25 compared with last year", "since March 2024", "2024-03-15T14:30Z",
+        "the first week of April", "1-15 March", "six months to June 2024", "Q3'24 and 2024-Q3",
+        "on or before 31 March", "this year and Q1", "week 42, 2026", "5 business days ago",
+        "no date here at all", "a 2h drive and 3 days to March",
+    ]
+    for text in texts:
+        assert [(m.span(), m.lastgroup) for m in _SCANNER.finditer(text)] == [
+            (m.span(), m.lastgroup) for m in plain.finditer(text)
+        ], text
+
+
 def test_both_scanners_accept_the_same_fragments():
     """_scan lowers ASCII text and uses the case-sensitive pattern, which is only valid
     while every rule pattern is written in lower case. A new rule with a literal capital

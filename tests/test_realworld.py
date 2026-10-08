@@ -99,7 +99,6 @@ def test_date_order_config_applies_to_ambiguous_numeric():
     [
         ("This Agreement is effective from 1 January 2024.", date(2024, 1, 1)),
         ("The term expires on 31 December 2026.", date(2026, 12, 31)),
-        ("Notice must be given no later than 30 September.", date(2025, 9, 30)),
         ("Patient DOB: 12/03/1985", date(1985, 3, 12)),
         ("Last dose administered on 2024-03-15.", date(2024, 3, 15)),
         ("Joined the company on 3 March 2020.", date(2020, 3, 3)),
@@ -110,6 +109,15 @@ def test_date_order_config_applies_to_ambiguous_numeric():
 )
 def test_dates_in_prose(text, expected):
     assert first(text)[0] == expected
+
+
+def test_a_deadline_is_read_as_up_to_and_including_the_day():
+    """"no later than 30 September" is a deadline. It used to come back as that one day,
+    which loses every earlier day a notice could have been given on."""
+    m = parse_one("Notice must be given no later than 30 September.", today=TODAY)
+    assert m is not None
+    assert m.range.start is None
+    assert m.range.end_inclusive == date(2025, 9, 30)
 
 
 def test_two_dates_in_one_sentence_stay_separate():

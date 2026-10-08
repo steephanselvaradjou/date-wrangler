@@ -97,9 +97,22 @@ def _shift(start: date, unit: Grain, n: int) -> date:
 # ---------------------------------------------------------------------------
 
 
+#: Kinds that count a period from today rather than naming one.
+_FROM_TODAY = frozenset({Kind.RELATIVE, Kind.THIS_PERIOD, Kind.TO_DATE, Kind.AGO})
+
+
 def _basis_for(spec: Spec, cfg: WranglerConfig) -> Basis:
+    """The calendar a period is measured on.
+
+    A basis the phrase states always wins. Otherwise a year counted from today -- "this
+    year", "last 2 years", "YTD" -- takes ``year_basis``, and everything else, a bare "Q1"
+    included, takes ``bare_period_basis``. Both default to the same thing, so the split
+    only shows when someone asks for it.
+    """
     if spec.basis is not None:
         return spec.basis
+    if spec.kind in _FROM_TODAY and spec.unit is Grain.YEAR:
+        return cfg.effective_year_basis
     return cfg.bare_period_basis
 
 
@@ -136,6 +149,17 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         base = _resolve_core(spec, today, cfg)
         if spec.year_offset:
             base = _shift_years(base, spec.year_offset)
+        if spec.through_today:
+            # With no year written, "December to date" in October means the December just
+            # gone, not the one coming -- the same choice "YTD March" already makes. An
+            # explicit year is taken at its word, so "FY28 to date" is still refused.
+            if base.start is not None and base.start > today and not spec.has_explicit_year:
+                base = _shift_years(base, -1)
+            base = _through_today(base, today)
+        if spec.day_span is not None:
+            base = _pick_day_span(base, *spec.day_span)
+        if spec.sub_period is not None:
+            base = _pick_sub_period(base, *spec.sub_period)
         if spec.part is not None:
             base = _slice_part(base, spec.part)
         if spec.nth_weekday is not None:
@@ -150,6 +174,72 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
             raise
         raise UnresolvableSpec(str(exc)) from exc
     return _apply_mod(base, spec.mod, today)
+
+
+def _pick_day_span(r: DateRange, first: int, last: int) -> DateRange:
+    """Days ``first`` to ``last`` of a month, both included. "1-15 March"."""
+    if r.start is None or r.end is None:
+        raise UnresolvableSpec("cannot take days out of an unbounded range")
+    start = r.start + timedelta(days=first - 1)
+    end = r.start + timedelta(days=last)
+    if end > r.end:
+        raise UnresolvableSpec(f"{r.start:%B %Y} has no day {last}")
+    return DateRange(start, end, Grain.DAY, Basis.CALENDAR)
+
+
+def _pick_sub_period(r: DateRange, index: int, count: int, unit: Grain) -> DateRange:
+    """A run of whole units inside a period: "the first week of April", "the last 3 months
+    of the year".
+
+    Counted from the start for a positive ``index`` and from the end for a negative one,
+    so "the last week of March" is its final seven days, 25-31 March, and needs no idea of
+    which day a week begins on -- the same choice :meth:`DateRange.split` makes. A run that
+    would start outside the period is refused; one that only runs past its end is cut there,
+    as the fifth week of a 30-day month is.
+    """
+    if r.start is None or r.end is None:
+        raise UnresolvableSpec("cannot take part of an unbounded range")
+    months = {Grain.MONTH: 1, Grain.QUARTER: 3, Grain.HALF: 6}.get(unit)
+    days = {Grain.DAY: 1, Grain.WEEK: 7}.get(unit)
+    if months is not None:
+        if index > 0:
+            start = add_months(r.start, (index - 1) * months)
+            end = add_months(start, count * months)
+        else:
+            end = add_months(r.end, (index + 1) * months)
+            start = add_months(end, -count * months)
+    elif days is not None:
+        if index > 0:
+            start = r.start + timedelta(days=(index - 1) * days)
+            end = start + timedelta(days=count * days)
+        else:
+            end = r.end + timedelta(days=(index + 1) * days)
+            start = end - timedelta(days=count * days)
+    else:
+        raise UnresolvableSpec(f"cannot take a {unit.value} out of a period")
+    if not r.start <= start < r.end:
+        raise UnresolvableSpec(f"{r.start}..{r.end} does not have that {unit.value}")
+    return DateRange(start, min(end, r.end), unit, r.basis)
+
+
+def _through_today(r: DateRange, today: date) -> DateRange:
+    """A period "to date": from its start up to and including today.
+
+    For the current period that is the period so far -- "this year to date" is the same
+    window as YTD. For one that has already ended it runs on to today, because that is
+    what "to date" says: "revenue from March 2024 to date" is everything since March 2024,
+    not March 2024 alone. One reading covers both, so there is no case to pick.
+
+    A period that has not started yet has nothing to date, and is refused rather than
+    turned into an empty or inverted range.
+    """
+    if r.start is None:
+        raise UnresolvableSpec("a period with no start has nothing to count to date from")
+    if r.start > today:
+        raise UnresolvableSpec(
+            f"the period starts on {r.start}, after today, so there is nothing to date yet"
+        )
+    return DateRange(r.start, today + timedelta(days=1), r.grain, r.basis, r.mod, r.anchor)
 
 
 def _shift_years(r: DateRange, offset: int) -> DateRange:
@@ -408,8 +498,22 @@ def _resolve_weekend(spec: Spec, today: date) -> DateRange:
 def _resolve_period_ending(
     spec: Spec, today: date, cfg: WranglerConfig, basis: Basis
 ) -> DateRange:
-    """"quarter ending June 2024" -- a period pinned by its end, not its start."""
+    """"quarter ending June 2024", "six months to 30 June" -- pinned by its end.
+
+    The end is inclusive of the named month or day, and the period runs ``count`` units
+    back from just after it. With no year written, the most recent such end that has
+    already happened is meant: a report "for the six months to June" describes a June
+    that is over.
+    """
     unit = spec.unit or Grain.QUARTER
+    count = spec.count if spec.count is not None else 1
+    if spec.day is not None and spec.month is not None:
+        year = spec.year
+        if year is None:
+            year = today.year if date(today.year, spec.month, spec.day) <= today else today.year - 1
+        stop = date(year, spec.month, spec.day) + timedelta(days=1)
+        return DateRange(_shift(stop, unit, -count), stop, unit, basis)
+    end: date | None
     if spec.month is not None:
         year = spec.year
         if year is None:
@@ -420,7 +524,7 @@ def _resolve_period_ending(
     else:
         raise UnresolvableSpec("a period-ending spec needs a month or a year to end at")
     assert end is not None
-    return DateRange(_shift(end, unit, -1), end, unit, basis)
+    return DateRange(_shift(end, unit, -count), end, unit, basis)
 
 
 def _business_window(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:

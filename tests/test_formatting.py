@@ -147,3 +147,31 @@ def test_single_is_used_exactly_when_the_two_ends_render_alike():
 def test_custom_templates_still_apply():
     fmt = make_formatter(date_format="%d/%m/%Y", closed="{start} - {end}")
     assert fmt(rng("last quarter")) == "01/07/2026 - 30/09/2026"
+
+
+# ---------------------------------------------------------------------------
+# Open-ended ranges and the day fallback
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,shown",
+    [
+        ("since March", "from March 2026 onwards"),
+        ("after FY24", "from April 2024 onwards"),
+        ("before 2024", "before January 2024"),
+        ("up to March 2026", "up to March 2026"),
+    ],
+)
+def test_an_open_ended_range_on_a_month_boundary_keeps_months(text, shown):
+    """REGRESSION: 0.7.0's day fallback required both ends to be on a month boundary, and
+    an unbounded end has none -- so "since March", already exact, became "from 01 March
+    2026 onwards". Only the ends that exist can overstate anything."""
+    fmt = make_formatter(date_format="%B %Y", since="from {start} onwards",
+                         after="from {start} onwards")
+    assert fmt(rng(text)) == shown
+
+
+def test_an_open_ended_range_off_a_boundary_still_falls_back():
+    fmt = make_formatter(date_format="%B %Y", since="from {start} onwards")
+    assert fmt(rng("since 15 March")) == "from 2026-03-15 onwards"
