@@ -221,6 +221,21 @@ the caller's business, so you opt in explicitly:
 r.clamp(hi=date.today() + timedelta(days=1))
 ```
 
+**Which side of the boundary day falls on** follows the words, because a boundary day is
+exactly the data that goes missing without anyone noticing:
+
+| phrase | range | boundary day |
+|---|---|---|
+| `after 1 April`, `before 31 March` | from 2 April / up to 30 March | **excluded** |
+| `on or after 1 April`, `not before 1 April`, `no earlier than 1 April` | from 1 April | included |
+| `on or before 31 March`, `not after 31 March`, `no later than 31 March` | up to 31 March | included |
+| `by 31 March`, `through 31 March`, `until 31 March`, `up to and including 31 March` | up to 31 March | included |
+| `before the end of March`, `by end of year` | up to the period's last day | included |
+| `from 1 April`, `from today`, `from Monday` | from that day on | included |
+
+`from` opens a range only before a single day. After a period it usually names a source —
+`the figures from Q1` are Q1's figures, not everything since — so it is left as the period.
+
 ### Grouping and comparing
 
 Parsing gives you one range. A report needs one row per bucket, and a number to compare it
@@ -318,7 +333,8 @@ happened to match it:
 | `CY2013`, `this calendar year`, `next calendar quarter` | calendar — it says so |
 | `this year`, `last year`, `YTD`, `this year to date` | `year_basis` — nothing was said |
 | `Q1`, `H1`, `last quarter`, `QTD` | `bare_period_basis` — nothing was said |
-| `Q1 of 2013`, `Q1 of the year 2013` | `of_year_basis` — a year labelling a quarter is genuinely ambiguous |
+| `Q1 of 2013`, `Q1 of the year 2013`, `the last quarter of 2013` | `of_year_basis` — a year labelling a quarter is genuinely ambiguous |
+| `the second half of 2013`, `the first 3 months of 2013` | calendar — a slice of the year 2013, which is a calendar year |
 
 So an explicit `fiscal` or `calendar` always beats the configured default, and the word
 "year" on its own never makes anything fiscal.
@@ -383,6 +399,7 @@ plausible.
 | | |
 |---|---|
 | Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `fy-24`, `F.Y. 2024` |
+| Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `fiscal Q3`, `Q3 FY` |
 | Calendar periods | `CY2024`, `Q1 of 2024`, `January 2024`, `2024`, `the year 2024` |
 | Fiscal month index | `third month of FY24`, `twelfth month` |
 | Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` |
@@ -391,7 +408,7 @@ plausible.
 | To-date | `YTD`, `MTD`, `QTD`, `last YTD` (the same window a year earlier) |
 | Period to date | `this year to date`, `Q3 to date`, `October to date`, `March 2024 to date` |
 | Reporting shorthand | `TTM`, `LTM`, `T12M`, `L3M`, `trailing 12 months`, `rolling 3 months` |
-| Period-ending | `quarter ending June 2024`, `year ended March 2024` |
+| Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024` |
 | Absolute | `2024-03-15`, `15 January 2024`, `January 15, 2024`, `03/04/2024` |
 | Ranges | `Q1 to Q2`, `Jan–Mar`, `from April to September 2024`, `Nov to Feb` (wraps) |
 | Open-ended | `since March`, `from Q1 onwards`, `up to March 2024`, `before 2024`, `after FY24` |
@@ -399,6 +416,9 @@ plausible.
 | Relative year | `Q1 last year`, `March last year`, `H2 next year` |
 | Part of a period | `first half of March`, `early 2024`, `mid March`, `end of Q1` |
 | Day in a period | `1st of next month`, `15th of March`, `the last day of the month` |
+| Runs of days | `1-15 March`, `March 1-15, 2024`, `1st to 15th March` |
+| Unit of a period | `the first week of April`, `the last week of March`, `the last 3 months of the year`, `the last quarter of 2024` |
+| Deadlines | `by 31 March`, `on or before 31 March`, `no later than Friday`, `not before 1 April` |
 | Nth weekday | `first Monday of March`, `last Friday of the month`, `3rd Thursday of November` |
 | Week numbers | `week 42`, `2026-W42`, `CW42`, `KW 42`, `week 42 of 2026` |
 | Business days | `5 business days ago`, `next business day`, `last business day of the month` |
@@ -493,10 +513,20 @@ preposition counts** — `at`, `by`, `around`. A clock sitting straight against 
 of a timestamp (`2024-03-15T14:30:00Z`, `Mar 15 14:30:00`), where the day *is* the intended
 answer, so log lines stay at full confidence.
 
-`and` joins two periods into one span, which is right for `Q1 and Q2` and for
-`between March and June` — adjacent periods are how people write a range. Only a **gap**
-between them makes the hull a guess, and an explicit `between` or `from … to` settles it
-either way.
+**A list and a span are different things.** `Q1 and Q2` is a list — the union of the
+periods in it, in any order, so `this year and Q1` is the whole year and `Q3 and Q1` is two
+quarters of one year. `Q1 to Q2`, `from March to June` and `between March and June` are
+spans — from the start of the first to the end of the last, wrapping a year if they
+invert. A year written on one item reaches the others either way: `Q1 and Q2 2024`.
+
+Two cases come back at **confidence 0.5** rather than being guessed at. A list with a gap —
+`Q1 and Q3` holds Q2, which nobody named. And a span whose end lies at its own start —
+under a January year `Q1 to January` is just January, so Q1 added nothing. A span that
+stops partway through its first period is fine: `Q1 to 15 March` is a reasonable question.
+
+**Bare `last day` is yesterday** — "the last day", read as "the last 1 day". With a period
+after it, `the last day of the month` is the month's final day; on its own it is ambiguous
+enough that, if it matters, write `yesterday` or name the period.
 
 ### Precision on running prose
 
