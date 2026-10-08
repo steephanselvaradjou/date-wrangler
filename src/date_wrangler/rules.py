@@ -231,7 +231,9 @@ def _p_dashed_month(text: str, cfg: WranglerConfig) -> Spec | None:
 
 def _p_decade(text: str, cfg: WranglerConfig) -> Spec | None:
     """"the 1990s" -- ten years, starting at the zero."""
-    m = re.search(r"\b((?:1[89]|20)\d)0s\b", text)
+    # Case-insensitive: the scanner lowered the text to find this, but the fragment here
+    # is the original, and a heading in capitals -- "THE 1990S" -- has a capital S.
+    m = re.search(r"\b((?:1[89]|20)\d)0s\b", text, re.IGNORECASE)
     if not m:
         return None
     return Spec(Kind.DECADE, year=int(m.group(1)) * 10)
@@ -679,6 +681,10 @@ def _p_relative(text: str, cfg: WranglerConfig) -> Spec | None:
         re.IGNORECASE,
     )
     if not m:
+        return None
+    # A plural with no number is vague, not one unit: "in the coming months" came back as
+    # exactly one month at full confidence. Nothing is a better answer than a made-up one.
+    if not m.group(2) and re.search(r"(?:s|halves)$", m.group(4), re.IGNORECASE):
         return None
     count = word_to_int(m.group(2)) if m.group(2) else 1
     unit = _unit_of(m.group(4))
