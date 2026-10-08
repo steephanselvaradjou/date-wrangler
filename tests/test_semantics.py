@@ -393,3 +393,76 @@ def test_a_basis_word_before_something_that_is_not_a_period(text):
     from date_wrangler import parse
 
     assert parse(text, today=OCT8) == []
+
+
+# ---------------------------------------------------------------------------
+# year_basis: "this year" can be the calendar year while "Q1" stays fiscal
+# ---------------------------------------------------------------------------
+
+CAL_2026 = (date(2026, 1, 1), date(2027, 1, 1))
+SPLIT = WranglerConfig(year_basis=Basis.CALENDAR)  # fiscal quarters, calendar years
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("this year", CAL_2026),
+        ("last year", (date(2025, 1, 1), date(2026, 1, 1))),
+        ("next 2 years", (date(2027, 1, 1), date(2029, 1, 1))),
+        ("2 years ago", (date(2024, 1, 1), date(2025, 1, 1))),
+        ("YTD", (date(2026, 1, 1), date(2026, 10, 9))),
+        ("year to date", (date(2026, 1, 1), date(2026, 10, 9))),
+        ("this year to date", (date(2026, 1, 1), date(2026, 10, 9))),
+        ("last YTD", (date(2025, 1, 1), date(2025, 10, 9))),
+    ],
+)
+def test_year_basis_decides_a_year_counted_from_today(text, expected):
+    assert _span(text, SPLIT) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Q1", (date(2026, 4, 1), date(2026, 7, 1))),
+        ("last quarter", (date(2026, 7, 1), date(2026, 10, 1))),
+        ("H1", (date(2026, 4, 1), date(2026, 10, 1))),
+        ("QTD", (date(2026, 10, 1), date(2026, 10, 9))),
+    ],
+)
+def test_year_basis_leaves_quarters_and_halves_alone(text, expected):
+    """The point of a separate setting: a finance team's "Q1" stays the fiscal quarter
+    while their "this year" means January to December."""
+    assert _span(text, SPLIT) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("2013", CAL_2013),
+        ("the year 2013", CAL_2013),
+        ("FY2013", (date(2012, 4, 1), date(2013, 4, 1))),
+        ("this fiscal year", FY27),
+        ("this calendar year", CAL_2026),
+    ],
+)
+@pytest.mark.parametrize("year_basis", [Basis.CALENDAR, Basis.FISCAL])
+def test_year_basis_never_overrides_a_year_that_names_itself(text, expected, year_basis):
+    assert _span(text, WranglerConfig(year_basis=year_basis)) == expected
+
+
+def test_year_basis_defaults_to_following_bare_period_basis():
+    """None inherits, so nothing changes for anyone who has not asked for the split."""
+    for bare in (Basis.FISCAL, Basis.CALENDAR):
+        assert _span("this year", WranglerConfig(bare_period_basis=bare)) == _span(
+            "this year", WranglerConfig(bare_period_basis=bare, year_basis=bare)
+        )
+
+
+@pytest.mark.parametrize("raw", ["calendar", "Calendar", " CALENDAR "])
+def test_year_basis_accepts_the_string_a_form_sends(raw):
+    assert WranglerConfig(year_basis=raw).year_basis is Basis.CALENDAR  # type: ignore[arg-type]
+
+
+def test_an_unknown_basis_fails_on_construction_by_name():
+    with pytest.raises(ValueError, match="year_basis must be 'calendar' or 'fiscal'"):
+        WranglerConfig(year_basis="gregorian")  # type: ignore[arg-type]

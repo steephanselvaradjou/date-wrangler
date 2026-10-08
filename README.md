@@ -296,6 +296,7 @@ WranglerConfig(
     weekend=(5, 6),                       # non-working days, for "business days"
     holidays=frozenset(),                 # yours to supply; never guessed
     bare_period_basis=Basis.FISCAL,       # what a bare "Q1" means
+    year_basis=Basis.CALENDAR,            # what "this year" and YTD mean
     two_digit_pivot=68,                   # "99" -> 1999, not 2099
     strictness="balanced",
 )
@@ -315,11 +316,24 @@ happened to match it:
 | `2013`, `in 2013`, `the year 2013`, `end of the year 2013` | calendar — a year on its own is a calendar year |
 | `FY2013`, `fiscal year 2013`, `this fiscal year`, `last FY` | fiscal — it says so |
 | `CY2013`, `this calendar year`, `next calendar quarter` | calendar — it says so |
-| `Q1`, `this year`, `last quarter` | `bare_period_basis` — nothing was said |
+| `this year`, `last year`, `YTD`, `this year to date` | `year_basis` — nothing was said |
+| `Q1`, `H1`, `last quarter`, `QTD` | `bare_period_basis` — nothing was said |
 | `Q1 of 2013`, `Q1 of the year 2013` | `of_year_basis` — a year labelling a quarter is genuinely ambiguous |
 
 So an explicit `fiscal` or `calendar` always beats the configured default, and the word
 "year" on its own never makes anything fiscal.
+
+`year_basis` exists for the team whose "Q1" is the fiscal quarter but whose "this year" is
+January to December. It defaults to `None`, which follows `bare_period_basis`, so the two
+only come apart when you ask. A value from a form or select works as-is — `"calendar"` and
+`"fiscal"` are accepted in any case — and anything else fails on construction, by name.
+
+```python
+cfg = WranglerConfig(year_basis="calendar")       # April fiscal year, calendar "this year"
+parse("this year", config=cfg)                     # January 2026 to December 2026
+parse("Q1", config=cfg)                            # April 2026 to June 2026 — still fiscal
+parse("FY2013", config=cfg)                        # April 2012 to March 2013 — says so
+```
 
 Invalid configuration fails on construction with a message naming the field, not later
 from inside `date()` on the first request that mentions a quarter.

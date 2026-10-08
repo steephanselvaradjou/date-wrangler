@@ -125,6 +125,16 @@ class WranglerConfig:
     #: "Q1 2024" agree -- they should never land a year apart.
     of_year_basis: Basis | None = None  # None => inherit
 
+    #: What a year counted from today means when the phrase does not say: "this year",
+    #: "last year", "next 2 years", "2 years ago", "YTD", "this year to date". None inherits
+    #: ``bare_period_basis``, so by default these move together with a bare "Q1".
+    #:
+    #: Set it apart when they should not -- the common case is a finance team whose "Q1" is
+    #: the fiscal quarter but whose "this year" is the calendar year. It never touches a
+    #: year that names itself: "2013" and "the year 2013" are calendar, and "FY2013" and
+    #: "this fiscal year" are fiscal, whatever this is set to.
+    year_basis: Basis | None = None  # None => inherit
+
     #: Where a relative period's edges fall when the phrasing does not say. See
     #: :class:`~date_wrangler.types.Anchor`. Phrasings that are explicit about it -- "last
     #: 30 days", "rolling 4 weeks" -- override this.
@@ -166,6 +176,21 @@ class WranglerConfig:
             raise TypeError("WranglerConfig.date_order must be a DateOrder")
         if not isinstance(self.anchor, Anchor):
             raise TypeError("WranglerConfig.anchor must be an Anchor")
+        for name in ("bare_period_basis", "of_year_basis", "year_basis"):
+            value = getattr(self, name)
+            if value is None or isinstance(value, Basis):
+                continue
+            # A setting like this usually arrives from a form or a select as the string
+            # "calendar" or "fiscal". Accept exactly those; anything else fails here, by
+            # name, instead of on the first request that happens to mention a year.
+            try:
+                object.__setattr__(self, name, Basis(str(value).strip().lower()))
+            except ValueError:
+                raise ValueError(
+                    f"WranglerConfig.{name} must be 'calendar' or 'fiscal', got {value!r}"
+                ) from None
+        if self.bare_period_basis is None:
+            raise ValueError("WranglerConfig.bare_period_basis cannot be None")
         if not isinstance(self.month_number, MonthNumber):
             raise TypeError("WranglerConfig.month_number must be a MonthNumber")
         if not isinstance(self.week_starts_on, int) or not 0 <= self.week_starts_on <= 6:
@@ -194,6 +219,10 @@ class WranglerConfig:
     @property
     def effective_of_year_basis(self) -> Basis:
         return self.of_year_basis if self.of_year_basis is not None else self.bare_period_basis
+
+    @property
+    def effective_year_basis(self) -> Basis:
+        return self.year_basis if self.year_basis is not None else self.bare_period_basis
 
     def with_(self, **changes: Any) -> WranglerConfig:
         """A copy with fields replaced, validated the same way."""

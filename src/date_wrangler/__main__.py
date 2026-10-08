@@ -25,6 +25,7 @@ def _build_config(args: argparse.Namespace) -> WranglerConfig:
             label_by=YearLabel(args.label_by),
         ),
         bare_period_basis=Basis(args.basis),
+        year_basis=Basis(args.year_basis) if args.year_basis else None,
         anchor=Anchor(args.anchor),
         date_order=DateOrder(args.date_order),
         week_starts_on=args.week_starts_on,
@@ -46,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--label-by", choices=[y.value for y in YearLabel], default="end_year")
     p.add_argument("--basis", choices=[b.value for b in Basis], default="fiscal",
                    help="what a bare Q1/H1 means (default fiscal)")
+    p.add_argument("--year-basis", choices=[b.value for b in Basis], default=None,
+                   help="what 'this year', 'last year' and YTD mean (default: follow --basis)")
     p.add_argument("--anchor", choices=[a.value for a in Anchor], default="anchored",
                    help="what 'last month' means (default anchored)")
     p.add_argument("--date-order", choices=[d.value for d in DateOrder], default="DMY")

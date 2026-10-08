@@ -97,9 +97,22 @@ def _shift(start: date, unit: Grain, n: int) -> date:
 # ---------------------------------------------------------------------------
 
 
+#: Kinds that count a period from today rather than naming one.
+_FROM_TODAY = frozenset({Kind.RELATIVE, Kind.THIS_PERIOD, Kind.TO_DATE, Kind.AGO})
+
+
 def _basis_for(spec: Spec, cfg: WranglerConfig) -> Basis:
+    """The calendar a period is measured on.
+
+    A basis the phrase states always wins. Otherwise a year counted from today -- "this
+    year", "last 2 years", "YTD" -- takes ``year_basis``, and everything else, a bare "Q1"
+    included, takes ``bare_period_basis``. Both default to the same thing, so the split
+    only shows when someone asks for it.
+    """
     if spec.basis is not None:
         return spec.basis
+    if spec.kind in _FROM_TODAY and spec.unit is Grain.YEAR:
+        return cfg.effective_year_basis
     return cfg.bare_period_basis
 
 
