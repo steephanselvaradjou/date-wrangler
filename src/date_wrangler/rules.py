@@ -410,18 +410,43 @@ def _p_trailing_months(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 def _p_period_ending(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"quarter ending June 2024", "year ended March 2024"."""
-    m = re.match(rf"\s*(?:the\s+)?({_UNIT})\s+end", text, re.IGNORECASE)
+    """"quarter ending June 2024", "the 12 months to March 2024", "six months ended 30 June".
+
+    Annual-report phrasing names a period by where it stops, and two parts of it were
+    lost. A count was dropped, so "12 months ending March 2024" came back as one month;
+    and "to" was not read at all, so "six months to June 2024" and "the year to March
+    2024" came back as the month alone.
+    """
+    m = re.match(
+        rf"\s*(?:the\s+)?(?:({_NUM})\s+)?(half[\s-]?years?|{_UNIT})\s+"
+        rf"(end(?:ing|ed|s)?|to)\s+(.+)$",
+        text,
+        re.IGNORECASE,
+    )
     if not m:
         return None
-    unit = _unit_of(m.group(1))
-    if unit is None:
+    word = m.group(2).lower()
+    unit = Grain.HALF if word.startswith("half") else _unit_of(m.group(2))
+    count = word_to_int(m.group(1)) if m.group(1) else 1
+    if unit is None or count is None or count < 1:
         return None
-    month = find_month(text)
-    year, basis = _year_from_suffix(text, cfg)
+    # "3 days to March" counts down to something; it is not a period that ends in March.
+    if m.group(3).lower() == "to" and unit in (Grain.DAY, Grain.WEEK):
+        return None
+    count *= _scale_of(m.group(2))
+    tail = m.group(4)
+    # An end given as a day -- "30 June 2024", "June 30, 2024" -- rather than a month.
+    day = _p_day_month_year(tail, cfg)
+    if day is None and re.match(rf"\s*{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\d)", tail, re.I):
+        day = _p_month_day_year(tail, cfg)
+    if day is not None and day.kind is Kind.ABS_DAY:
+        return Spec(Kind.PERIOD_ENDING, unit=unit, count=count, month=day.month,
+                    day=day.day, year=day.year)
+    month = find_month(tail)
+    year, basis = _year_from_suffix(tail, cfg)
     if month is None and year is None:
         return None
-    return Spec(Kind.PERIOD_ENDING, unit=unit, month=month, year=year, basis=basis)
+    return Spec(Kind.PERIOD_ENDING, unit=unit, count=count, month=month, year=year, basis=basis)
 
 
 def _p_weekday(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -704,7 +729,9 @@ def _p_this(text: str, cfg: WranglerConfig) -> Spec | None:
 #: longer spelling of each pair comes first.
 _PART_WORDS: tuple[tuple[str, Part], ...] = (
     (r"first\s+half|1st\s+half", Part.FIRST_HALF),
-    (r"second\s+half|2nd\s+half|latter\s+half", Part.SECOND_HALF),
+    # "last half of 2024" was read as "last half" -- the previous half-year, counted back
+    # from today -- plus a stray 2024. It means the second half, as "latter half" does.
+    (r"second\s+half|2nd\s+half|latter\s+half|last\s+half|final\s+half", Part.SECOND_HALF),
     (r"beginning|start|early", Part.EARLY),
     (r"middle|mid", Part.MID),
     (r"end|late|close", Part.LATE),
@@ -956,6 +983,97 @@ def _p_business_ago(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.AGO, count=count, unit=Grain.DAY, direction=direction, business=True)
 
 
+#: Between the two days of a run: "1-15", "1st to 15th", "1 through 15".
+_DAY_JOIN = r"\s*(?:-|to|until|till|through|thru)\s*"
+_DAY_NUM = r"\d{1,2}(?:st|nd|rd|th)?"
+
+
+def _p_day_span(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"1-15 March", "1st to 15th March", "March 1-15", "March 1 to 15, 2024".
+
+    The run used to collapse to one of its ends: "1-15 March" was the 15th alone, and
+    "March 1-15" the 1st, each at full confidence, because the other number had no rule.
+    """
+    m = re.match(
+        rf"\s*(\d{{1,2}})(?:st|nd|rd|th)?{_DAY_JOIN}(\d{{1,2}})(?:st|nd|rd|th)?"
+        rf"\s+(?:of\s+)?(.+)$",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        first, last, rest = int(m.group(1)), int(m.group(2)), m.group(3)
+    else:
+        m = re.match(
+            rf"\s*({_MONTH})\s+(\d{{1,2}})(?:st|nd|rd|th)?{_DAY_JOIN}(\d{{1,2}})"
+            rf"(?:st|nd|rd|th)?(.*)$",
+            text,
+            re.IGNORECASE,
+        )
+        if not m:
+            return None
+        first, last, rest = int(m.group(2)), int(m.group(3)), f"{m.group(1)}{m.group(4)}"
+    if not 1 <= first <= last <= 31:
+        return None
+    month = find_month(rest)
+    if month is None:
+        return None
+    year, _, offset = _period_suffix(rest.replace(",", " "), cfg)
+    return Spec(
+        Kind.ABS_MONTH, month=month, year=year, year_offset=offset, day_span=(first, last)
+    )
+
+
+#: The units a run can be measured in, "the first 3 months of", "the last week of".
+_SUB_UNIT = r"(?:days?|weeks?|months?|quarters?|qtrs?)"
+#: An ordinal that says so: a word or a suffixed number. A bare "3" is a count, and "3
+#: months of 2024" must not become "the third month of 2024".
+_NTH_STRICT = rf"(?:{alt(ORDINALS)}|\d{{1,2}}(?:st|nd|rd|th)|last|final)"
+
+
+def _p_sub_period(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"the first week of April", "the last month of the year", "the last quarter of 2024",
+    "the first 3 months of 2024".
+
+    The ordinal used to be lost along with its unit. "the first week of April" came back
+    as all of April, and "the last quarter of 2024" as two matches -- "last quarter",
+    counted back from today, and 2024 -- the first of them confidently wrong.
+    """
+    m = re.match(
+        rf"\s*(?:the\s+)?({_NTH_STRICT})\s+(?:({_NUM})\s+)?({_SUB_UNIT}){_NTH_OF}(.+)$",
+        text,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    index = _nth_index(m.group(1))
+    count = word_to_int(m.group(2)) if m.group(2) else 1
+    word = m.group(3).lower()
+    unit = Grain.QUARTER if word.startswith("q") else _unit_of(word)
+    if index is None or index == 0 or count is None or count < 1 or unit is None:
+        return None
+    # A run of several units can only be counted from one end or the other.
+    if m.group(2) and index not in (1, -1):
+        return None
+    limit = {Grain.DAY: 31, Grain.WEEK: 5, Grain.MONTH: 12, Grain.QUARTER: 4}.get(unit, 0)
+    if index > limit:
+        return None
+    target = _nth_target(m.group(4), cfg)
+    if target is None:
+        return None
+    if unit is Grain.QUARTER:
+        # A quarter of a year is a quarter labelled with that year, so it is read exactly
+        # as "the fourth quarter of 2024" is -- of_year_basis and all -- rather than by
+        # slicing the calendar year. Only "last"/"final" reach here; "the third quarter of
+        # 2024" is the quarter rule's, and the two must not disagree.
+        if index != -1 or count != 1:
+            return None
+        if not (target.kind is Kind.ABS_YEAR or target.unit is Grain.YEAR):
+            return None
+        tail = re.sub(r"^\s*the\s+(?=year\b)", "", m.group(4), flags=re.IGNORECASE)
+        return _p_quarter(f"fourth quarter of {tail}", cfg)
+    return target.with_(sub_period=(index, count, unit))
+
+
 def _p_nth_of(text: str, cfg: WranglerConfig) -> Spec | None:
     """"1st of next month", "15th of March" -- one day inside a named period."""
     m = re.match(rf"\s*(?:the\s+)?({_ORD})\s+(?:of\s+)?(.+)$", text, re.IGNORECASE)
@@ -1129,7 +1247,10 @@ RULES: tuple[Rule, ...] = (
     Rule("period_to_date", rf"\b{_TD_TARGET}{_TO_DATE}\b", _p_period_to_date),
     Rule(
         "period_ending",
-        rf"\b(?:the\s+)?{_UNIT}\s+end(?:ing|ed|s)?\s+(?:{_MONTH}{_YEAR_SUFFIX}|{_YEAR})\b",
+        rf"\b(?:the\s+)?(?:{_NUM}\s+)?(?:half[\s-]?years?|{_UNIT})\s+(?:end(?:ing|ed|s)?|to)\s+"
+        rf"(?:\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}(?:\s+\d{{4}})?"
+        rf"|{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\d)(?:,?\s+\d{{4}})?"
+        rf"|{_MONTH}{_YEAR_SUFFIX}|{_YEAR})\b",
         _p_period_ending,
     ),
     Rule("trailing_months", r"\b(?:ttm|ltm|[tl]\d{1,2}m)\b", _p_trailing_months),
@@ -1173,6 +1294,17 @@ RULES: tuple[Rule, ...] = (
         rf"\b{_WEEK_WORD}\s*\.?\s*#?\s*\d{{1,2}}\b{_WEEK_YEAR_SUFFIX}",
         _p_week_number,
     ),
+    # Ahead of month_day_year, which takes "March 1" out of "March 1-15" from the same
+    # place. The day-first form starts at the digit, so it is leftmost anyway.
+    Rule(
+        "day_span",
+        rf"\b\d{{1,2}}(?:st|nd|rd|th)?{_DAY_JOIN}\d{{1,2}}(?:st|nd|rd|th)?\s+(?:of\s+)?"
+        rf"{_MONTH}{_YEAR_SUFFIX}"
+        rf"|\b{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?{_DAY_JOIN}\d{{1,2}}(?:st|nd|rd|th)?"
+        # "March 1 to 15 April" runs across two months; leave that to the range merge.
+        rf"(?!\d)(?!\s+(?:of\s+)?{_MONTH})(?:,?\s*\d{{4}})?\b",
+        _p_day_span,
+    ),
     # Both must precede "relative" and the weekday rules, which otherwise claim the
     # opening words from the same position and win the alternation: "last day" scans as
     # "last 1 day" and "last Friday" as the weekday on its own.
@@ -1194,6 +1326,18 @@ RULES: tuple[Rule, ...] = (
         "nth_weekday",
         rf"\b(?:the\s+)?{_NTH}\s+(?:{_WEEKDAY_ALT}){_NTH_OF}{_NTH_TARGET}\b",
         _p_nth_weekday,
+    ),
+    # After edge_day, which keeps "the last day of", and ahead of relative, fiscal_month
+    # and month -- "the last week of March" otherwise scans as "last week" and a stray
+    # March, and "the third month of the quarter" as the third month of the fiscal year.
+    # Quarters only as "last"/"final": an ordinal quarter belongs to the quarter rule, and
+    # claiming it here as well left "the first quarter of 2024" matched by this rule and
+    # resolved by none.
+    Rule(
+        "sub_period",
+        rf"\b(?:the\s+)?(?:{_NTH_STRICT}\s+(?:{_NUM}\s+)?(?:days?|weeks?|months?)"
+        rf"|(?:last|final)\s+(?:quarter|qtr)){_NTH_OF}{_NTH_TARGET}\b",
+        _p_sub_period,
     ),
     Rule("nth_of", rf"\b(?:the\s+)?{_ORD}\s+of\s+{_PART_TARGET}\b", _p_nth_of),
     Rule(
