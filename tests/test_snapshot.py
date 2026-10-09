@@ -18,7 +18,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from date_wrangler import DateMatch, DateOrder, FiscalCalendar, WranglerConfig, YearLabel, parse
+from date_wrangler import DateMatch, DateOrder, FiscalCalendar, WranglerConfig, YearLabel, diagnose
 
 SNAPSHOT = Path(__file__).resolve().parent / "snapshots" / "answers.txt"
 
@@ -148,7 +148,14 @@ def _answer(matches: list[DateMatch]) -> str:
 
 
 def _line(label: str, day: date, phrase: str, cfg: WranglerConfig) -> str:
-    return f"{label} {day} | {phrase} | {_answer(parse(phrase, today=day, config=cfg))}"
+    """The answer, then -- only when there are any -- the reasons given for what was not read.
+
+    A phrase with no match and no reason looks exactly like one that holds no date, so the
+    reasons are part of the answer: losing one, or gaining one, shows in the diff too.
+    """
+    matches, diags = diagnose(phrase, today=day, config=cfg)
+    reasons = f" !! {' ; '.join(d.reason for d in diags)}" if diags else ""
+    return f"{label} {day} | {phrase} | {_answer(matches)}{reasons}"
 
 
 def answers() -> list[str]:
