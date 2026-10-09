@@ -499,15 +499,16 @@ matches, diags = diagnose("5000 years ago", today=today)
 `parse()` never raises on user input.
 
 `substitute()` is the one function that turns a flagged guess into a confident sentence, so
-it can decline:
+by default it declines: anything flagged at 0.5 stays as typed.
 
 ```python
-substitute("revenue Q1 and Q3")                      # 'revenue January 2026 to September 2026'
-substitute("revenue Q1 and Q3", min_confidence=0.9)  # 'revenue Q1 and Q3'
+substitute("revenue Q1 and Q3")                    # 'revenue Q1 and Q3' — flagged
+substitute("revenue Q1 and Q3", min_confidence=0)  # 'revenue January 2026 to September 2026'
+substitute("sales in 2024", min_confidence=0.9)    # 'sales in 2024' — a bare year is 0.8
 ```
 
-Raise `min_confidence` whenever the output will be read as fact — by a person or a model.
-The default is 0.0, so nothing changes unless you ask.
+`min_confidence` defaults to 0.6: confident matches and bare years are rewritten, guesses
+are not. Pass `0` to rewrite every match, or `0.9` to leave bare years as typed too.
 
 A match whose neighbouring words change the period but could not be read comes back with
 **confidence 0.5** and an explanation, rather than a confident answer to a question nobody

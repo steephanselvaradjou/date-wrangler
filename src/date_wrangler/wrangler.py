@@ -993,7 +993,7 @@ def substitute(
     tz: tzinfo | None = None,
     config: WranglerConfig = DEFAULT_CONFIG,
     formatter: Callable[[DateRange], str] | None = None,
-    min_confidence: float = 0.0,
+    min_confidence: float = 0.6,
     keep_text: bool = False,
 ) -> str:
     """Rewrite every date expression in ``text``. Only the matched phrase changes.
@@ -1012,19 +1012,20 @@ def substitute(
     running it again on its own output adds nothing. ``formatter`` decides how the dates
     look either way.
 
-    ``min_confidence`` leaves anything below it exactly as the writer typed it. Raise it
-    whenever the output will be read as fact -- by a person or by a model -- because this
-    is the one function that turns a flagged guess into a confident sentence:
+    ``min_confidence`` leaves anything below it exactly as the writer typed it. This is the
+    one function that turns a guess into a confident sentence, so by default it declines
+    the guesses: a match flagged at 0.5 -- read only in part, or a list with a gap in it --
+    stays as typed, while 0.8 and up (a bare "2024", an all-numeric date) is rewritten:
 
         >>> substitute("revenue Q1 and Q3", today=today)
-        'revenue January 2026 to September 2026'       # Q2 is in there, unremarked
-        >>> substitute("revenue Q1 and Q3", today=today, min_confidence=0.9)
-        'revenue Q1 and Q3'
+        'revenue Q1 and Q3'                            # flagged: Q2 would be in there
+        >>> substitute("revenue Q1 and Q3", today=today, min_confidence=0)
+        'revenue January 2026 to September 2026'
 
-    Both of those phrases come back from :func:`diagnose` at confidence 0.5 with an
-    explanation. Rewriting them discards that explanation and leaves prose that reads as
-    settled, which is worse than leaving the original words alone. The default stays 0.0
-    so existing callers are unaffected; a future major version will raise it.
+    :func:`diagnose` returns that phrase at 0.5 with an explanation. Rewriting it discards
+    the explanation and leaves prose that reads as settled, which is worse than leaving the
+    original words alone. Pass ``min_confidence=0`` to rewrite everything, as before 1.0,
+    or raise it to 0.9 to keep bare years as typed as well.
     """
     from .format import format_range
 
