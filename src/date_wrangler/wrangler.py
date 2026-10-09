@@ -598,8 +598,10 @@ def parse(
     norm = normalize(text)
     body = norm.text
 
+    mark = len(diagnostics) if diagnostics is not None else 0
     raws = _scan(body, config, diagnostics)
     if not raws:
+        _diagnostics_to_original(diagnostics, mark, norm)
         return []
 
     links = _demote_lists(_link_kinds(raws, body))
@@ -644,7 +646,25 @@ def parse(
             matches.append(single)
             floor = max(floor, raws[i].end)
         i += 1
+    _diagnostics_to_original(diagnostics, mark, norm)
     return _flag_unread_qualifiers(matches, body, norm, diagnostics)
+
+
+def _diagnostics_to_original(
+    diags: list[Diagnostic] | None, mark: int, norm: Normalized
+) -> None:
+    """Re-point the diagnostics added since ``mark`` at the caller's string.
+
+    They are found in the normalised text, where "¼" is three characters, so a span taken
+    there can run past the end of what the caller passed. Matches are mapped in
+    :func:`_emit`; this does the same for everything that did not become one.
+    """
+    if diags is None:
+        return
+    for k in range(mark, len(diags)):
+        d = diags[k]
+        lo, hi = norm.to_original(*d.span)
+        diags[k] = replace(d, text=norm.original[lo:hi], span=(lo, hi))
 
 
 def _flag_unread_qualifiers(

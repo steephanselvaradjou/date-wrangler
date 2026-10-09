@@ -146,6 +146,18 @@ def test_zero_count_is_reported_not_inverted():
     assert any("at least 1" in d.reason for d in diags)
 
 
+@pytest.mark.parametrize("text", ["¼q", "x½q", "½ Q1 and Q3", "Q1 – Q3 ¼ and Q1 and Q3"])
+def test_diagnostic_spans_index_the_text_as_given(text):
+    """REGRESSION: diagnostics kept offsets into the normalised text, where "¼" is three
+    characters, so a span could run past the end of the caller's string."""
+    _, diags = diagnose(text, today=TODAY, config=CFG)
+    assert diags
+    for d in diags:
+        lo, hi = d.span
+        assert 0 <= lo <= hi <= len(text)
+        assert text[lo:hi] == d.text
+
+
 # ---------------------------------------------------------------------------
 # To-date
 # ---------------------------------------------------------------------------
