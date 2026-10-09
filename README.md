@@ -506,11 +506,23 @@ by default it declines: anything flagged at 0.5 stays as typed.
 ```python
 substitute("calls tomorrow morning")                    # unchanged — 'morning' was not read
 substitute("calls tomorrow morning", min_confidence=0)  # 'calls 10 October 2026 morning'
-substitute("sales in 2024", min_confidence=0.9)    # 'sales in 2024' — a bare year is 0.8
+substitute("sales in 2024", min_confidence=0.9)         # 'sales in 2024' — a bare year is 0.8
 ```
 
-`min_confidence` defaults to 0.6: confident matches and bare years are rewritten, guesses
-are not. Pass `0` to rewrite every match, or `0.9` to leave bare years as typed too.
+Confidence is not a probability. There are four levels, each with a reason:
+
+| confidence | what it means | examples | `substitute` by default |
+|---|---|---|---|
+| **1.0** | read in full, nothing in doubt | `last quarter`, `Q1 FY25`, `15 March 2024`, `last Monday` | rewritten |
+| **0.9** | an all-numeric date — which number is the day is a setting (`date_order`) | `03/04/2024` | rewritten |
+| **0.8** | probably a date, but the same words can be a plain number or name | `2024`, `Monday`, `due on the 15th`, `1 and 15 March` | rewritten |
+| **0.5** | flagged: part of the phrase was not read, or a span says less than it seems — `diagnose` gives the reason | `tomorrow morning`, `two weeks from Friday`, `Q1 to January` | left as typed |
+
+`min_confidence` defaults to **0.6**, which sits between the two lowest levels: everything
+is rewritten except what is flagged. Pass `0` to rewrite every match, `0.9` to leave bare
+years and the like as typed too, or `1` to rewrite only what is certain. The same numbers
+are on every match from `parse()`, so code that filters on `confidence` uses the same
+scale.
 
 A match whose neighbouring words change the period but could not be read comes back with
 **confidence 0.5** and an explanation, rather than a confident answer to a question nobody
