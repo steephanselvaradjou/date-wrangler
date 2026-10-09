@@ -107,6 +107,8 @@ PHRASES = [
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",
     "after the first quarter", "up to the previous month", "since the year 2013",
+    "from the 15th of March", "from 15th of March", "from the last day of March",
+    "from the first Monday of March", "two weeks from the 15th", "a month from the 15th of March",
     "compare Q1 2024 to Q1 2025", "Q1 2024 vs Q1 2025", "last week vs this week",
     # sentences
     "How much did we book between April and September 2024?",

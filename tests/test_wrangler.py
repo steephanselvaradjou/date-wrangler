@@ -1048,3 +1048,27 @@ def test_an_open_end_is_read_past_the(text, start, end, mod):
     quarter at full confidence -- the opposite of open-ended."""
     r = parse_one(text, today=TODAY).range
     assert (r.start, r.end, r.mod) == (start, end, mod)
+
+
+@pytest.mark.parametrize(
+    "text,start",
+    [
+        ("from 15 March", date(2025, 3, 15)),
+        ("from 15th of March", date(2025, 3, 15)),
+        ("from the 15th of March", date(2025, 3, 15)),
+        ("from the last day of March", date(2025, 3, 31)),
+        ("from the first Monday of March", date(2025, 3, 3)),
+    ],
+)
+def test_from_opens_a_range_before_any_single_day(text, start):
+    """REGRESSION: only some spellings of a day counted, so "from 15 March" ran onwards
+    while "from 15th of March" was the 15th alone."""
+    r = parse_one(text, today=TODAY).range
+    assert (r.start, r.end, r.mod) == (start, None, Mod.SINCE)
+
+
+def test_a_duration_from_a_day_is_flagged_past_the():
+    """"two weeks from the 15th" is not the 15th; the article hid the duration."""
+    matches, diags = diagnose("two weeks from the 15th", today=TODAY)
+    assert matches[0].confidence == 0.5
+    assert any("two weeks from" in d.reason for d in diags)

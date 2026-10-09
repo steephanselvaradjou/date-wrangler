@@ -142,6 +142,20 @@ _MOD_PREFIXES: tuple[tuple[re.Pattern[str], Mod], ...] = (
 #: Q1's figures, not everything since -- so a period after "from" is left as it is.
 _FROM_PREFIX = re.compile(r"\bfrom\s+$", re.IGNORECASE)
 _DAY_KINDS = frozenset({Kind.ABS_DAY, Kind.DAY_KEYWORD, Kind.WEEKDAY})
+
+
+def _names_a_day(spec: Spec) -> bool:
+    """Whether ``spec`` is one day: "15 March", but also "15th of March", "the 15th", "the
+    last day of March", "the first Monday of March" -- a day picked out of a period.
+
+    REGRESSION: only the first kind counted, so "from 15 March" ran onwards while "from
+    15th of March" was the 15th alone.
+    """
+    return (
+        spec.kind in _DAY_KINDS
+        or spec.day_of_period is not None
+        or spec.nth_weekday is not None
+    )
 #: "two weeks from Friday" counts on from Friday; it does not start there. A duration
 #: ahead of "from" leaves the word for the safety net, which flags the phrase as partial.
 _DURATION_FROM = re.compile(
@@ -266,7 +280,7 @@ _QUALIFIER_BEFORE = re.compile(
     # "a year from March" is March next year, not March. Only "from now"/"from today"
     # are actually resolved, so any other tail here is a period we did not compute.
     r"|\b(?:a|an|\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
-    r"(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+\W*$"
+    r"(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+(?:the\s+)?\W*$"
     # The same clock time, on the other side: "at 3pm on Tuesday", "between 2pm and 4pm
     # yesterday".
     rf"|\b(?:at|by|around)\s+{_CLOCK}(?:\s+(?:on|of))?\s*\W*$"
@@ -589,7 +603,7 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
     m = _FROM_PREFIX.search(before)
     if (
         m
-        and raw.spec.kind in _DAY_KINDS
+        and _names_a_day(raw.spec)
         and raw.spec.mod is None
         and not _DURATION_FROM.search(before)
     ):
