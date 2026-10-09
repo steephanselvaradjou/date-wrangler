@@ -14,8 +14,8 @@ import pytest
 from date_wrangler import Basis, WranglerConfig, parse, parse_one
 
 TODAY = date(2026, 10, 8)  # Thursday; FY27 Q3 on an April start
-FISCAL = WranglerConfig()
-CALENDAR = WranglerConfig(bare_period_basis=Basis.CALENDAR)
+FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)
+CALENDAR = WranglerConfig()
 
 
 def bounds(text, cfg=FISCAL):

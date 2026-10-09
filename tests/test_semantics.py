@@ -64,7 +64,7 @@ def test_every_day_belongs_to_exactly_one_fiscal_year(start_month):
 @pytest.mark.parametrize("start_month", ALL_START_MONTHS)
 def test_this_year_is_the_fiscal_year_in_progress(start_month):
     cal = FiscalCalendar(start_month)
-    cfg = WranglerConfig(fiscal=cal)
+    cfg = WranglerConfig(fiscal=cal, year_basis=Basis.FISCAL)
     day = date(2024, 1, 1)
     while day <= date(2026, 12, 31):
         want = year_range(fiscal_year_of(day, cal), cal, Basis.FISCAL)
@@ -77,7 +77,7 @@ def test_this_year_is_the_fiscal_year_in_progress(start_month):
 def test_bare_quarters_always_use_the_current_fiscal_year(start_month):
     """The defect this pins cost the predecessor a wrong year for nine months of twelve."""
     cal = FiscalCalendar(start_month)
-    cfg = WranglerConfig(fiscal=cal)
+    cfg = WranglerConfig(fiscal=cal, year_basis=Basis.FISCAL)
     day = date(2024, 1, 1)
     while day <= date(2026, 12, 31):
         fy = fiscal_year_of(day, cal)
@@ -237,12 +237,20 @@ def test_complex_sentences_find_the_right_number_of_periods(sentence, expected_m
     assert len(parse(sentence, today=date(2025, 9, 4))) == expected_matches
 
 
-def test_a_year_stated_once_reaches_every_period_in_a_list():
+@pytest.mark.parametrize("year_basis", [Basis.CALENDAR, Basis.FISCAL])
+def test_a_year_stated_once_reaches_every_period_in_a_list(year_basis):
+    """REGRESSION: the list shared FY25's year with Q1 and Q2 but not its basis, so they
+    came back as calendar quarters of 2025 while Q3 was fiscal. The fiscal default hid it."""
     from date_wrangler import parse
 
-    found = parse("Sales in Q1, Q2 and Q3 of FY25", today=date(2025, 9, 4))
+    cfg = WranglerConfig(year_basis=year_basis)
+    found = parse("Sales in Q1, Q2 and Q3 of FY25", today=date(2025, 9, 4), config=cfg)
     assert [m.range.start for m in found] == [
         date(2024, 4, 1), date(2024, 7, 1), date(2024, 10, 1),
+    ]
+    found = parse("Q1, Q2 and Q3 of CY2025", today=date(2025, 9, 4), config=cfg)
+    assert [m.range.start for m in found] == [
+        date(2025, 1, 1), date(2025, 4, 1), date(2025, 7, 1),
     ]
 
 
@@ -285,9 +293,9 @@ def test_implausible_bare_numbers_are_not_years(text):
 # ---------------------------------------------------------------------------
 # Which basis a year is read on
 #
-# A year on its own is a calendar year; only a quarter or half *labelled* with one follows
-# the configured basis, because that case is genuinely ambiguous. Each case here once came
-# down to which rule happened to match the phrase rather than to what it said.
+# What the phrase says, otherwise year_basis -- for a year on its own and for every part
+# of one. Each case here once came down to which rule happened to match the phrase rather
+# than to what it said.
 # ---------------------------------------------------------------------------
 
 OCT8 = date(2026, 10, 8)
@@ -321,11 +329,11 @@ def test_a_year_with_no_marker_follows_year_basis(text):
     )
 
 
-def test_the_default_reads_a_bare_year_as_fiscal():
-    """The default basis is fiscal, and with nothing written on it a year is read on it --
-    so with the default April fiscal year, "2013" is FY2013. General prose, where a year
-    almost always means January to December, wants year_basis="calendar"."""
-    assert _span("in 2013", WranglerConfig()) == (date(2012, 4, 1), date(2013, 4, 1))
+def test_the_default_reads_a_bare_year_as_the_calendar_year():
+    """The default basis is calendar, so "2013" is January to December 2013 -- what almost
+    everyone means by it. A finance team that means FY2013 sets year_basis="fiscal"."""
+    assert _span("in 2013", WranglerConfig()) == CAL_2013
+    assert _span("Q1 2013", WranglerConfig()) == (date(2013, 1, 1), date(2013, 4, 1))
 
 
 @pytest.mark.parametrize(
@@ -340,8 +348,8 @@ def test_the_default_reads_a_bare_year_as_fiscal():
     ],
 )
 def test_a_part_of_a_numbered_year_follows_year_basis(text, calendar, fiscal):
-    """The year 2013 on its own is always the calendar year; a part taken out of it is
-    read the way year_basis reads years, the same as "the last quarter of 2013" is."""
+    """A part taken out of a year is read the way year_basis reads the year itself, the
+    same as "the last quarter of 2013" is."""
     assert _span(text, WranglerConfig(year_basis=Basis.CALENDAR)) == calendar
     assert _span(text, WranglerConfig(year_basis=Basis.FISCAL)) == fiscal
 
@@ -442,11 +450,11 @@ def test_a_basis_word_before_something_that_is_not_a_period(text):
 
 
 # ---------------------------------------------------------------------------
-# year_basis: "this year" can be the calendar year while "Q1" stays fiscal
+# year_basis: every period that does not name its basis follows it
 # ---------------------------------------------------------------------------
 
 CAL_2026 = (date(2026, 1, 1), date(2027, 1, 1))
-SPLIT = WranglerConfig(year_basis=Basis.CALENDAR)  # fiscal quarters, calendar years
+SPLIT = WranglerConfig(bare_period_basis=Basis.FISCAL, year_basis=Basis.CALENDAR)
 
 
 @pytest.mark.parametrize(

@@ -22,9 +22,11 @@ from datetime import date
 
 import pytest
 
-from date_wrangler import parse
+from date_wrangler import Basis, WranglerConfig, parse
 
 TODAY = date(2025, 9, 4)
+#: The corpus comes from finance users on an April fiscal year, who mean fiscal by "Q1".
+FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)
 
 #: Phrases that must yield at least one date.
 RECOGNISED = [
@@ -147,7 +149,7 @@ def test_numbers_that_are_not_dates_are_left_alone(phrase):
     ],
 )
 def test_corpus_phrases_resolve_exactly(phrase, start, end):
-    found = parse(phrase, today=TODAY)
+    found = parse(phrase, today=TODAY, config=FISCAL)
     assert found, f"{phrase!r} produced no match"
     assert (found[0].range.start, found[0].range.end) == (start, end)
 

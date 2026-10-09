@@ -45,8 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fiscal-start", type=int, default=4, metavar="M",
                    help="fiscal year start month (default 4)")
     p.add_argument("--label-by", choices=[y.value for y in YearLabel], default="end_year")
-    p.add_argument("--basis", choices=[b.value for b in Basis], default="fiscal",
-                   help="default for --year-basis (default fiscal)")
+    p.add_argument("--basis", choices=[b.value for b in Basis], default="calendar",
+                   help="default for --year-basis (default calendar)")
     p.add_argument("--year-basis", choices=[b.value for b in Basis], default=None,
                    help="how every year and period that does not say fiscal or calendar is "
                         "read (default: follow --basis)")

@@ -118,10 +118,11 @@ class WranglerConfig:
 
     fiscal: FiscalCalendar = field(default_factory=FiscalCalendar)
 
-    #: The default for ``year_basis`` when that is not set. Fiscal, so out of the box every
-    #: year and period that does not say otherwise is read on the fiscal calendar. Kept
-    #: under its old name so configurations written for earlier versions mean the same.
-    bare_period_basis: Basis = Basis.FISCAL
+    #: The default for ``year_basis`` when that is not set. Calendar, so out of the box
+    #: "Q1 2024" is January to March 2024, which is what most people who write it mean.
+    #: Kept under its old name so configurations written for earlier versions, which set it
+    #: to "fiscal", still mean fiscal.
+    bare_period_basis: Basis = Basis.CALENDAR
 
     #: An optional override for a period "of" a numbered year -- "Q1 of 2024", "the second
     #: half of 2024", "early 2024". None, the default, inherits ``year_basis``, which is
@@ -135,7 +136,7 @@ class WranglerConfig:
     #: Only a phrase that names its basis is exempt. "FY2024", "FY24 Q3", "fiscal Q3" and
     #: "this fiscal year" are fiscal; "CY2024", "CY Q3" and "this calendar year" are
     #: calendar -- whatever this is set to. None inherits ``bare_period_basis``, which is
-    #: fiscal; for general prose rather than finance, "calendar" is usually what you want.
+    #: calendar; set "fiscal" for a finance team that says "Q1" and means its fiscal Q1.
     year_basis: Basis | None = None  # None => inherit
 
     #: Where a relative period's edges fall when the phrasing does not say. See

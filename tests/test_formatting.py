@@ -11,13 +11,14 @@ from datetime import date
 
 import pytest
 
-from date_wrangler import format_range, make_formatter, parse_one
+from date_wrangler import Basis, WranglerConfig, format_range, make_formatter, parse_one
 
 TODAY = date(2026, 10, 15)  # mid-month, mid-quarter, so to-date periods are partial
+FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)  # YTD starts in April
 
 
 def rng(text):
-    m = parse_one(text, today=TODAY)
+    m = parse_one(text, today=TODAY, config=FISCAL)
     assert m is not None, f"{text!r} found no date"
     return m.range
 

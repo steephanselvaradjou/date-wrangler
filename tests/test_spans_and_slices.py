@@ -10,13 +10,14 @@ from datetime import date
 
 import pytest
 
-from date_wrangler import parse, parse_one
+from date_wrangler import Basis, WranglerConfig, parse, parse_one
 
 TODAY = date(2026, 10, 8)  # FY27 Q3 on an April start
+FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)  # slices of the April fiscal year
 
 
 def bounds(text):
-    m = parse_one(text, today=TODAY)
+    m = parse_one(text, today=TODAY, config=FISCAL)
     assert m is not None, text
     assert m.confidence == 1.0, (text, m.confidence)
     return m.range.start, m.range.end

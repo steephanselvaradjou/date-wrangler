@@ -459,7 +459,8 @@ def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
     """Share one stated year across a list, or across a comparison.
 
     "Jan, Feb, Mar 2024" is three months of the same year, and comparing "Q1 versus
-    Q2 2024" across two different years defeats the point.
+    Q2 2024" across two different years defeats the point. The year's basis travels with
+    it: in "Q1, Q2 and Q3 of FY25" all three are fiscal quarters, not just the last.
     """
     shared = ("list", "compare")
     i = 0
@@ -471,11 +472,14 @@ def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
         while j < len(links) and links[j] in shared:
             j += 1
         members = raws[i : j + 1]
-        years = [r.spec.year for r in members if r.spec.year is not None]
-        if years:
+        stated = [r.spec for r in members if r.spec.year is not None]
+        if stated:
+            year, basis = stated[-1].year, stated[-1].basis
             for r in members:
                 if r.spec.year is None and not r.spec.is_relative:
-                    r.spec = r.spec.with_(year=years[-1])
+                    r.spec = r.spec.with_(year=year)
+                    if r.spec.basis is None and basis is not None:
+                        r.spec = r.spec.with_(basis=basis)
         i = j
 
 

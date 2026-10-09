@@ -2,8 +2,11 @@
 
 ``today`` is pinned to 2025-09-04 throughout. With an April fiscal start that day sits in
 FY2026 (Apr 2025 - Mar 2026) and in the *second* fiscal quarter, which is what makes it a
-useful anchor: a bare "Q1" resolving to April 2025 proves the current-fiscal-year default,
+useful anchor: a bare "Q1" resolving to April 2025 proves the current fiscal year is used,
 and "this quarter" resolving to July proves the quarter grid independently.
+
+The library reads bare periods on the calendar by default. Most tests here read them on
+the fiscal calendar instead (``CFG``), because that is the case with the most to get wrong.
 
 Cases marked REGRESSION reproduce a specific defect in the predecessor module.
 """
@@ -28,7 +31,7 @@ from date_wrangler import (
 )
 
 TODAY = date(2025, 9, 4)
-CFG = WranglerConfig()  # April fiscal start, bare periods fiscal
+CFG = WranglerConfig(bare_period_basis=Basis.FISCAL)  # April fiscal start, bare periods fiscal
 
 
 def rng(text: str, cfg: WranglerConfig = CFG):
@@ -93,10 +96,12 @@ def test_two_digit_years_use_the_pivot():
 
 
 def test_bare_year_follows_year_basis():
-    """No FY or CY on it, so year_basis decides -- calendar here, fiscal by default."""
-    calendar = WranglerConfig(year_basis=Basis.CALENDAR)
-    assert rng("2024", calendar) == (date(2024, 1, 1), date(2025, 1, 1))
-    assert rng("2024") == (date(2023, 4, 1), date(2024, 4, 1))
+    """No FY or CY on it, so year_basis decides -- calendar by default, fiscal on request."""
+    assert rng("2024", WranglerConfig()) == (date(2024, 1, 1), date(2025, 1, 1))
+    assert rng("2024", WranglerConfig(year_basis=Basis.FISCAL)) == (
+        date(2023, 4, 1),
+        date(2024, 4, 1),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +313,7 @@ def test_and_still_joins_a_plain_pair():
     ],
 )
 def test_open_ended_ranges(text, start, end, mod):
-    r = parse_one(text, today=TODAY).range
+    r = parse_one(text, today=TODAY, config=CFG).range
     assert (r.start, r.end, r.mod) == (start, end, mod)
     assert not r.is_bounded
 
@@ -533,9 +538,22 @@ def test_fiscal_calendar_is_honoured_per_call():
 
 
 def test_bare_period_basis_is_configurable():
-    calendar_first = WranglerConfig(bare_period_basis=Basis.CALENDAR)
-    assert rng("Q1", calendar_first) == (date(2025, 1, 1), date(2025, 4, 1))
-    assert rng("Q1") == (date(2025, 4, 1), date(2025, 7, 1))
+    """Calendar by default; the older setting still turns fiscal on, as it did."""
+    assert rng("Q1", WranglerConfig()) == (date(2025, 1, 1), date(2025, 4, 1))
+    assert rng("Q1", CFG) == (date(2025, 4, 1), date(2025, 7, 1))
+
+
+def test_the_default_reads_every_undeclared_period_on_the_calendar():
+    """Out of the box, "Q1 2024" is January to March 2024: what most people who write it
+    mean. Only a phrase that says fiscal is read on the fiscal calendar."""
+    default = WranglerConfig()
+    assert default.effective_year_basis is Basis.CALENDAR
+    assert rng("Q1 2024", default) == (date(2024, 1, 1), date(2024, 4, 1))
+    assert rng("this year", default) == (date(2025, 1, 1), date(2026, 1, 1))
+    assert rng("ytd", default) == (date(2025, 1, 1), date(2025, 9, 5))
+    assert rng("H1", default) == (date(2025, 1, 1), date(2025, 7, 1))
+    assert rng("FY24", default) == (date(2023, 4, 1), date(2024, 4, 1))
+    assert rng("fiscal Q1", default) == (date(2025, 4, 1), date(2025, 7, 1))
 
 
 def test_q1_and_q1_of_year_agree_by_default():
@@ -687,8 +705,8 @@ def test_datetime_is_accepted_wherever_a_date_is():
     from datetime import datetime
 
     assert rng("Q1") == (
-        parse_one("Q1", today=datetime(2025, 9, 4, 13, 30)).range.start,
-        parse_one("Q1", today=datetime(2025, 9, 4, 13, 30)).range.end,
+        parse_one("Q1", today=datetime(2025, 9, 4, 13, 30), config=CFG).range.start,
+        parse_one("Q1", today=datetime(2025, 9, 4, 13, 30), config=CFG).range.end,
     )
 
 
@@ -803,7 +821,7 @@ def test_bare_weekday_needs_a_cue_in_prose():
 
 def test_formatted_range_has_no_leading_from():
     """"sales report of from April to June" reads as a typo."""
-    out = substitute("sales report of Q1", today=TODAY)
+    out = substitute("sales report of Q1", today=TODAY, config=CFG)
     assert out == "sales report of April 2025 to June 2025"
 
 
