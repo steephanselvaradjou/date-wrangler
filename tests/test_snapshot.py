@@ -100,6 +100,9 @@ PHRASES = [
     # lists
     "Q1, Q2 and Q3", "Jan, Feb, Mar 2024", "Sales in Q1, Q2 and Q3 of FY25",
     "1st and 15th March", "1 and 15 March", "March 1 and 15", "1, 5 and 9 March 2024",
+    "March 1 and 15, 2024", "1st vs 15th March", "between 1 and 15 March",
+    "Q1 and Q3", "Q1 and Q3 2024", "Jan to Mar and Jul to Sep 2024", "the figures from Q1 and Q3",
+    "FY24 - Q3", "FY24 - Q3 results", "2023 - H2 2024", "FY24, March",
     "compare Q1 2024 to Q1 2025", "Q1 2024 vs Q1 2025", "last week vs this week",
     # sentences
     "How much did we book between April and September 2024?",

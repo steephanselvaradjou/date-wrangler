@@ -151,7 +151,9 @@ def test_zero_count_is_reported_not_inverted():
     assert any("at least 1" in d.reason for d in diags)
 
 
-@pytest.mark.parametrize("text", ["¼q", "x½q", "½ Q1 and Q3", "Q1 – Q3 ¼ and Q1 and Q3"])
+@pytest.mark.parametrize(
+    "text", ["¼q", "x½q", "½ calls tomorrow morning", "Q1 – Q3 ¼ and calls tomorrow morning"]
+)
 def test_diagnostic_spans_index_the_text_as_given(text):
     """REGRESSION: diagnostics kept offsets into the normalised text, where "¼" is three
     characters, so a span could run past the end of the caller's string."""
@@ -235,11 +237,12 @@ def test_ranges(text, expected):
 
 
 @pytest.mark.parametrize(
-    "connector", ["to", "through", "thru", "until", "till", "upto", "-", "–", "—", "and"]
+    "connector", ["to", "through", "thru", "until", "till", "upto", "-", "–", "—"]
 )
 def test_connector_vocabulary(connector):
     """REGRESSION: only to/and/- were connectors; everything else produced two separate
-    matches that read as garbage, and Word turns "-" into an en dash on sight."""
+    matches that read as garbage, and Word turns "-" into an en dash on sight. "and" is
+    not one of them: it lists periods rather than spanning them."""
     assert rng(f"Q1 {connector} Q2") == (date(2025, 4, 1), date(2025, 10, 1))
 
 
@@ -291,8 +294,12 @@ def test_lists_stay_separate_and_share_a_year():
     ]
 
 
-def test_and_still_joins_a_plain_pair():
-    assert rng("Q1 and Q2") == (date(2025, 4, 1), date(2025, 10, 1))
+def test_and_lists_a_plain_pair_and_between_spans_it():
+    assert ranges("Q1 and Q2") == [
+        (date(2025, 4, 1), date(2025, 7, 1)),
+        (date(2025, 7, 1), date(2025, 10, 1)),
+    ]
+    assert rng("between Q1 and Q2") == (date(2025, 4, 1), date(2025, 10, 1))
 
 
 # ---------------------------------------------------------------------------
@@ -550,8 +557,14 @@ def test_keep_text_leaves_the_neighbouring_number_alone():
 
 
 def test_keep_text_still_declines_a_flagged_match():
-    assert substitute("revenue Q1 and Q3", today=TODAY, keep_text=True, min_confidence=0.9) == (
-        "revenue Q1 and Q3"
+    assert substitute("calls tomorrow morning", today=TODAY, keep_text=True) == (
+        "calls tomorrow morning"
+    )
+
+
+def test_keep_text_annotates_each_period_of_a_list():
+    assert substitute("revenue Q1 and Q3", today=TODAY, config=CFG, keep_text=True) == (
+        "revenue Q1 (April 2025 to June 2025) and Q3 (October 2025 to December 2025)"
     )
 
 

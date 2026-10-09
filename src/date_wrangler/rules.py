@@ -109,13 +109,18 @@ _REL_YEAR_TAIL_RE = re.compile(
 _OF_RE = re.compile(r"\bof\b", re.IGNORECASE)
 
 
+#: Several dates read out of one fragment, each with its own span inside it: the days of
+#: "1st and 15th March" share the month, but each is a date of its own.
+Parts = list[tuple[Spec, int, int]]
+
+
 @dataclass(frozen=True, slots=True)
 class Rule:
     """A named recogniser."""
 
     name: str
     pattern: str
-    parse: Callable[[str, WranglerConfig], Spec | None]
+    parse: Callable[[str, WranglerConfig], Spec | Parts | None]
 
 
 # ---------------------------------------------------------------------------
@@ -1058,11 +1063,15 @@ _DAY_NUM = r"\d{1,2}(?:st|nd|rd|th)?"
 
 
 def _p_day_span(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"1-15 March", "1st to 15th March", "March 1-15", "March 1 to 15, 2024".
+    """"1-15 March", "1st to 15th March", "March 1-15", "March 1 to 15, 2024", and
+    "between 1 and 15 March" -- the one place "and" joins two days into a run.
 
     The run used to collapse to one of its ends: "1-15 March" was the 15th alone, and
     "March 1-15" the 1st, each at full confidence, because the other number had no rule.
     """
+    between = re.match(r"\s*between\s+", text, re.IGNORECASE)
+    if between:
+        text = re.sub(r"\s+and\s+", " - ", text[between.end() :], count=1, flags=re.IGNORECASE)
     m = re.match(
         rf"\s*(\d{{1,2}})(?:st|nd|rd|th)?{_DAY_JOIN}(\d{{1,2}})(?:st|nd|rd|th)?"
         rf"\s+(?:of\s+)?(.+)$",
@@ -1090,6 +1099,67 @@ def _p_day_span(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(
         Kind.ABS_MONTH, month=month, year=year, year_offset=offset, day_span=(first, last)
     )
+
+
+#: Between the days of a list: "1st, 5th and 9th", "1 & 15", "1st vs 15th".
+_DAY_SEP = r"(?:\s*,\s*(?:and\s+|&\s*)?|\s+(?:and|vs\.?|versus)\s+|\s*&\s*)"
+#: A day in a list: never the start of a longer number, so the 20 of "15, 2024" is not one.
+_LIST_DAY = r"\d{1,2}(?:st|nd|rd|th)?(?!\d)"
+_DAY_LIST = rf"{_LIST_DAY}(?:{_DAY_SEP}{_LIST_DAY})+"
+#: "1st and 15th March 2024": the days, then the month and whatever year follows.
+_DAY_LIST_FIRST = re.compile(rf"\s*(?P<days>{_DAY_LIST})\s+(?:of\s+)?(?P<rest>.+)$", re.I)
+#: "March 1 and 15, 2024": the month, the days, then whatever year follows.
+_MONTH_LIST_FIRST = re.compile(
+    rf"\s*(?P<month>{_MONTH})\s+(?P<days>{_DAY_LIST})(?P<rest>.*)$", re.IGNORECASE
+)
+_DAY_TOKEN = re.compile(r"\d{1,2}(?:st|nd|rd|th)?", re.IGNORECASE)
+
+
+def _p_day_list(text: str, cfg: WranglerConfig) -> Parts | None:
+    """"1st and 15th March", "1, 5 and 9 March", "March 1 and 15, 2024" -- several days
+    sharing one month, each a date of its own.
+
+    REGRESSION: only one day survived, at full confidence. "1st and 15th March" was the
+    15th, "March 1 and 15" the 1st: the other numbers had no month of their own to make
+    them dates. Each day now comes back with its own span -- the month, and any year, go
+    with the day they are written beside -- so a list reads like any other list.
+    """
+    month_first = _MONTH_LIST_FIRST.match(text)
+    m = month_first or _DAY_LIST_FIRST.match(text)
+    if m is None:
+        return None
+    rest = f"{m.group('month')} {m.group('rest')}" if month_first else m.group("rest")
+    month = find_month(rest)
+    if month is None:
+        return None
+    year, _, year_offset = _period_suffix(rest.replace(",", " "), cfg)
+    basis = _stated_basis(rest) if year is not None else None
+    days = list(_DAY_TOKEN.finditer(m.group("days")))
+    values = [int(re.sub(r"\D", "", d.group(0))) for d in days]
+    if len(days) < 2 or not all(1 <= v <= 31 for v in values):
+        return None
+    # A bare first number may be a count -- "the top 3 and 15 March" -- where a suffix
+    # or a month in front of it settles the matter.
+    sure = month_first is not None or days[0].group(0)[-1].isalpha()
+    offset = m.start("days")
+    parts: Parts = []
+    for i, (d, value) in enumerate(zip(days, values, strict=True)):
+        lo, hi = offset + d.start(), offset + d.end()
+        if i == 0 and month_first:
+            lo = m.start("month")  # "March 1": the month is written with the first day
+        if i == len(days) - 1:
+            hi = len(text.rstrip())  # "15th March 2024": and the year with the last
+        spec = Spec(
+            Kind.ABS_DAY,
+            year=year,
+            month=month,
+            day=value,
+            year_offset=year_offset,
+            basis=basis,
+            confidence=1.0 if sure else 0.8,
+        )
+        parts.append((spec, lo, hi))
+    return parts
 
 
 #: The units a run can be measured in, "the first 3 months of", "the last week of".
@@ -1288,7 +1358,7 @@ RULES: tuple[Rule, ...] = (
     # it is a verb. "FY2024-25 June" only unspaced: "FY24 - 15 March" is a range.
     Rule(
         "fy_month",
-        rf"\b{_FY_WORD}{_SEP}'?\d{{2,4}}(?:[-/]'?\d{{2,4}})?[\s,]+(?!may\b){_MONTH}\b",
+        rf"\b{_FY_WORD}{_SEP}'?\d{{2,4}}(?:[-/]'?\d{{2,4}})?\s+(?!may\b){_MONTH}\b",
         _p_fy_month,
     ),
     # Not when a month follows: in "FY24 - 15 March 2024" the 15 is a day.
@@ -1306,8 +1376,10 @@ RULES: tuple[Rule, ...] = (
         rf"|{_QH}\s+(?:fiscal|financial|calendar)\b"
         rf"|{_QH}\s+(?:fy|cy)\b(?!\s*'?\d)"
         rf"|{_QH}['-]\d{{2}}(?:\d{{2}})?(?!\d)"
-        rf"|(?:19|20)\d{{2}}\s*-?\s*{_QH}"
-        rf"|(?:{_FY_WORD}|{_CY_WORD})\s*'?\d{{2,4}}\s*-?\s*{_QH}"
+        # Not when the quarter has a year of its own: "FY24 - Q3" is a label, "2023 - H2
+        # 2024" a range from 2023 to H2 2024.
+        rf"|(?:19|20)\d{{2}}\s*-?\s*{_QH}(?!\s*'?\d)"
+        rf"|(?:{_FY_WORD}|{_CY_WORD})\s*'?\d{{2,4}}\s*-?\s*{_QH}(?!\s*'?\d)"
         rf"|(?:[1-4]\s*q|[12]\s*h)\s*'?\d{{2,4}})(?!\w)",
         _p_labelled_period,
     ),
@@ -1380,12 +1452,24 @@ RULES: tuple[Rule, ...] = (
     # place. The day-first form starts at the digit, so it is leftmost anyway.
     Rule(
         "day_span",
-        rf"\b\d{{1,2}}(?:st|nd|rd|th)?{_DAY_JOIN}\d{{1,2}}(?:st|nd|rd|th)?\s+(?:of\s+)?"
-        rf"{_MONTH}{_YEAR_SUFFIX}"
-        rf"|\b{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?{_DAY_JOIN}\d{{1,2}}(?:st|nd|rd|th)?"
+        rf"\b(?:between\s+{_DAY_NUM}\s+and\s+|{_DAY_NUM}{_DAY_JOIN})"
+        rf"{_DAY_NUM}\s+(?:of\s+)?{_MONTH}{_YEAR_SUFFIX}"
+        rf"|\b(?:between\s+{_MONTH}\s+{_DAY_NUM}\s+and\s+|{_MONTH}\s+{_DAY_NUM}{_DAY_JOIN})"
+        rf"{_DAY_NUM}"
         # "March 1 to 15 April" runs across two months; leave that to the range merge.
         rf"(?!\d)(?!\s+(?:of\s+)?{_MONTH})(?:,?\s*\d{{4}})?\b",
         _p_day_span,
+    ),
+    # Days sharing a month, listed: "1st and 15th March", "March 1, 5 and 9". Each comes
+    # back on its own. The month-first form takes a bare last number only before a year,
+    # a stop or the end, so "March 1 and 15 customers" does not make 15 a day.
+    Rule(
+        "day_list",
+        rf"\b{_DAY_LIST}\s+(?:of\s+)?{_MONTH}{_YEAR_SUFFIX}"
+        rf"|\b{_MONTH}\s+{_LIST_DAY}(?:{_DAY_SEP}{_LIST_DAY})*{_DAY_SEP}\d{{1,2}}"
+        rf"(?:(?:st|nd|rd|th)\b|(?=\s*(?:,?\s*\d{{4}}\b|[.,;:!?)]|$)))"
+        rf"(?!\s+(?:of\s+)?{_MONTH})(?:,?\s*\d{{4}})?",
+        _p_day_list,
     ),
     # Both must precede "relative" and the weekday rules, which otherwise claim the
     # opening words from the same position and win the alternation: "last day" scans as

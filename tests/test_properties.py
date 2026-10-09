@@ -202,7 +202,7 @@ def test_substitute_leaves_flagged_matches_as_they_were_typed():
     sentence, so by default it declines. Both of these come back from `diagnose` at 0.5
     with an explanation that rewriting would throw away."""
     today = date(2025, 9, 4)
-    assert substitute("revenue Q1 and Q3", today=today) == "revenue Q1 and Q3"
+    assert substitute("revenue Q1 to January", today=today) == "revenue Q1 to January"
     assert substitute("claims yesterday at 2pm", today=today) == "claims yesterday at 2pm"
     # Confident matches are rewritten as before, and less confident ones still above 0.5.
     assert substitute("revenue last month", today=today) == "revenue August 2025"
@@ -212,8 +212,8 @@ def test_substitute_leaves_flagged_matches_as_they_were_typed():
 def test_substitute_rewrites_everything_when_asked():
     """min_confidence=0 is the pre-1.0 behaviour, for callers who want every match."""
     today = date(2025, 9, 4)
-    assert substitute("revenue Q1 and Q3", today=today, min_confidence=0) == (
-        "revenue January 2025 to September 2025"  # Q2 silently included
+    assert substitute("revenue Q1 to January", today=today, min_confidence=0) == (
+        "revenue January 2025"  # Q1 said nothing, which is why it was flagged
     )
     assert substitute("sales in 2024", today=today, min_confidence=0.9) == "sales in 2024"
 

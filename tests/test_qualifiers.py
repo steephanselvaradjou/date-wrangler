@@ -418,33 +418,22 @@ def test_a_bare_two_digit_year_is_not_read_as_a_clock():
 
 
 # ---------------------------------------------------------------------------
-# "and" between two periods that do not meet
+# "and" lists periods; it never joins them into one
 # ---------------------------------------------------------------------------
 
 
-def test_and_joining_adjacent_periods_is_a_span_and_stays_confident():
-    """This is why "and" is a connector at all: two touching periods are how people write
-    a span, and the hull is exactly right."""
-    m = parse_one("Q1 and Q2", today=TODAY, config=FISCAL)
-    assert m is not None and m.confidence == 1.0
-    assert (m.range.start, m.range.end) == (date(2025, 4, 1), date(2025, 10, 1))
-
-
 @pytest.mark.parametrize(
-    "text,gap",
-    [
-        ("Q1 and Q3", "2025-07-01 to 2025-10-01"),
-        ("March and June", "2025-04-01 to 2025-06-01"),
-        ("15 March and 17 March", "2025-03-16 to 2025-03-17"),
-    ],
+    "text,count",
+    [("Q1 and Q2", 2), ("Q1 and Q3", 2), ("March and June", 2), ("15 March and 17 March", 2)],
 )
-def test_and_joining_periods_with_a_gap_is_flagged(text, gap):
-    """Read as one span, "Q1 and Q3" quietly returns Q2 as well -- a quarter of data nobody
-    asked for, previously at full confidence. The range is unchanged; the claim about it
-    is what was wrong."""
+def test_and_keeps_each_period_whole_and_confident(text, count):
+    """REGRESSION: read as one span, "Q1 and Q3" returned Q2 as well -- a quarter nobody
+    asked for, first at full confidence and later flagged. Touching periods were joined
+    too, which happened to be exact but turned "and" into "to". Each is its own period."""
     matches, diags = diagnose(text, today=TODAY, config=FISCAL)
-    assert matches and matches[0].confidence <= 0.5
-    assert any(gap in d.reason for d in diags), [d.reason for d in diags]
+    assert len(matches) == count
+    assert all(m.confidence == 1.0 for m in matches)
+    assert diags == []
 
 
 @pytest.mark.parametrize("text", ["between March and June", "from March to June", "Q1 to Q3"])
