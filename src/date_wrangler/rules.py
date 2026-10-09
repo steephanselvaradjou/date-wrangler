@@ -1062,6 +1062,24 @@ _DAY_JOIN = r"\s*(?:-|to|until|till|through|thru)\s*"
 _DAY_NUM = r"\d{1,2}(?:st|nd|rd|th)?"
 
 
+#: Units finer than a day, and how many of them: "last 3 hours", "half an hour ago".
+_SUB_DAY = r"(?:hours?|hrs?|minutes?|mins?|seconds?|secs?)"
+_SUB_DAY_COUNT = rf"(?:{_NUM}|an?|half\s+an?|a\s+few|few|several|(?:a\s+)?couple\s+of)"
+
+
+def _p_sub_day(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"last 3 hours", "in 30 minutes", "2 hours ago" -- read only to say why not.
+
+    The library answers in whole days, so a period of hours is not resolved. It used to
+    vanish without a word, which looks exactly like text that holds no date; reading it
+    to decline gives the caller the reason instead.
+    """
+    raise ValueError(
+        "shorter than a day: date-wrangler answers in whole days, not hours, minutes or "
+        "seconds, so this is not resolved"
+    )
+
+
 #: A single day in the forms people write after "the week of".
 _ONE_DAY = (
     r"(?:\d{4}-\d{1,2}-\d{1,2}"
@@ -1459,6 +1477,15 @@ RULES: tuple[Rule, ...] = (
     Rule("trailing_months", r"\b(?:ttm|ltm|[tl]\d{1,2}m)\b", _p_trailing_months),
     # Before "half" and "quarter": "first half of March" opens with something the half
     # rule will happily claim as fiscal H1, throwing the month away.
+    # Hours, minutes and seconds: matched only to be declined with a reason.
+    Rule(
+        "sub_day",
+        rf"\b(?:(?:within|in|over|during)\s+)?(?:the\s+)?"
+        rf"{_DIRWORD}\s+(?:{_SUB_DAY_COUNT}\s+)?{_SUB_DAY}\b"
+        rf"|\b{_SUB_DAY_COUNT}\s+{_SUB_DAY}\s+(?:ago|from\s+now|later|earlier|back)\b"
+        rf"|\b(?:in|within)\s+{_SUB_DAY_COUNT}\s+{_SUB_DAY}\b",
+        _p_sub_day,
+    ),
     # The period that holds a date: ahead of period_edge, which reads "week beginning" as
     # the start of this week, and week_number, which starts at the same "week". A week or
     # month holds a day; a quarter, half or year may hold a month too.

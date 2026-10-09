@@ -56,6 +56,9 @@ _TRIGGERS = (
         "weekend", "eom", "eoq", "eoy", "eow", "eod", "cob", "eob",
         "wk", "cw", "kw",
         "beginning", "start", "early", "mid", "middle", "late", "end", "close",
+        # Read only to say why they are not answered: "an hour ago" has no other trigger.
+        "hour", "hours", "hr", "hrs", "minute", "minutes", "min", "mins",
+        "second", "seconds", "sec", "secs",
     }
 )
 #: Tokenising and intersecting a set beats a 116-way alternation by roughly ten times on
@@ -387,9 +390,10 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
         try:
             spec = rule.parse(fragment, cfg)
         except (ValueError, KeyError) as exc:
-            spec = None
+            # The rule said why; that reason alone, not a second, vaguer one beside it.
             if diags is not None:
                 diags.append(Diagnostic(fragment, m.span(), name, str(exc)))
+            continue
         if spec is None:
             if diags is not None:
                 diags.append(

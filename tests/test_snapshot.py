@@ -114,6 +114,8 @@ PHRASES = [
     "week commencing 5 October", "w/c 7 Oct", "week beginning 7 October 2026",
     "the quarter of June", "the quarter of June FY25", "the year of 15 March 2024",
     "the month of March", "the week of last Monday", "the quarter of last month",
+    # finer than a day: no answer, but a reason
+    "last 3 hours", "sales in the last 24 hours", "an hour ago", "in 30 minutes", "next 15 mins",
     "compare Q1 2024 to Q1 2025", "Q1 2024 vs Q1 2025", "last week vs this week",
     # sentences
     "How much did we book between April and September 2024?",

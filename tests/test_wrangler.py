@@ -1072,3 +1072,30 @@ def test_a_duration_from_a_day_is_flagged_past_the():
     matches, diags = diagnose("two weeks from the 15th", today=TODAY)
     assert matches[0].confidence == 0.5
     assert any("two weeks from" in d.reason for d in diags)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["last 3 hours", "in the last 24 hours", "the past hour", "in 30 minutes", "2 hours ago",
+     "an hour ago", "half an hour ago", "next 15 mins", "within the last 24 hours"],
+)
+def test_hours_get_a_reason_not_silence(text):
+    """REGRESSION: "last 3 hours" gave neither a match nor a diagnostic, which looks exactly
+    like text with no date in it. It is still not resolved -- the library answers in whole
+    days -- but the caller is told why."""
+    matches, diags = diagnose(text, today=TODAY)
+    assert matches == []
+    assert len(diags) == 1
+    assert "shorter than a day" in diags[0].reason
+    assert diags[0].text.strip() in text
+
+
+def test_hours_beside_a_date_leave_the_date_alone():
+    matches, diags = diagnose("last 3 hours and yesterday", today=TODAY)
+    assert [m.text for m in matches] == ["yesterday"]
+    assert [d.text for d in diags] == ["last 3 hours"]
+
+
+@pytest.mark.parametrize("text", ["a 2 hour meeting", "bake for 30 minutes", "last 3 days"])
+def test_durations_that_are_not_relative_say_nothing(text):
+    assert not any("shorter than a day" in d.reason for d in diagnose(text, today=TODAY)[1])
