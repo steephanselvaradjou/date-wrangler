@@ -997,7 +997,7 @@ def substitute(
     is the one function that turns a flagged guess into a confident sentence:
 
         >>> substitute("revenue Q1 and Q3", today=today)
-        'revenue April 2026 to December 2026'          # Q2 is in there, unremarked
+        'revenue January 2026 to September 2026'       # Q2 is in there, unremarked
         >>> substitute("revenue Q1 and Q3", today=today, min_confidence=0.9)
         'revenue Q1 and Q3'
 
