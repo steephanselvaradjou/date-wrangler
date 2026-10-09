@@ -11,7 +11,8 @@ straight to a query.
      rendered on PyPI, where the released version is already in the page header. Repeating
      it is one more thing to remember at release time, and it went stale once already.
      tests/test_packaging.py enforces this. -->
-> **Status: early development.** The API may still change before 1.0.
+> **Status: stable.** The public API follows semantic versioning: a change that breaks
+> existing callers comes only with a new major version.
 
 ## Why another date library
 
