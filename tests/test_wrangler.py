@@ -487,6 +487,83 @@ def test_substitute_output_does_not_re_match_itself():
     assert substitute(once, today=TODAY) == once
 
 
+# ---------------------------------------------------------------------------
+# substitute(keep_text=True): the phrase, then its dates in brackets
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("sales of Q4", "sales of Q4 (January 2026 to March 2026)"),
+        ("revenue last week", "revenue last week (25 August 2025 to 31 August 2025)"),
+        ("since April 2024", "since April 2024 (April 2024 onwards)"),
+        ("03/04/2024", "03/04/2024 (3 April 2024)"),  # shows which way it was read
+        ("Q1 vs Q2", "Q1 (April 2025 to June 2025) vs Q2 (July 2025 to September 2025)"),
+    ],
+)
+def test_keep_text_puts_the_dates_after_the_phrase(text, expected):
+    assert substitute(text, today=TODAY, config=CFG, keep_text=True) == expected
+
+
+def test_keep_text_is_off_by_default():
+    assert substitute("sales of Q4", today=TODAY, config=CFG) == (
+        "sales of January 2026 to March 2026"
+    )
+
+
+def test_keep_text_uses_the_formatter_for_the_dates():
+    from date_wrangler import make_formatter
+
+    out = substitute(
+        "sales of Q4", today=TODAY, config=CFG, keep_text=True,
+        formatter=make_formatter(date_format="%b-%Y"),
+    )
+    assert out == "sales of Q4 (Jan-2026 to Mar-2026)"
+
+
+@pytest.mark.parametrize("text", ["March 2024", "15 March 2024", "sales for March 2024"])
+def test_keep_text_does_not_repeat_a_phrase_that_already_says_it(text):
+    """"March 2024 (March 2024)" adds nothing to read."""
+    assert substitute(text, today=TODAY, keep_text=True) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["sales of Q4", "sales 15 Q1", "compare Q1 2024 to Q1 2025", "Q1 2024 versus Q1 2025",
+     "last week vs this week", "revenue Q1 and Q3", "since April 2024", "sales (Q4)"],
+)
+def test_keep_text_twice_is_keep_text_once(text):
+    """A second pass must not stack a second pair of brackets -- not with the same day, and
+    not on a later day either, when the phrase would now read differently."""
+    once = substitute(text, today=TODAY, config=CFG, keep_text=True)
+    assert substitute(once, today=TODAY, config=CFG, keep_text=True) == once
+    assert substitute(once, today=date(2027, 5, 1), keep_text=True) == once
+
+
+def test_keep_text_leaves_the_neighbouring_number_alone():
+    """Replacing "Q1" in "sales 15 Q1" can fuse "15" with the inserted month; keeping the
+    phrase cannot, because the phrase is still there."""
+    assert substitute("sales 15 Q1", today=TODAY, config=CFG, keep_text=True) == (
+        "sales 15 Q1 (April 2025 to June 2025)"
+    )
+
+
+def test_keep_text_still_declines_a_flagged_match():
+    assert substitute("revenue Q1 and Q3", today=TODAY, keep_text=True, min_confidence=0.9) == (
+        "revenue Q1 and Q3"
+    )
+
+
+def test_a_comparison_does_not_reach_inside_brackets():
+    """"compare ... to" makes a plain "to" a comparison, but not one inside brackets: there
+    "January 2024 to March 2024" is one span, and a bracket closed before the period does
+    not stop a comparison either."""
+    found = parse("compare Q1 2024 (January 2024 to March 2024) to Q1 2025", today=TODAY)
+    assert [m.text for m in found] == ["Q1 2024", "January 2024 to March 2024", "Q1 2025"]
+    assert len(parse("compare sales (net) in Q1 to Q2", today=TODAY)) == 2
+
+
 def test_output_is_locale_independent():
     """REGRESSION: strftime('%B') honours LC_TIME, so an unrelated setlocale elsewhere in
     the process changed "June" to "Juni"."""

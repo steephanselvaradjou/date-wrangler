@@ -11,7 +11,7 @@ resolved.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, datetime, tzinfo
 
@@ -426,6 +426,11 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
             links.append("list")
         elif _STRONG_LINK.match(gap) or _WEAK_LINK.match(gap):
             lead = text[max(0, a.start - 40) : a.start]
+            opened = lead.rfind("(")
+            if opened > lead.rfind(")"):
+                # Inside brackets, a "compare" outside them does not reach in: in "compare
+                # Q1 2024 (January 2024 to March 2024) to Q1 2025" the bracket is one span.
+                lead = lead[opened + 1 :]
             links.append("compare" if _COMPARISON_LEAD.search(lead) else "range")
         else:
             links.append(None)
@@ -989,8 +994,23 @@ def substitute(
     config: WranglerConfig = DEFAULT_CONFIG,
     formatter: Callable[[DateRange], str] | None = None,
     min_confidence: float = 0.0,
+    keep_text: bool = False,
 ) -> str:
     """Rewrite every date expression in ``text``. Only the matched phrase changes.
+
+    By default the phrase is replaced by its dates. ``keep_text=True`` keeps the phrase and
+    puts the dates after it in brackets, so the label survives for whoever reads on and the
+    reading is there to check:
+
+        >>> substitute("sales of Q4", today=today)
+        'sales of October 2026 to December 2026'
+        >>> substitute("sales of Q4", today=today, keep_text=True)
+        'sales of Q4 (October 2026 to December 2026)'
+
+    With ``keep_text`` a phrase that already says what the brackets would -- "March 2024" --
+    is left alone, and so is one already followed by dates in brackets, whoever wrote them:
+    running it again on its own output adds nothing. ``formatter`` decides how the dates
+    look either way.
 
     ``min_confidence`` leaves anything below it exactly as the writer typed it. Raise it
     whenever the output will be read as fact -- by a person or by a model -- because this
@@ -1010,6 +1030,8 @@ def substitute(
 
     render = formatter or format_range
     found = parse(text, today=today, tz=tz, config=config)
+    if keep_text:
+        return _annotate(text, found, render, min_confidence, today, tz, config)
     out = text
     for match in reversed(found):
         if match.confidence < min_confidence:
@@ -1017,3 +1039,150 @@ def substitute(
         lo, hi = match.span
         out = out[:lo] + render(match.range) + out[hi:]
     return out
+
+
+def _annotate(
+    text: str,
+    found: list[DateMatch],
+    render: Callable[[DateRange], str],
+    min_confidence: float,
+    today: date | datetime | None,
+    tz: tzinfo | None,
+    config: WranglerConfig,
+) -> str:
+    """``substitute(keep_text=True)``: put each phrase's dates after it, in brackets.
+
+    Brackets that already hold a phrase's dates -- from an earlier pass, on any day and
+    with any formatter, or from the writer -- are set aside and the rest is read without
+    them. Reading only what the first pass read is what makes a second pass add nothing:
+    leaving the brackets in would change the text around *other* phrases, and a bare year
+    that had no cue the first time could pick one up from the inserted dates.
+    """
+
+    def read(s: str) -> list[DateMatch]:
+        return parse(s, today=today, tz=tz, config=config)
+
+    removed = _annotations_in(text, render, read)
+    if removed:
+        found = read(_without(text, removed))
+
+    annotated = {_to_bare(lo, removed) for lo, _ in removed}
+    inserts: list[tuple[int, str]] = []
+    for match in found:
+        hi = match.span[1]
+        if hi in annotated or match.confidence < min_confidence:
+            continue
+        dates = render(match.range)
+        if _same_words(match.text, dates):
+            continue
+        inserts.append((_to_text(hi, removed, end=True), f" ({dates})"))
+    out = text
+    for at, piece in reversed(inserts):
+        out = out[:at] + piece + out[at:]
+    return out
+
+
+_BRACKETS = re.compile(r"[ \t]*\([ \t]*([^()]*?)[ \t]*\)")
+
+
+#: How many words back to look for the date a pair of brackets annotates.
+_WORDS_BACK = 6
+
+
+def _annotations_in(
+    text: str, render: Callable[[DateRange], str], read: Callable[[str], list[DateMatch]]
+) -> list[tuple[int, int]]:
+    """Brackets that already annotate a date, as sorted spans of ``text``.
+
+    That is: a date ends right before them, and they hold dates and nothing else -- or
+    exactly what ``render`` writes for that date, for output that does not read back as
+    one. All of it is judged on those few words alone, never in context, so inserting
+    brackets elsewhere cannot change the verdict; that is what makes a second pass find
+    exactly the brackets the first one wrote. "revenue (Q1 2024) grew" is not one:
+    "revenue" is not a date.
+    """
+    out: list[tuple[int, int]] = []
+    for m in _BRACKETS.finditer(text):
+        inner = m.group(1)
+        if not inner:
+            continue
+        before = _dates_ending_at(text, m.start(), read)
+        if _only_dates(inner, read):
+            if next(before, None) is not None:
+                out.append(m.span())
+        # The fallback reads every window, so only for something a formatter could have
+        # written: a date that does not read back still has a number in it.
+        elif any(ch.isdigit() for ch in inner) and any(
+            _same_words(inner, render(d.range)) for d in before
+        ):
+            out.append(m.span())
+    return out
+
+
+#: Words a formatter may put between or around dates: "1 April to 30 June", "up to ...".
+_DATE_GLUE = re.compile(
+    r"\b(?:to|and|through|until|till|from|since|onwards|before|after|as\s+of|up\s+to)\b",
+    re.IGNORECASE,
+)
+
+
+def _only_dates(s: str, read: Callable[[str], list[DateMatch]]) -> bool:
+    """Whether ``s`` is dates and the words and marks that join them, and nothing else."""
+    found = read(s)
+    if not found:
+        return False
+    rest = list(s)
+    for m in found:
+        lo, hi = m.span
+        rest[lo:hi] = " " * (hi - lo)
+    leftover = _DATE_GLUE.sub(" ", "".join(rest))
+    return not any(ch.isalnum() for ch in leftover)
+
+
+def _dates_ending_at(
+    text: str, at: int, read: Callable[[str], list[DateMatch]]
+) -> Iterator[DateMatch]:
+    """The dates the last few words before ``at`` end in, each read on its own, the
+    shortest first -- lazily, because one is usually all that is asked for."""
+    head = text[max(0, at - 200) : at]
+    for start in reversed([w.start() for w in re.finditer(r"\S+", head)][-_WORDS_BACK:]):
+        words = head[start:]
+        found = read(words)
+        if found and found[-1].span[1] == len(words):
+            yield found[-1]
+
+
+def _without(text: str, removed: list[tuple[int, int]]) -> str:
+    """``text`` with the sorted, disjoint ``removed`` spans taken out."""
+    pieces, at = [], 0
+    for lo, hi in removed:
+        pieces.append(text[at:lo])
+        at = hi
+    pieces.append(text[at:])
+    return "".join(pieces)
+
+
+def _to_bare(pos: int, removed: list[tuple[int, int]]) -> int:
+    """A position in the text, as a position in the text with ``removed`` taken out."""
+    return pos - sum(hi - lo for lo, hi in removed if hi <= pos)
+
+
+def _to_text(pos: int, removed: list[tuple[int, int]], *, end: bool) -> int:
+    """A position in the text with ``removed`` taken out, back in the text.
+
+    Where a removed span sat exactly at ``pos``, ``end`` puts the result before it -- the
+    end of the phrase it follows -- and otherwise after it.
+    """
+    shift = 0
+    for lo, hi in removed:
+        at = lo - shift  # where this span sat in the shorter text
+        if at < pos or (at == pos and not end):
+            shift += hi - lo
+        else:
+            break
+    return pos + shift
+
+
+def _same_words(typed: str, dates: str) -> bool:
+    """Whether the brackets would only repeat the phrase: "March 2024 (March 2024)"."""
+    return " ".join(typed.split()).casefold() == " ".join(dates.split()).casefold()

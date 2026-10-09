@@ -590,25 +590,47 @@ it; `strict` needs an explicit year or period marker and never guesses.
 
 ### Rewriting text
 
-```python
-substitute("sales report of Q1", today=today)
-# 'sales report of January 2025 to March 2025'
-```
-
-Only the matched phrase is replaced.
-
-**One limit worth knowing.** Substitution is textual, so an inserted phrase can fuse with a
-neighbouring token that was never part of a date:
+Two ways, picked with `keep_text`:
 
 ```python
-substitute("sales 15 Q1")   # 'sales 15 January 2025 to March 2025'
+substitute("sales of Q4", today=today)
+# 'sales of October 2025 to December 2025'           — the dates replace the phrase
+
+substitute("sales of Q4", today=today, keep_text=True)
+# 'sales of Q4 (October 2025 to December 2025)'      — the phrase, then its dates
 ```
 
-Read that back and `15 January 2025` is a perfectly good date, so a second pass gives a
-different answer. Repeated substitution always *converges* — it never grows without bound,
+Only the matched phrase is touched. `keep_text=True` is usually the better choice when a
+model or a person reads the result: the label survives — "Q4" still says quarter, which
+matters for grouping and for how an answer is worded — and the dates beside it show exactly
+which reading was taken, fiscal or calendar. `formatter` sets how the dates look in either
+mode, and `min_confidence` leaves flagged phrases as typed in either mode.
+
+With `keep_text`, a phrase is left alone when the brackets would only repeat it (`March
+2024`), or when it is already followed by dates in brackets — written by an earlier pass,
+on any day and with any formatter, or by the writer (`Q4 (2024)`). So running it again on
+its own output adds nothing:
+
+```python
+once = substitute("compare Q1 2024 to Q1 2025", keep_text=True)
+# 'compare Q1 2024 (January 2024 to March 2024) to Q1 2025 (January 2025 to March 2025)'
+substitute(once, keep_text=True) == once   # True
+```
+
+**One limit worth knowing**, for the default mode only. Replacing is textual, so the
+inserted dates can fuse with a neighbouring token that was never part of a date:
+
+```python
+substitute("sales 15 Q1")                  # 'sales 15 January 2025 to March 2025'
+substitute("sales 15 Q1", keep_text=True)  # 'sales 15 Q1 (January 2025 to March 2025)'
+```
+
+Read the first back and `15 January 2025` is a perfectly good date, so a second pass gives
+a different answer. Repeated replacing always *converges* — it never grows without bound,
 which is the failure that matters — but it is not idempotent in one pass when a bare number
-abuts a date expression. When exactness matters, use `parse()` and render the ranges
-yourself; `substitute` is a convenience.
+abuts a date expression. `keep_text` does not have the problem, because the phrase stays
+where it was. When exactness matters, use `parse()` and render the ranges yourself;
+`substitute` is a convenience.
 
 ## Output format
 

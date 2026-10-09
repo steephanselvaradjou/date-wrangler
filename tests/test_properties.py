@@ -167,6 +167,15 @@ def test_substitute_reaches_a_fixed_point(text, cfg, today):
         raise AssertionError(f"no fixed point after 12 passes: {text!r}")
 
 
+@given(text=texts, cfg=configs, today=todays)
+@SETTINGS
+def test_keep_text_twice_is_keep_text_once(text, cfg, today):
+    """Stronger than the fixed point above, because the phrase stays where it was: the
+    second pass finds each phrase already followed by its dates, and leaves it."""
+    once = substitute(text, today=today, config=cfg, keep_text=True)
+    assert substitute(once, today=today, config=cfg, keep_text=True) == once
+
+
 def test_substitution_can_fuse_with_an_adjacent_number():
     """The known, documented limit of `substitute`, pinned so it stays known.
 
