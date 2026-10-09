@@ -8,7 +8,7 @@ default 2026-10-08 | Mar-24 | 'Mar-24' 2024-03-01..2024-03-31 month calendar c=1
 default 2026-10-08 | March 2024 | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1
 default 2026-10-08 | March | 'March' 2026-03-01..2026-03-31 month calendar c=1
 default 2026-10-08 | 2024 | '2024' 2024-01-01..2024-12-31 year calendar c=0.8
-default 2026-10-08 | the year 2013 | 'year 2013' 2013-01-01..2013-12-31 year calendar c=1
+default 2026-10-08 | the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-10-08 | FY25 | 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
 default 2026-10-08 | FY2025 | 'FY2025' 2024-04-01..2025-03-31 year fiscal c=1
 default 2026-10-08 | FY2024-25 | 'FY2024-25' 2024-04-01..2025-03-31 year fiscal c=1
@@ -139,8 +139,8 @@ default 2026-10-08 | the last month of the year | 'the last month of the year' 2
 default 2026-10-08 | the last week of March | 'the last week of March' 2026-03-25..2026-03-31 week calendar c=1
 default 2026-10-08 | the first week of April | 'the first week of April' 2026-04-01..2026-04-07 week calendar c=1
 default 2026-10-08 | the last month of the quarter | 'the last month of the quarter' 2026-12-01..2026-12-31 month calendar c=1
-default 2026-10-08 | the first quarter | 'first quarter' 2026-01-01..2026-03-31 quarter calendar c=1
-default 2026-10-08 | the fourth quarter of 2024 | 'fourth quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
+default 2026-10-08 | the first quarter | 'the first quarter' 2026-01-01..2026-03-31 quarter calendar c=1
+default 2026-10-08 | the fourth quarter of 2024 | 'the fourth quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
 default 2026-10-08 | the second half of last year | 'the second half of last year' 2025-07-01..2025-12-31 month calendar c=1
 default 2026-10-08 | the last half of 2024 | 'the last half of 2024' 2024-07-01..2024-12-31 month calendar c=1
 default 2026-10-08 | first week of next month | 'first week of next month' 2026-11-01..2026-11-07 week calendar c=1
@@ -176,7 +176,7 @@ default 2026-10-08 | 2024-Q3 | '2024-Q3' 2024-07-01..2024-09-30 quarter calendar
 default 2026-10-08 | 1H24 | '1H24' 2024-01-01..2024-06-30 half calendar c=1
 default 2026-10-08 | H1'25 | "H1'25" 2025-01-01..2025-06-30 half calendar c=1
 default 2026-10-08 | Q3 2024 | 'Q3 2024' 2024-07-01..2024-09-30 quarter calendar c=1
-default 2026-10-08 | the third quarter | 'third quarter' 2026-07-01..2026-09-30 quarter calendar c=1
+default 2026-10-08 | the third quarter | 'the third quarter' 2026-07-01..2026-09-30 quarter calendar c=1
 default 2026-10-08 | second quarter of 2025 | 'second quarter of 2025' 2025-04-01..2025-06-30 quarter calendar c=1
 default 2026-10-08 | the 2020s | 'the 2020s' 2020-01-01..2029-12-31 year calendar c=1
 default 2026-10-08 | the '90s | (none)
@@ -201,9 +201,9 @@ default 2026-10-08 | 12 months ending March 2024 | '12 months ending March 2024'
 default 2026-10-08 | the half year to 30 September 2024 | 'the half year to 30 September 2024' 2024-04-01..2024-09-30 half calendar c=1
 default 2026-10-08 | as at 31 March 2024 | 'as at 31 March 2024' 2024-03-31..2024-03-31 day calendar as_of c=1
 default 2026-10-08 | the quarter to June | 'the quarter to June' 2026-04-01..2026-06-30 quarter calendar c=1
-default 2026-10-08 | within the next 30 days | 'next 30 days' 2026-10-09..2026-11-07 day calendar c=1
-default 2026-10-08 | in the next 2 weeks | 'next 2 weeks' 2026-10-12..2026-10-25 week calendar c=1
-default 2026-10-08 | over the next quarter | 'next quarter' 2027-01-01..2027-03-31 quarter calendar c=1
+default 2026-10-08 | within the next 30 days | 'the next 30 days' 2026-10-09..2026-11-07 day calendar c=1
+default 2026-10-08 | in the next 2 weeks | 'the next 2 weeks' 2026-10-12..2026-10-25 week calendar c=1
+default 2026-10-08 | over the next quarter | 'the next quarter' 2027-01-01..2027-03-31 quarter calendar c=1
 default 2026-10-08 | last 12 months | 'last 12 months' 2025-10-01..2026-09-30 month calendar c=1
 default 2026-10-08 | past 12 months | 'past 12 months' 2025-10-01..2026-09-30 month calendar c=1
 default 2026-10-08 | trailing twelve months | 'trailing twelve months' 2025-10-01..2026-09-30 month calendar c=1
@@ -240,6 +240,16 @@ default 2026-10-08 | FY24 - Q3 | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fisc
 default 2026-10-08 | FY24 - Q3 results | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fiscal c=1
 default 2026-10-08 | 2023 - H2 2024 | '2023 - H2 2024' 2023-01-01..2024-12-31 year calendar c=0.8
 default 2026-10-08 | FY24, March | 'FY24' 2023-04-01..2024-03-31 year fiscal c=1 ; 'March' 2024-03-01..2024-03-31 month fiscal c=1
+default 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
+default 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
+default 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
+default 2026-10-08 | the March figures | 'March' 2026-03-01..2026-03-31 month calendar c=1
+default 2026-10-08 | the 15 March meeting | '15 March' 2026-03-15..2026-03-15 day calendar c=1
+default 2026-10-08 | since the last quarter | 'since the last quarter' 2026-07-01..... quarter calendar since c=1
+default 2026-10-08 | before the last week | 'before the last week' .....2026-09-27 week calendar before c=1
+default 2026-10-08 | after the first quarter | 'after the first quarter' 2026-04-01..... quarter calendar after c=1
+default 2026-10-08 | up to the previous month | 'up to the previous month' .....2026-09-30 month calendar until c=1
+default 2026-10-08 | since the year 2013 | 'since the year 2013' 2013-01-01..... year calendar since c=1
 default 2026-10-08 | compare Q1 2024 to Q1 2025 | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 ; 'Q1 2025' 2025-01-01..2025-03-31 quarter calendar c=1
 default 2026-10-08 | Q1 2024 vs Q1 2025 | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 ; 'Q1 2025' 2025-01-01..2025-03-31 quarter calendar c=1
 default 2026-10-08 | last week vs this week | 'last week' 2026-09-28..2026-10-04 week calendar c=1 ; 'this week' 2026-10-05..2026-10-11 week calendar c=1
@@ -262,7 +272,7 @@ default 2026-03-31 | Mar-24 | 'Mar-24' 2024-03-01..2024-03-31 month calendar c=1
 default 2026-03-31 | March 2024 | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1
 default 2026-03-31 | March | 'March' 2026-03-01..2026-03-31 month calendar c=1
 default 2026-03-31 | 2024 | '2024' 2024-01-01..2024-12-31 year calendar c=0.8
-default 2026-03-31 | the year 2013 | 'year 2013' 2013-01-01..2013-12-31 year calendar c=1
+default 2026-03-31 | the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-03-31 | FY25 | 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
 default 2026-03-31 | FY2025 | 'FY2025' 2024-04-01..2025-03-31 year fiscal c=1
 default 2026-03-31 | FY2024-25 | 'FY2024-25' 2024-04-01..2025-03-31 year fiscal c=1
@@ -393,8 +403,8 @@ default 2026-03-31 | the last month of the year | 'the last month of the year' 2
 default 2026-03-31 | the last week of March | 'the last week of March' 2026-03-25..2026-03-31 week calendar c=1
 default 2026-03-31 | the first week of April | 'the first week of April' 2026-04-01..2026-04-07 week calendar c=1
 default 2026-03-31 | the last month of the quarter | 'the last month of the quarter' 2026-03-01..2026-03-31 month calendar c=1
-default 2026-03-31 | the first quarter | 'first quarter' 2026-01-01..2026-03-31 quarter calendar c=1
-default 2026-03-31 | the fourth quarter of 2024 | 'fourth quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
+default 2026-03-31 | the first quarter | 'the first quarter' 2026-01-01..2026-03-31 quarter calendar c=1
+default 2026-03-31 | the fourth quarter of 2024 | 'the fourth quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
 default 2026-03-31 | the second half of last year | 'the second half of last year' 2025-07-01..2025-12-31 month calendar c=1
 default 2026-03-31 | the last half of 2024 | 'the last half of 2024' 2024-07-01..2024-12-31 month calendar c=1
 default 2026-03-31 | first week of next month | 'first week of next month' 2026-04-01..2026-04-07 week calendar c=1
@@ -430,7 +440,7 @@ default 2026-03-31 | 2024-Q3 | '2024-Q3' 2024-07-01..2024-09-30 quarter calendar
 default 2026-03-31 | 1H24 | '1H24' 2024-01-01..2024-06-30 half calendar c=1
 default 2026-03-31 | H1'25 | "H1'25" 2025-01-01..2025-06-30 half calendar c=1
 default 2026-03-31 | Q3 2024 | 'Q3 2024' 2024-07-01..2024-09-30 quarter calendar c=1
-default 2026-03-31 | the third quarter | 'third quarter' 2026-07-01..2026-09-30 quarter calendar c=1
+default 2026-03-31 | the third quarter | 'the third quarter' 2026-07-01..2026-09-30 quarter calendar c=1
 default 2026-03-31 | second quarter of 2025 | 'second quarter of 2025' 2025-04-01..2025-06-30 quarter calendar c=1
 default 2026-03-31 | the 2020s | 'the 2020s' 2020-01-01..2029-12-31 year calendar c=1
 default 2026-03-31 | the '90s | (none)
@@ -455,9 +465,9 @@ default 2026-03-31 | 12 months ending March 2024 | '12 months ending March 2024'
 default 2026-03-31 | the half year to 30 September 2024 | 'the half year to 30 September 2024' 2024-04-01..2024-09-30 half calendar c=1
 default 2026-03-31 | as at 31 March 2024 | 'as at 31 March 2024' 2024-03-31..2024-03-31 day calendar as_of c=1
 default 2026-03-31 | the quarter to June | 'the quarter to June' 2025-04-01..2025-06-30 quarter calendar c=1
-default 2026-03-31 | within the next 30 days | 'next 30 days' 2026-04-01..2026-04-30 day calendar c=1
-default 2026-03-31 | in the next 2 weeks | 'next 2 weeks' 2026-04-06..2026-04-19 week calendar c=1
-default 2026-03-31 | over the next quarter | 'next quarter' 2026-04-01..2026-06-30 quarter calendar c=1
+default 2026-03-31 | within the next 30 days | 'the next 30 days' 2026-04-01..2026-04-30 day calendar c=1
+default 2026-03-31 | in the next 2 weeks | 'the next 2 weeks' 2026-04-06..2026-04-19 week calendar c=1
+default 2026-03-31 | over the next quarter | 'the next quarter' 2026-04-01..2026-06-30 quarter calendar c=1
 default 2026-03-31 | last 12 months | 'last 12 months' 2025-03-01..2026-02-28 month calendar c=1
 default 2026-03-31 | past 12 months | 'past 12 months' 2025-03-01..2026-02-28 month calendar c=1
 default 2026-03-31 | trailing twelve months | 'trailing twelve months' 2025-03-01..2026-02-28 month calendar c=1
@@ -494,6 +504,16 @@ default 2026-03-31 | FY24 - Q3 | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fisc
 default 2026-03-31 | FY24 - Q3 results | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fiscal c=1
 default 2026-03-31 | 2023 - H2 2024 | '2023 - H2 2024' 2023-01-01..2024-12-31 year calendar c=0.8
 default 2026-03-31 | FY24, March | 'FY24' 2023-04-01..2024-03-31 year fiscal c=1 ; 'March' 2024-03-01..2024-03-31 month fiscal c=1
+default 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
+default 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
+default 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1
+default 2026-03-31 | the March figures | 'March' 2026-03-01..2026-03-31 month calendar c=1
+default 2026-03-31 | the 15 March meeting | '15 March' 2026-03-15..2026-03-15 day calendar c=1
+default 2026-03-31 | since the last quarter | 'since the last quarter' 2025-10-01..... quarter calendar since c=1
+default 2026-03-31 | before the last week | 'before the last week' .....2026-03-22 week calendar before c=1
+default 2026-03-31 | after the first quarter | 'after the first quarter' 2026-04-01..... quarter calendar after c=1
+default 2026-03-31 | up to the previous month | 'up to the previous month' .....2026-02-28 month calendar until c=1
+default 2026-03-31 | since the year 2013 | 'since the year 2013' 2013-01-01..... year calendar since c=1
 default 2026-03-31 | compare Q1 2024 to Q1 2025 | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 ; 'Q1 2025' 2025-01-01..2025-03-31 quarter calendar c=1
 default 2026-03-31 | Q1 2024 vs Q1 2025 | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 ; 'Q1 2025' 2025-01-01..2025-03-31 quarter calendar c=1
 default 2026-03-31 | last week vs this week | 'last week' 2026-03-23..2026-03-29 week calendar c=1 ; 'this week' 2026-03-30..2026-04-05 week calendar c=1
@@ -516,7 +536,7 @@ fiscal 2026-10-08 | Mar-24 | 'Mar-24' 2024-03-01..2024-03-31 month calendar c=1
 fiscal 2026-10-08 | March 2024 | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1
 fiscal 2026-10-08 | March | 'March' 2026-03-01..2026-03-31 month calendar c=1
 fiscal 2026-10-08 | 2024 | '2024' 2023-04-01..2024-03-31 year fiscal c=0.8
-fiscal 2026-10-08 | the year 2013 | 'year 2013' 2012-04-01..2013-03-31 year fiscal c=1
+fiscal 2026-10-08 | the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-10-08 | FY25 | 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
 fiscal 2026-10-08 | FY2025 | 'FY2025' 2024-04-01..2025-03-31 year fiscal c=1
 fiscal 2026-10-08 | FY2024-25 | 'FY2024-25' 2024-04-01..2025-03-31 year fiscal c=1
@@ -647,8 +667,8 @@ fiscal 2026-10-08 | the last month of the year | 'the last month of the year' 20
 fiscal 2026-10-08 | the last week of March | 'the last week of March' 2026-03-25..2026-03-31 week calendar c=1
 fiscal 2026-10-08 | the first week of April | 'the first week of April' 2026-04-01..2026-04-07 week calendar c=1
 fiscal 2026-10-08 | the last month of the quarter | 'the last month of the quarter' 2026-12-01..2026-12-31 month fiscal c=1
-fiscal 2026-10-08 | the first quarter | 'first quarter' 2026-04-01..2026-06-30 quarter fiscal c=1
-fiscal 2026-10-08 | the fourth quarter of 2024 | 'fourth quarter of 2024' 2024-01-01..2024-03-31 quarter fiscal c=1
+fiscal 2026-10-08 | the first quarter | 'the first quarter' 2026-04-01..2026-06-30 quarter fiscal c=1
+fiscal 2026-10-08 | the fourth quarter of 2024 | 'the fourth quarter of 2024' 2024-01-01..2024-03-31 quarter fiscal c=1
 fiscal 2026-10-08 | the second half of last year | 'the second half of last year' 2025-10-01..2026-03-31 month fiscal c=1
 fiscal 2026-10-08 | the last half of 2024 | 'the last half of 2024' 2023-10-01..2024-03-31 month fiscal c=1
 fiscal 2026-10-08 | first week of next month | 'first week of next month' 2026-11-01..2026-11-07 week fiscal c=1
@@ -684,7 +704,7 @@ fiscal 2026-10-08 | 2024-Q3 | '2024-Q3' 2023-10-01..2023-12-31 quarter fiscal c=
 fiscal 2026-10-08 | 1H24 | '1H24' 2023-04-01..2023-09-30 half fiscal c=1
 fiscal 2026-10-08 | H1'25 | "H1'25" 2024-04-01..2024-09-30 half fiscal c=1
 fiscal 2026-10-08 | Q3 2024 | 'Q3 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
-fiscal 2026-10-08 | the third quarter | 'third quarter' 2026-10-01..2026-12-31 quarter fiscal c=1
+fiscal 2026-10-08 | the third quarter | 'the third quarter' 2026-10-01..2026-12-31 quarter fiscal c=1
 fiscal 2026-10-08 | second quarter of 2025 | 'second quarter of 2025' 2024-07-01..2024-09-30 quarter fiscal c=1
 fiscal 2026-10-08 | the 2020s | 'the 2020s' 2020-01-01..2029-12-31 year calendar c=1
 fiscal 2026-10-08 | the '90s | (none)
@@ -709,9 +729,9 @@ fiscal 2026-10-08 | 12 months ending March 2024 | '12 months ending March 2024' 
 fiscal 2026-10-08 | the half year to 30 September 2024 | 'the half year to 30 September 2024' 2024-04-01..2024-09-30 half fiscal c=1
 fiscal 2026-10-08 | as at 31 March 2024 | 'as at 31 March 2024' 2024-03-31..2024-03-31 day calendar as_of c=1
 fiscal 2026-10-08 | the quarter to June | 'the quarter to June' 2026-04-01..2026-06-30 quarter fiscal c=1
-fiscal 2026-10-08 | within the next 30 days | 'next 30 days' 2026-10-09..2026-11-07 day fiscal c=1
-fiscal 2026-10-08 | in the next 2 weeks | 'next 2 weeks' 2026-10-12..2026-10-25 week fiscal c=1
-fiscal 2026-10-08 | over the next quarter | 'next quarter' 2027-01-01..2027-03-31 quarter fiscal c=1
+fiscal 2026-10-08 | within the next 30 days | 'the next 30 days' 2026-10-09..2026-11-07 day fiscal c=1
+fiscal 2026-10-08 | in the next 2 weeks | 'the next 2 weeks' 2026-10-12..2026-10-25 week fiscal c=1
+fiscal 2026-10-08 | over the next quarter | 'the next quarter' 2027-01-01..2027-03-31 quarter fiscal c=1
 fiscal 2026-10-08 | last 12 months | 'last 12 months' 2025-10-01..2026-09-30 month fiscal c=1
 fiscal 2026-10-08 | past 12 months | 'past 12 months' 2025-10-01..2026-09-30 month fiscal c=1
 fiscal 2026-10-08 | trailing twelve months | 'trailing twelve months' 2025-10-01..2026-09-30 month fiscal c=1
@@ -748,6 +768,16 @@ fiscal 2026-10-08 | FY24 - Q3 | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fisca
 fiscal 2026-10-08 | FY24 - Q3 results | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fiscal c=1
 fiscal 2026-10-08 | 2023 - H2 2024 | '2023 - H2 2024' 2022-04-01..2024-03-31 year fiscal c=0.8
 fiscal 2026-10-08 | FY24, March | 'FY24' 2023-04-01..2024-03-31 year fiscal c=1 ; 'March' 2024-03-01..2024-03-31 month fiscal c=1
+fiscal 2026-10-08 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
+fiscal 2026-10-08 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
+fiscal 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter fiscal c=1
+fiscal 2026-10-08 | the March figures | 'March' 2026-03-01..2026-03-31 month calendar c=1
+fiscal 2026-10-08 | the 15 March meeting | '15 March' 2026-03-15..2026-03-15 day calendar c=1
+fiscal 2026-10-08 | since the last quarter | 'since the last quarter' 2026-07-01..... quarter fiscal since c=1
+fiscal 2026-10-08 | before the last week | 'before the last week' .....2026-09-27 week fiscal before c=1
+fiscal 2026-10-08 | after the first quarter | 'after the first quarter' 2026-07-01..... quarter fiscal after c=1
+fiscal 2026-10-08 | up to the previous month | 'up to the previous month' .....2026-09-30 month fiscal until c=1
+fiscal 2026-10-08 | since the year 2013 | 'since the year 2013' 2012-04-01..... year fiscal since c=1
 fiscal 2026-10-08 | compare Q1 2024 to Q1 2025 | 'Q1 2024' 2023-04-01..2023-06-30 quarter fiscal c=1 ; 'Q1 2025' 2024-04-01..2024-06-30 quarter fiscal c=1
 fiscal 2026-10-08 | Q1 2024 vs Q1 2025 | 'Q1 2024' 2023-04-01..2023-06-30 quarter fiscal c=1 ; 'Q1 2025' 2024-04-01..2024-06-30 quarter fiscal c=1
 fiscal 2026-10-08 | last week vs this week | 'last week' 2026-09-28..2026-10-04 week fiscal c=1 ; 'this week' 2026-10-05..2026-10-11 week fiscal c=1
@@ -770,7 +800,7 @@ fiscal 2026-03-31 | Mar-24 | 'Mar-24' 2024-03-01..2024-03-31 month calendar c=1
 fiscal 2026-03-31 | March 2024 | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1
 fiscal 2026-03-31 | March | 'March' 2026-03-01..2026-03-31 month calendar c=1
 fiscal 2026-03-31 | 2024 | '2024' 2023-04-01..2024-03-31 year fiscal c=0.8
-fiscal 2026-03-31 | the year 2013 | 'year 2013' 2012-04-01..2013-03-31 year fiscal c=1
+fiscal 2026-03-31 | the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-03-31 | FY25 | 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
 fiscal 2026-03-31 | FY2025 | 'FY2025' 2024-04-01..2025-03-31 year fiscal c=1
 fiscal 2026-03-31 | FY2024-25 | 'FY2024-25' 2024-04-01..2025-03-31 year fiscal c=1
@@ -901,8 +931,8 @@ fiscal 2026-03-31 | the last month of the year | 'the last month of the year' 20
 fiscal 2026-03-31 | the last week of March | 'the last week of March' 2026-03-25..2026-03-31 week calendar c=1
 fiscal 2026-03-31 | the first week of April | 'the first week of April' 2026-04-01..2026-04-07 week calendar c=1
 fiscal 2026-03-31 | the last month of the quarter | 'the last month of the quarter' 2026-03-01..2026-03-31 month fiscal c=1
-fiscal 2026-03-31 | the first quarter | 'first quarter' 2025-04-01..2025-06-30 quarter fiscal c=1
-fiscal 2026-03-31 | the fourth quarter of 2024 | 'fourth quarter of 2024' 2024-01-01..2024-03-31 quarter fiscal c=1
+fiscal 2026-03-31 | the first quarter | 'the first quarter' 2025-04-01..2025-06-30 quarter fiscal c=1
+fiscal 2026-03-31 | the fourth quarter of 2024 | 'the fourth quarter of 2024' 2024-01-01..2024-03-31 quarter fiscal c=1
 fiscal 2026-03-31 | the second half of last year | 'the second half of last year' 2024-10-01..2025-03-31 month fiscal c=1
 fiscal 2026-03-31 | the last half of 2024 | 'the last half of 2024' 2023-10-01..2024-03-31 month fiscal c=1
 fiscal 2026-03-31 | first week of next month | 'first week of next month' 2026-04-01..2026-04-07 week fiscal c=1
@@ -938,7 +968,7 @@ fiscal 2026-03-31 | 2024-Q3 | '2024-Q3' 2023-10-01..2023-12-31 quarter fiscal c=
 fiscal 2026-03-31 | 1H24 | '1H24' 2023-04-01..2023-09-30 half fiscal c=1
 fiscal 2026-03-31 | H1'25 | "H1'25" 2024-04-01..2024-09-30 half fiscal c=1
 fiscal 2026-03-31 | Q3 2024 | 'Q3 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
-fiscal 2026-03-31 | the third quarter | 'third quarter' 2025-10-01..2025-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | the third quarter | 'the third quarter' 2025-10-01..2025-12-31 quarter fiscal c=1
 fiscal 2026-03-31 | second quarter of 2025 | 'second quarter of 2025' 2024-07-01..2024-09-30 quarter fiscal c=1
 fiscal 2026-03-31 | the 2020s | 'the 2020s' 2020-01-01..2029-12-31 year calendar c=1
 fiscal 2026-03-31 | the '90s | (none)
@@ -963,9 +993,9 @@ fiscal 2026-03-31 | 12 months ending March 2024 | '12 months ending March 2024' 
 fiscal 2026-03-31 | the half year to 30 September 2024 | 'the half year to 30 September 2024' 2024-04-01..2024-09-30 half fiscal c=1
 fiscal 2026-03-31 | as at 31 March 2024 | 'as at 31 March 2024' 2024-03-31..2024-03-31 day calendar as_of c=1
 fiscal 2026-03-31 | the quarter to June | 'the quarter to June' 2025-04-01..2025-06-30 quarter fiscal c=1
-fiscal 2026-03-31 | within the next 30 days | 'next 30 days' 2026-04-01..2026-04-30 day fiscal c=1
-fiscal 2026-03-31 | in the next 2 weeks | 'next 2 weeks' 2026-04-06..2026-04-19 week fiscal c=1
-fiscal 2026-03-31 | over the next quarter | 'next quarter' 2026-04-01..2026-06-30 quarter fiscal c=1
+fiscal 2026-03-31 | within the next 30 days | 'the next 30 days' 2026-04-01..2026-04-30 day fiscal c=1
+fiscal 2026-03-31 | in the next 2 weeks | 'the next 2 weeks' 2026-04-06..2026-04-19 week fiscal c=1
+fiscal 2026-03-31 | over the next quarter | 'the next quarter' 2026-04-01..2026-06-30 quarter fiscal c=1
 fiscal 2026-03-31 | last 12 months | 'last 12 months' 2025-03-01..2026-02-28 month fiscal c=1
 fiscal 2026-03-31 | past 12 months | 'past 12 months' 2025-03-01..2026-02-28 month fiscal c=1
 fiscal 2026-03-31 | trailing twelve months | 'trailing twelve months' 2025-03-01..2026-02-28 month fiscal c=1
@@ -1002,6 +1032,16 @@ fiscal 2026-03-31 | FY24 - Q3 | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fisca
 fiscal 2026-03-31 | FY24 - Q3 results | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fiscal c=1
 fiscal 2026-03-31 | 2023 - H2 2024 | '2023 - H2 2024' 2022-04-01..2024-03-31 year fiscal c=0.8
 fiscal 2026-03-31 | FY24, March | 'FY24' 2023-04-01..2024-03-31 year fiscal c=1 ; 'March' 2024-03-01..2024-03-31 month fiscal c=1
+fiscal 2026-03-31 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
+fiscal 2026-03-31 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
+fiscal 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | the March figures | 'March' 2026-03-01..2026-03-31 month calendar c=1
+fiscal 2026-03-31 | the 15 March meeting | '15 March' 2026-03-15..2026-03-15 day calendar c=1
+fiscal 2026-03-31 | since the last quarter | 'since the last quarter' 2025-10-01..... quarter fiscal since c=1
+fiscal 2026-03-31 | before the last week | 'before the last week' .....2026-03-22 week fiscal before c=1
+fiscal 2026-03-31 | after the first quarter | 'after the first quarter' 2025-07-01..... quarter fiscal after c=1
+fiscal 2026-03-31 | up to the previous month | 'up to the previous month' .....2026-02-28 month fiscal until c=1
+fiscal 2026-03-31 | since the year 2013 | 'since the year 2013' 2012-04-01..... year fiscal since c=1
 fiscal 2026-03-31 | compare Q1 2024 to Q1 2025 | 'Q1 2024' 2023-04-01..2023-06-30 quarter fiscal c=1 ; 'Q1 2025' 2024-04-01..2024-06-30 quarter fiscal c=1
 fiscal 2026-03-31 | Q1 2024 vs Q1 2025 | 'Q1 2024' 2023-04-01..2023-06-30 quarter fiscal c=1 ; 'Q1 2025' 2024-04-01..2024-06-30 quarter fiscal c=1
 fiscal 2026-03-31 | last week vs this week | 'last week' 2026-03-23..2026-03-29 week fiscal c=1 ; 'this week' 2026-03-30..2026-04-05 week fiscal c=1
@@ -1024,7 +1064,7 @@ us 2026-10-08 | Mar-24 | 'Mar-24' 2024-03-01..2024-03-31 month calendar c=1
 us 2026-10-08 | March 2024 | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1
 us 2026-10-08 | March | 'March' 2026-03-01..2026-03-31 month calendar c=1
 us 2026-10-08 | 2024 | '2024' 2024-01-01..2024-12-31 year calendar c=0.8
-us 2026-10-08 | the year 2013 | 'year 2013' 2013-01-01..2013-12-31 year calendar c=1
+us 2026-10-08 | the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-10-08 | FY25 | 'FY25' 2025-10-01..2026-09-30 year fiscal c=1
 us 2026-10-08 | FY2025 | 'FY2025' 2025-10-01..2026-09-30 year fiscal c=1
 us 2026-10-08 | FY2024-25 | 'FY2024-25' 2024-10-01..2025-09-30 year fiscal c=1
@@ -1155,8 +1195,8 @@ us 2026-10-08 | the last month of the year | 'the last month of the year' 2026-1
 us 2026-10-08 | the last week of March | 'the last week of March' 2026-03-25..2026-03-31 week calendar c=1
 us 2026-10-08 | the first week of April | 'the first week of April' 2026-04-01..2026-04-07 week calendar c=1
 us 2026-10-08 | the last month of the quarter | 'the last month of the quarter' 2026-12-01..2026-12-31 month calendar c=1
-us 2026-10-08 | the first quarter | 'first quarter' 2026-01-01..2026-03-31 quarter calendar c=1
-us 2026-10-08 | the fourth quarter of 2024 | 'fourth quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
+us 2026-10-08 | the first quarter | 'the first quarter' 2026-01-01..2026-03-31 quarter calendar c=1
+us 2026-10-08 | the fourth quarter of 2024 | 'the fourth quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
 us 2026-10-08 | the second half of last year | 'the second half of last year' 2025-07-01..2025-12-31 month calendar c=1
 us 2026-10-08 | the last half of 2024 | 'the last half of 2024' 2024-07-01..2024-12-31 month calendar c=1
 us 2026-10-08 | first week of next month | 'first week of next month' 2026-11-01..2026-11-07 week calendar c=1
@@ -1192,7 +1232,7 @@ us 2026-10-08 | 2024-Q3 | '2024-Q3' 2024-07-01..2024-09-30 quarter calendar c=1
 us 2026-10-08 | 1H24 | '1H24' 2024-01-01..2024-06-30 half calendar c=1
 us 2026-10-08 | H1'25 | "H1'25" 2025-01-01..2025-06-30 half calendar c=1
 us 2026-10-08 | Q3 2024 | 'Q3 2024' 2024-07-01..2024-09-30 quarter calendar c=1
-us 2026-10-08 | the third quarter | 'third quarter' 2026-07-01..2026-09-30 quarter calendar c=1
+us 2026-10-08 | the third quarter | 'the third quarter' 2026-07-01..2026-09-30 quarter calendar c=1
 us 2026-10-08 | second quarter of 2025 | 'second quarter of 2025' 2025-04-01..2025-06-30 quarter calendar c=1
 us 2026-10-08 | the 2020s | 'the 2020s' 2020-01-01..2029-12-31 year calendar c=1
 us 2026-10-08 | the '90s | (none)
@@ -1217,9 +1257,9 @@ us 2026-10-08 | 12 months ending March 2024 | '12 months ending March 2024' 2023
 us 2026-10-08 | the half year to 30 September 2024 | 'the half year to 30 September 2024' 2024-04-01..2024-09-30 half calendar c=1
 us 2026-10-08 | as at 31 March 2024 | 'as at 31 March 2024' 2024-03-31..2024-03-31 day calendar as_of c=1
 us 2026-10-08 | the quarter to June | 'the quarter to June' 2026-04-01..2026-06-30 quarter calendar c=1
-us 2026-10-08 | within the next 30 days | 'next 30 days' 2026-10-09..2026-11-07 day calendar c=1
-us 2026-10-08 | in the next 2 weeks | 'next 2 weeks' 2026-10-11..2026-10-24 week calendar c=1
-us 2026-10-08 | over the next quarter | 'next quarter' 2027-01-01..2027-03-31 quarter calendar c=1
+us 2026-10-08 | within the next 30 days | 'the next 30 days' 2026-10-09..2026-11-07 day calendar c=1
+us 2026-10-08 | in the next 2 weeks | 'the next 2 weeks' 2026-10-11..2026-10-24 week calendar c=1
+us 2026-10-08 | over the next quarter | 'the next quarter' 2027-01-01..2027-03-31 quarter calendar c=1
 us 2026-10-08 | last 12 months | 'last 12 months' 2025-10-01..2026-09-30 month calendar c=1
 us 2026-10-08 | past 12 months | 'past 12 months' 2025-10-01..2026-09-30 month calendar c=1
 us 2026-10-08 | trailing twelve months | 'trailing twelve months' 2025-10-01..2026-09-30 month calendar c=1
@@ -1256,6 +1296,16 @@ us 2026-10-08 | FY24 - Q3 | 'FY24 - Q3' 2025-04-01..2025-06-30 quarter fiscal c=
 us 2026-10-08 | FY24 - Q3 results | 'FY24 - Q3' 2025-04-01..2025-06-30 quarter fiscal c=1
 us 2026-10-08 | 2023 - H2 2024 | '2023 - H2 2024' 2023-01-01..2024-12-31 year calendar c=0.8
 us 2026-10-08 | FY24, March | 'FY24' 2024-10-01..2025-09-30 year fiscal c=1 ; 'March' 2025-03-01..2025-03-31 month fiscal c=1
+us 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
+us 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
+us 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
+us 2026-10-08 | the March figures | 'March' 2026-03-01..2026-03-31 month calendar c=1
+us 2026-10-08 | the 15 March meeting | '15 March' 2026-03-15..2026-03-15 day calendar c=1
+us 2026-10-08 | since the last quarter | 'since the last quarter' 2026-07-01..... quarter calendar since c=1
+us 2026-10-08 | before the last week | 'before the last week' .....2026-09-26 week calendar before c=1
+us 2026-10-08 | after the first quarter | 'after the first quarter' 2026-04-01..... quarter calendar after c=1
+us 2026-10-08 | up to the previous month | 'up to the previous month' .....2026-09-30 month calendar until c=1
+us 2026-10-08 | since the year 2013 | 'since the year 2013' 2013-01-01..... year calendar since c=1
 us 2026-10-08 | compare Q1 2024 to Q1 2025 | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 ; 'Q1 2025' 2025-01-01..2025-03-31 quarter calendar c=1
 us 2026-10-08 | Q1 2024 vs Q1 2025 | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 ; 'Q1 2025' 2025-01-01..2025-03-31 quarter calendar c=1
 us 2026-10-08 | last week vs this week | 'last week' 2026-09-27..2026-10-03 week calendar c=1 ; 'this week' 2026-10-04..2026-10-10 week calendar c=1
@@ -1278,7 +1328,7 @@ us 2026-03-31 | Mar-24 | 'Mar-24' 2024-03-01..2024-03-31 month calendar c=1
 us 2026-03-31 | March 2024 | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1
 us 2026-03-31 | March | 'March' 2026-03-01..2026-03-31 month calendar c=1
 us 2026-03-31 | 2024 | '2024' 2024-01-01..2024-12-31 year calendar c=0.8
-us 2026-03-31 | the year 2013 | 'year 2013' 2013-01-01..2013-12-31 year calendar c=1
+us 2026-03-31 | the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-03-31 | FY25 | 'FY25' 2025-10-01..2026-09-30 year fiscal c=1
 us 2026-03-31 | FY2025 | 'FY2025' 2025-10-01..2026-09-30 year fiscal c=1
 us 2026-03-31 | FY2024-25 | 'FY2024-25' 2024-10-01..2025-09-30 year fiscal c=1
@@ -1409,8 +1459,8 @@ us 2026-03-31 | the last month of the year | 'the last month of the year' 2026-1
 us 2026-03-31 | the last week of March | 'the last week of March' 2026-03-25..2026-03-31 week calendar c=1
 us 2026-03-31 | the first week of April | 'the first week of April' 2026-04-01..2026-04-07 week calendar c=1
 us 2026-03-31 | the last month of the quarter | 'the last month of the quarter' 2026-03-01..2026-03-31 month calendar c=1
-us 2026-03-31 | the first quarter | 'first quarter' 2026-01-01..2026-03-31 quarter calendar c=1
-us 2026-03-31 | the fourth quarter of 2024 | 'fourth quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
+us 2026-03-31 | the first quarter | 'the first quarter' 2026-01-01..2026-03-31 quarter calendar c=1
+us 2026-03-31 | the fourth quarter of 2024 | 'the fourth quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
 us 2026-03-31 | the second half of last year | 'the second half of last year' 2025-07-01..2025-12-31 month calendar c=1
 us 2026-03-31 | the last half of 2024 | 'the last half of 2024' 2024-07-01..2024-12-31 month calendar c=1
 us 2026-03-31 | first week of next month | 'first week of next month' 2026-04-01..2026-04-07 week calendar c=1
@@ -1446,7 +1496,7 @@ us 2026-03-31 | 2024-Q3 | '2024-Q3' 2024-07-01..2024-09-30 quarter calendar c=1
 us 2026-03-31 | 1H24 | '1H24' 2024-01-01..2024-06-30 half calendar c=1
 us 2026-03-31 | H1'25 | "H1'25" 2025-01-01..2025-06-30 half calendar c=1
 us 2026-03-31 | Q3 2024 | 'Q3 2024' 2024-07-01..2024-09-30 quarter calendar c=1
-us 2026-03-31 | the third quarter | 'third quarter' 2026-07-01..2026-09-30 quarter calendar c=1
+us 2026-03-31 | the third quarter | 'the third quarter' 2026-07-01..2026-09-30 quarter calendar c=1
 us 2026-03-31 | second quarter of 2025 | 'second quarter of 2025' 2025-04-01..2025-06-30 quarter calendar c=1
 us 2026-03-31 | the 2020s | 'the 2020s' 2020-01-01..2029-12-31 year calendar c=1
 us 2026-03-31 | the '90s | (none)
@@ -1471,9 +1521,9 @@ us 2026-03-31 | 12 months ending March 2024 | '12 months ending March 2024' 2023
 us 2026-03-31 | the half year to 30 September 2024 | 'the half year to 30 September 2024' 2024-04-01..2024-09-30 half calendar c=1
 us 2026-03-31 | as at 31 March 2024 | 'as at 31 March 2024' 2024-03-31..2024-03-31 day calendar as_of c=1
 us 2026-03-31 | the quarter to June | 'the quarter to June' 2025-04-01..2025-06-30 quarter calendar c=1
-us 2026-03-31 | within the next 30 days | 'next 30 days' 2026-04-01..2026-04-30 day calendar c=1
-us 2026-03-31 | in the next 2 weeks | 'next 2 weeks' 2026-04-05..2026-04-18 week calendar c=1
-us 2026-03-31 | over the next quarter | 'next quarter' 2026-04-01..2026-06-30 quarter calendar c=1
+us 2026-03-31 | within the next 30 days | 'the next 30 days' 2026-04-01..2026-04-30 day calendar c=1
+us 2026-03-31 | in the next 2 weeks | 'the next 2 weeks' 2026-04-05..2026-04-18 week calendar c=1
+us 2026-03-31 | over the next quarter | 'the next quarter' 2026-04-01..2026-06-30 quarter calendar c=1
 us 2026-03-31 | last 12 months | 'last 12 months' 2025-03-01..2026-02-28 month calendar c=1
 us 2026-03-31 | past 12 months | 'past 12 months' 2025-03-01..2026-02-28 month calendar c=1
 us 2026-03-31 | trailing twelve months | 'trailing twelve months' 2025-03-01..2026-02-28 month calendar c=1
@@ -1510,6 +1560,16 @@ us 2026-03-31 | FY24 - Q3 | 'FY24 - Q3' 2025-04-01..2025-06-30 quarter fiscal c=
 us 2026-03-31 | FY24 - Q3 results | 'FY24 - Q3' 2025-04-01..2025-06-30 quarter fiscal c=1
 us 2026-03-31 | 2023 - H2 2024 | '2023 - H2 2024' 2023-01-01..2024-12-31 year calendar c=0.8
 us 2026-03-31 | FY24, March | 'FY24' 2024-10-01..2025-09-30 year fiscal c=1 ; 'March' 2025-03-01..2025-03-31 month fiscal c=1
+us 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
+us 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
+us 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1
+us 2026-03-31 | the March figures | 'March' 2026-03-01..2026-03-31 month calendar c=1
+us 2026-03-31 | the 15 March meeting | '15 March' 2026-03-15..2026-03-15 day calendar c=1
+us 2026-03-31 | since the last quarter | 'since the last quarter' 2025-10-01..... quarter calendar since c=1
+us 2026-03-31 | before the last week | 'before the last week' .....2026-03-21 week calendar before c=1
+us 2026-03-31 | after the first quarter | 'after the first quarter' 2026-04-01..... quarter calendar after c=1
+us 2026-03-31 | up to the previous month | 'up to the previous month' .....2026-02-28 month calendar until c=1
+us 2026-03-31 | since the year 2013 | 'since the year 2013' 2013-01-01..... year calendar since c=1
 us 2026-03-31 | compare Q1 2024 to Q1 2025 | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 ; 'Q1 2025' 2025-01-01..2025-03-31 quarter calendar c=1
 us 2026-03-31 | Q1 2024 vs Q1 2025 | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 ; 'Q1 2025' 2025-01-01..2025-03-31 quarter calendar c=1
 us 2026-03-31 | last week vs this week | 'last week' 2026-03-22..2026-03-28 week calendar c=1 ; 'this week' 2026-03-29..2026-04-04 week calendar c=1

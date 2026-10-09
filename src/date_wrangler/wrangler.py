@@ -566,8 +566,13 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
             m = pattern.match(text[raw.end : raw.end + 24])
             assert m is not None
             return _Raw(raw.rule, raw.spec.with_(mod=mod), raw.start, raw.end + m.end())
-    window = max(floor, raw.start - 24)
+    window = max(floor, raw.start - 28)
     before = text[window : raw.start]
+    # Past a "the": "since the last quarter" is open-ended. REGRESSION: the article hid the
+    # prefix, and the answer was the closed quarter at full confidence.
+    article = _ARTICLE.search(before)
+    if article is not None:
+        before = before[: article.start()]
     for pattern, mod in _MOD_PREFIXES:
         m = pattern.search(before)
         if m:
@@ -698,7 +703,37 @@ def parse(
             floor = max(floor, raws[i].end)
         i += 1
     _diagnostics_to_original(diagnostics, mark, norm)
-    return _flag_unread_qualifiers(matches, body, norm, diagnostics)
+    return _take_article(_flag_unread_qualifiers(matches, body, norm, diagnostics), norm.original)
+
+
+_ARTICLE = re.compile(r"(?<![\w'])the\s+$", re.IGNORECASE)
+#: Matches that can describe a noun -- "the March figures", "the Q1 numbers", "the 15 March
+#: meeting" -- and so leave "the" to the noun. An ordinal is not one: "the 15th of March".
+_DESCRIBES = re.compile(
+    rf"(?:{alt(MONTH_NAMES)}|{alt(WEEKDAY_NAMES)}|today|yesterday|tomorrow)\b"
+    r"|'|\d(?!\d*(?:st|nd|rd|th)\b)|[qh]\s*\d|[fc]\.?y\.?\s*'?\d",
+    re.IGNORECASE,
+)
+
+
+def _take_article(matches: list[DateMatch], text: str) -> list[DateMatch]:
+    """Give "the" to the phrase it belongs to: "the year 2013", "the last quarter".
+
+    It was left outside the match, so replacing the phrase kept it and wrote "sales for the
+    January 2013 to December 2013". "the 1990s" always took its "the". A match that can
+    describe a noun -- "the March figures" -- leaves it alone, since there the article is
+    the noun's: "the March 2026 figures" is the right rewrite.
+    """
+    out: list[DateMatch] = []
+    floor = 0
+    for m in matches:
+        lo, hi = m.span
+        article = _ARTICLE.search(text, max(floor, lo - 12), lo)
+        if article is not None and not _DESCRIBES.match(m.text):
+            m = replace(m, text=text[article.start() : hi], span=(article.start(), hi))
+        out.append(m)
+        floor = m.span[1]
+    return out
 
 
 def _diagnostics_to_original(

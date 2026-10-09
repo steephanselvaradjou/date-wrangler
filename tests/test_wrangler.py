@@ -999,3 +999,52 @@ def test_month_number_year_reads_the_authors_range_correctly():
 
     cfg = WranglerConfig(month_number=MonthNumber.YEAR)
     assert rng("jan 24-mar 2025", cfg) == (date(2024, 1, 1), date(2025, 4, 1))
+
+
+# ---------------------------------------------------------------------------
+# "the" belongs to the phrase it introduces
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("sales for the year 2013", "sales for January 2013 to December 2013"),
+        ("sales for the fiscal year 2025", "sales for April 2024 to March 2025"),
+        ("sales for the last quarter", "sales for April 2025 to June 2025"),
+        ("sales for the first quarter", "sales for January 2025 to March 2025"),
+        ("on the 15th of March", "on 15 March 2025"),
+    ],
+)
+def test_the_is_replaced_with_the_phrase_it_introduces(text, expected):
+    """REGRESSION: "the" was left outside the match, so replacing gave "sales for the
+    January 2013 to December 2013"."""
+    assert substitute(text, today=TODAY) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("the March figures", "the March 2025 figures"),
+        ("the 15 March meeting", "the 15 March 2025 meeting"),
+    ],
+)
+def test_the_stays_with_the_noun_a_date_describes(text, expected):
+    assert substitute(text, today=TODAY) == expected
+
+
+@pytest.mark.parametrize(
+    "text,start,end,mod",
+    [
+        ("since the last quarter", date(2025, 4, 1), None, Mod.SINCE),
+        ("after the first quarter", date(2025, 4, 1), None, Mod.AFTER),
+        ("before the last week", None, date(2025, 8, 25), Mod.BEFORE),
+        ("up to the previous month", None, date(2025, 9, 1), Mod.UNTIL),
+        ("since the year 2013", date(2013, 1, 1), None, Mod.SINCE),
+    ],
+)
+def test_an_open_end_is_read_past_the(text, start, end, mod):
+    """REGRESSION: the article hid the prefix, so "since the last quarter" was the closed
+    quarter at full confidence -- the opposite of open-ended."""
+    r = parse_one(text, today=TODAY).range
+    assert (r.start, r.end, r.mod) == (start, end, mod)
