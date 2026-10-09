@@ -1062,6 +1062,55 @@ _DAY_JOIN = r"\s*(?:-|to|until|till|through|thru)\s*"
 _DAY_NUM = r"\d{1,2}(?:st|nd|rd|th)?"
 
 
+#: A single day in the forms people write after "the week of".
+_ONE_DAY = (
+    r"(?:\d{4}-\d{1,2}-\d{1,2}"
+    r"|\d{1,2}[/.]\d{1,2}[/.]\d{2,4}"
+    rf"|\d{{1,2}}(?:st|nd|rd|th)?\s+(?:of\s+)?{_MONTH}(?:,?\s+\d{{4}})?"
+    rf"|{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\d)(?:,?\s*\d{{4}})?"
+    r"|\d{1,2}(?:st|nd|rd|th)(?!\s*\w))"  # "the week of the 5th": a day of this month
+)
+_ONE_MONTH = rf"{_MONTH}(?:\s+(?:of\s+)?(?:{_FY_WORD}{_SEP}'?\d{{2,4}}|\d{{4}}))?"
+_WITHIN_HEAD = re.compile(
+    r"\s*(?:the\s+)?(?:(?P<unit>week|month|quarter|half|year)\s+of"
+    r"|(?P<from>week\s+(?:commencing|beginning|starting)|w/c))\s+(?:the\s+)?",
+    re.IGNORECASE,
+)
+
+
+def _p_within(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"the week of 5 October", "the quarter of June", "week commencing 5 October".
+
+    REGRESSION: only the date was read, so "the week of 5 October" was that one day at
+    full confidence. "of" names the period that holds the date; "commencing" (or
+    "beginning", "starting", "w/c") the seven days from it.
+    """
+    head = _WITHIN_HEAD.match(text)
+    if head is None:
+        return None
+    rest = text[head.end() :]
+    # Pick the reader by shape: "June 2024" must not be read as 20 June.
+    if re.match(r"\d{4}-", rest):
+        spec = _p_iso(rest, cfg)
+    elif re.match(r"\d{1,2}[/.]", rest):
+        spec = _p_numeric(rest, cfg)
+    elif re.fullmatch(r"\d{1,2}(?:st|nd|rd|th)\s*", rest, re.IGNORECASE):
+        spec = _p_ordinal_day(rest, cfg)
+        spec = spec.with_(confidence=1.0) if spec is not None else None  # "week of" says so
+    elif re.match(r"\d", rest):
+        spec = _p_day_month_year(rest, cfg)
+    elif re.match(rf"{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\d)", rest, re.IGNORECASE):
+        spec = _p_month_day_year(rest, cfg)
+    else:
+        spec = _p_month(rest, cfg)
+    if spec is None:
+        return None
+    if head.group("from"):
+        one_day = spec.kind is Kind.ABS_DAY or spec.day_of_period is not None
+        return spec.with_(week_from=True) if one_day else None
+    return spec.with_(within=Grain[head.group("unit").upper()])
+
+
 def _p_day_span(text: str, cfg: WranglerConfig) -> Spec | None:
     """"1-15 March", "1st to 15th March", "March 1-15", "March 1 to 15, 2024", and
     "between 1 and 15 March" -- the one place "and" joins two days into a run.
@@ -1410,6 +1459,16 @@ RULES: tuple[Rule, ...] = (
     Rule("trailing_months", r"\b(?:ttm|ltm|[tl]\d{1,2}m)\b", _p_trailing_months),
     # Before "half" and "quarter": "first half of March" opens with something the half
     # rule will happily claim as fiscal H1, throwing the month away.
+    # The period that holds a date: ahead of period_edge, which reads "week beginning" as
+    # the start of this week, and week_number, which starts at the same "week". A week or
+    # month holds a day; a quarter, half or year may hold a month too.
+    Rule(
+        "within",
+        rf"\b(?:the\s+)?(?:(?:week|month)\s+of\s+(?:the\s+)?{_ONE_DAY}"
+        rf"|(?:quarter|half|year)\s+of\s+(?:the\s+)?(?:{_ONE_DAY}|{_ONE_MONTH})"
+        rf"|(?:week\s+(?:commencing|beginning|starting)|w/c)\s+(?:the\s+)?{_ONE_DAY})\b",
+        _p_within,
+    ),
     # Before "part_of": "month end" is an edge of the current period, and part_of would
     # read the bare unit as the whole of it.
     Rule(

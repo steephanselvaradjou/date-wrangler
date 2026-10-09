@@ -20,7 +20,7 @@ from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
 from .rules import RULES, Rule
 from .spec import Kind, Part, Spec
-from .types import DateMatch, DateRange, Mod, grain_rank
+from .types import DateMatch, DateRange, Grain, Mod, grain_rank
 from .vocab import (
     FUTURE_WORDS,
     MONTH_NAMES,
@@ -273,6 +273,11 @@ _ENDS_IN_WEEKDAY = re.compile(rf"\b(?:{alt(WEEKDAY_NAMES)})\s*$", re.IGNORECASE)
 #: "a week on Monday", "two weeks from Friday" -- a weekday pushed on by a stated count.
 _WEEKS_ON = re.compile(
     r"\b(?:a|one|two|three|\d+)\s+weeks?\s+(?:on|from)\s+$", re.IGNORECASE
+)
+#: "the week of", "the quarter of", "week commencing" -- a period named by a date in it.
+_UNIT_OF = re.compile(
+    r"\b(week|month|quarter|half|year)\s+(?:of|commencing|beginning|starting)\s+(?:the\s+)?$",
+    re.IGNORECASE,
 )
 _QUALIFIER_BEFORE = re.compile(
     r"\b(?:first\s+half|second\s+half|latter\s+half|beginning|start|early|middle|mid|late|"
@@ -584,7 +589,7 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
     before = text[window : raw.start]
     # Past a "the": "since the last quarter" is open-ended. REGRESSION: the article hid the
     # prefix, and the answer was the closed quarter at full confidence.
-    article = _ARTICLE.search(before)
+    article = _ARTICLE.search(before) if "the" in before.lower() else None
     if article is not None:
         before = before[: article.start()]
     for pattern, mod in _MOD_PREFIXES:
@@ -742,7 +747,13 @@ def _take_article(matches: list[DateMatch], text: str) -> list[DateMatch]:
     floor = 0
     for m in matches:
         lo, hi = m.span
-        article = _ARTICLE.search(text, max(floor, lo - 12), lo)
+        start = max(floor, lo - 12)
+        # Most matches have no "the" in front; a substring test turns them away cheaply.
+        if "the" not in text[start:lo].lower():
+            out.append(m)
+            floor = hi
+            continue
+        article = _ARTICLE.search(text, start, lo)
         if article is not None and not _DESCRIBES.match(m.text):
             m = replace(m, text=text[article.start() : hi], span=(article.start(), hi))
         out.append(m)
@@ -794,6 +805,15 @@ def _flag_unread_qualifiers(
             dropped = _NTH_TAIL.match(after)
         if dropped is None and _ENDS_IN_WEEKDAY.search(norm.original[lo:hi]):
             dropped = _WEEKDAY_THEN_WEEK.match(after) or _WEEKS_ON.search(before)
+        if dropped is None:
+            # "the quarter of <something not read as a month>": a bigger period that holds
+            # the date. "the month of March" is March, so only a coarser unit counts.
+            tail = before.rstrip().lower()
+            unit = _UNIT_OF.search(before) if tail.endswith(("of", "the", "ing")) else None
+            if unit is not None and grain_rank(Grain[unit.group(1).upper()]) > grain_rank(
+                m.range.grain
+            ):
+                dropped = unit
         if dropped is None:
             out.append(m)
             continue

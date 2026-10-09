@@ -109,6 +109,11 @@ PHRASES = [
     "after the first quarter", "up to the previous month", "since the year 2013",
     "from the 15th of March", "from 15th of March", "from the last day of March",
     "from the first Monday of March", "two weeks from the 15th", "a month from the 15th of March",
+    # the period that holds a date
+    "the week of 5 October", "the week of October 5", "week of 2026-10-07", "the week of the 5th",
+    "week commencing 5 October", "w/c 7 Oct", "week beginning 7 October 2026",
+    "the quarter of June", "the quarter of June FY25", "the year of 15 March 2024",
+    "the month of March", "the week of last Monday", "the quarter of last month",
     "compare Q1 2024 to Q1 2025", "Q1 2024 vs Q1 2025", "last week vs this week",
     # sentences
     "How much did we book between April and September 2024?",
