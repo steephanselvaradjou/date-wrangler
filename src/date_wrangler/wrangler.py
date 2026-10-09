@@ -1029,9 +1029,11 @@ def substitute(
     from .format import format_range
 
     render = formatter or format_range
-    found = parse(text, today=today, tz=tz, config=config)
     if keep_text:
-        return _annotate(text, found, render, min_confidence, today, tz, config)
+        # One day for every read, so a call that straddles midnight cannot mix two.
+        day = _resolve_today(today, tz)
+        return _annotate(text, render, min_confidence, lambda s: parse(s, today=day, config=config))
+    found = parse(text, today=today, tz=tz, config=config)
     out = text
     for match in reversed(found):
         if match.confidence < min_confidence:
@@ -1043,12 +1045,9 @@ def substitute(
 
 def _annotate(
     text: str,
-    found: list[DateMatch],
     render: Callable[[DateRange], str],
     min_confidence: float,
-    today: date | datetime | None,
-    tz: tzinfo | None,
-    config: WranglerConfig,
+    read: Callable[[str], list[DateMatch]],
 ) -> str:
     """``substitute(keep_text=True)``: put each phrase's dates after it, in brackets.
 
@@ -1057,15 +1056,11 @@ def _annotate(
     them. Reading only what the first pass read is what makes a second pass add nothing:
     leaving the brackets in would change the text around *other* phrases, and a bare year
     that had no cue the first time could pick one up from the inserted dates.
+
+    The brackets are found first, from a few words each, so the whole text is read once.
     """
-
-    def read(s: str) -> list[DateMatch]:
-        return parse(s, today=today, tz=tz, config=config)
-
     removed = _annotations_in(text, render, read)
-    if removed:
-        found = read(_without(text, removed))
-
+    found = read(_without(text, removed))
     annotated = {_to_bare(lo, removed) for lo, _ in removed}
     inserts: list[tuple[int, str]] = []
     for match in found:
@@ -1101,13 +1096,22 @@ def _annotations_in(
     exactly the brackets the first one wrote. "revenue (Q1 2024) grew" is not one:
     "revenue" is not a date.
     """
+    seen: dict[str, list[DateMatch]] = {}
+
+    def once(s: str) -> list[DateMatch]:
+        # A document repeats its phrases -- "last quarter", the same dates -- so each few
+        # words are read once however often they come round.
+        if s not in seen:
+            seen[s] = read(s)
+        return seen[s]
+
     out: list[tuple[int, int]] = []
     for m in _BRACKETS.finditer(text):
         inner = m.group(1)
         if not inner:
             continue
-        before = _dates_ending_at(text, m.start(), read)
-        if _only_dates(inner, read):
+        before = _dates_ending_at(text, m.start(), once)
+        if _only_dates(inner, once):
             if next(before, None) is not None:
                 out.append(m.span())
         # The fallback reads every window, so only for something a formatter could have
