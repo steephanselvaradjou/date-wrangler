@@ -11,7 +11,7 @@ resolved.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, datetime, tzinfo
 
@@ -426,6 +426,11 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
             links.append("list")
         elif _STRONG_LINK.match(gap) or _WEAK_LINK.match(gap):
             lead = text[max(0, a.start - 40) : a.start]
+            opened = lead.rfind("(")
+            if opened > lead.rfind(")"):
+                # Inside brackets, a "compare" outside them does not reach in: in "compare
+                # Q1 2024 (January 2024 to March 2024) to Q1 2025" the bracket is one span.
+                lead = lead[opened + 1 :]
             links.append("compare" if _COMPARISON_LEAD.search(lead) else "range")
         else:
             links.append(None)
@@ -459,7 +464,8 @@ def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
     """Share one stated year across a list, or across a comparison.
 
     "Jan, Feb, Mar 2024" is three months of the same year, and comparing "Q1 versus
-    Q2 2024" across two different years defeats the point.
+    Q2 2024" across two different years defeats the point. The year's basis travels with
+    it: in "Q1, Q2 and Q3 of FY25" all three are fiscal quarters, not just the last.
     """
     shared = ("list", "compare")
     i = 0
@@ -471,11 +477,14 @@ def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
         while j < len(links) and links[j] in shared:
             j += 1
         members = raws[i : j + 1]
-        years = [r.spec.year for r in members if r.spec.year is not None]
-        if years:
+        stated = [r.spec for r in members if r.spec.year is not None]
+        if stated:
+            year, basis = stated[-1].year, stated[-1].basis
             for r in members:
                 if r.spec.year is None and not r.spec.is_relative:
-                    r.spec = r.spec.with_(year=years[-1])
+                    r.spec = r.spec.with_(year=year)
+                    if r.spec.basis is None and basis is not None:
+                        r.spec = r.spec.with_(basis=basis)
         i = j
 
 
@@ -483,7 +492,11 @@ def _unify(a: Spec, b: Spec) -> tuple[Spec, Spec]:
     """Make both endpoints agree on year and basis before resolving.
 
     Otherwise "Q1 to Q2 of 2024" resolves one end fiscally, the other on the calendar.
+
+    A month or day with a plain year of its own keeps the calendar: "March 2024" is March
+    2024, and joining it to "FY24" must not turn it into the March of fiscal 2024.
     """
+    a_dated, b_dated = _is_dated_month(a), _is_dated_month(b)
     if not a.is_relative and not b.is_relative:
         if a.year is None and b.year is not None:
             a = a.with_(year=b.year)
@@ -491,11 +504,16 @@ def _unify(a: Spec, b: Spec) -> tuple[Spec, Spec]:
             b = b.with_(year=a.year)
     basis = a.basis if a.basis is not None else b.basis
     if basis is not None:
-        if a.basis is None:
+        if a.basis is None and not a_dated:
             a = a.with_(basis=basis)
-        if b.basis is None:
+        if b.basis is None and not b_dated:
             b = b.with_(basis=basis)
     return a, b
+
+
+def _is_dated_month(spec: Spec) -> bool:
+    """A month or day that names its own year: a calendar fact, whatever it is joined to."""
+    return spec.kind in (Kind.ABS_MONTH, Kind.ABS_DAY) and spec.year is not None
 
 
 # ---------------------------------------------------------------------------
@@ -598,8 +616,10 @@ def parse(
     norm = normalize(text)
     body = norm.text
 
+    mark = len(diagnostics) if diagnostics is not None else 0
     raws = _scan(body, config, diagnostics)
     if not raws:
+        _diagnostics_to_original(diagnostics, mark, norm)
         return []
 
     links = _demote_lists(_link_kinds(raws, body))
@@ -644,7 +664,25 @@ def parse(
             matches.append(single)
             floor = max(floor, raws[i].end)
         i += 1
+    _diagnostics_to_original(diagnostics, mark, norm)
     return _flag_unread_qualifiers(matches, body, norm, diagnostics)
+
+
+def _diagnostics_to_original(
+    diags: list[Diagnostic] | None, mark: int, norm: Normalized
+) -> None:
+    """Re-point the diagnostics added since ``mark`` at the caller's string.
+
+    They are found in the normalised text, where "¼" is three characters, so a span taken
+    there can run past the end of what the caller passed. Matches are mapped in
+    :func:`_emit`; this does the same for everything that did not become one.
+    """
+    if diags is None:
+        return
+    for k in range(mark, len(diags)):
+        d = diags[k]
+        lo, hi = norm.to_original(*d.span)
+        diags[k] = replace(d, text=norm.original[lo:hi], span=(lo, hi))
 
 
 def _flag_unread_qualifiers(
@@ -955,27 +993,47 @@ def substitute(
     tz: tzinfo | None = None,
     config: WranglerConfig = DEFAULT_CONFIG,
     formatter: Callable[[DateRange], str] | None = None,
-    min_confidence: float = 0.0,
+    min_confidence: float = 0.6,
+    keep_text: bool = False,
 ) -> str:
     """Rewrite every date expression in ``text``. Only the matched phrase changes.
 
-    ``min_confidence`` leaves anything below it exactly as the writer typed it. Raise it
-    whenever the output will be read as fact -- by a person or by a model -- because this
-    is the one function that turns a flagged guess into a confident sentence:
+    By default the phrase is replaced by its dates. ``keep_text=True`` keeps the phrase and
+    puts the dates after it in brackets, so the label survives for whoever reads on and the
+    reading is there to check:
+
+        >>> substitute("sales of Q4", today=today)
+        'sales of October 2026 to December 2026'
+        >>> substitute("sales of Q4", today=today, keep_text=True)
+        'sales of Q4 (October 2026 to December 2026)'
+
+    With ``keep_text`` a phrase that already says what the brackets would -- "March 2024" --
+    is left alone, and so is one already followed by dates in brackets, whoever wrote them:
+    running it again on its own output adds nothing. ``formatter`` decides how the dates
+    look either way.
+
+    ``min_confidence`` leaves anything below it exactly as the writer typed it. This is the
+    one function that turns a guess into a confident sentence, so by default it declines
+    the guesses: a match flagged at 0.5 -- read only in part, or a list with a gap in it --
+    stays as typed, while 0.8 and up (a bare "2024", an all-numeric date) is rewritten:
 
         >>> substitute("revenue Q1 and Q3", today=today)
-        'revenue April 2026 to December 2026'          # Q2 is in there, unremarked
-        >>> substitute("revenue Q1 and Q3", today=today, min_confidence=0.9)
-        'revenue Q1 and Q3'
+        'revenue Q1 and Q3'                            # flagged: Q2 would be in there
+        >>> substitute("revenue Q1 and Q3", today=today, min_confidence=0)
+        'revenue January 2026 to September 2026'
 
-    Both of those phrases come back from :func:`diagnose` at confidence 0.5 with an
-    explanation. Rewriting them discards that explanation and leaves prose that reads as
-    settled, which is worse than leaving the original words alone. The default stays 0.0
-    so existing callers are unaffected; a future major version will raise it.
+    :func:`diagnose` returns that phrase at 0.5 with an explanation. Rewriting it discards
+    the explanation and leaves prose that reads as settled, which is worse than leaving the
+    original words alone. Pass ``min_confidence=0`` to rewrite everything, as before 1.0,
+    or raise it to 0.9 to keep bare years as typed as well.
     """
     from .format import format_range
 
     render = formatter or format_range
+    if keep_text:
+        # One day for every read, so a call that straddles midnight cannot mix two.
+        day = _resolve_today(today, tz)
+        return _annotate(text, render, min_confidence, lambda s: parse(s, today=day, config=config))
     found = parse(text, today=today, tz=tz, config=config)
     out = text
     for match in reversed(found):
@@ -984,3 +1042,152 @@ def substitute(
         lo, hi = match.span
         out = out[:lo] + render(match.range) + out[hi:]
     return out
+
+
+def _annotate(
+    text: str,
+    render: Callable[[DateRange], str],
+    min_confidence: float,
+    read: Callable[[str], list[DateMatch]],
+) -> str:
+    """``substitute(keep_text=True)``: put each phrase's dates after it, in brackets.
+
+    Brackets that already hold a phrase's dates -- from an earlier pass, on any day and
+    with any formatter, or from the writer -- are set aside and the rest is read without
+    them. Reading only what the first pass read is what makes a second pass add nothing:
+    leaving the brackets in would change the text around *other* phrases, and a bare year
+    that had no cue the first time could pick one up from the inserted dates.
+
+    The brackets are found first, from a few words each, so the whole text is read once.
+    """
+    removed = _annotations_in(text, render, read)
+    found = read(_without(text, removed))
+    annotated = {_to_bare(lo, removed) for lo, _ in removed}
+    inserts: list[tuple[int, str]] = []
+    for match in found:
+        hi = match.span[1]
+        if hi in annotated or match.confidence < min_confidence:
+            continue
+        dates = render(match.range)
+        if _same_words(match.text, dates):
+            continue
+        inserts.append((_to_text(hi, removed, end=True), f" ({dates})"))
+    out = text
+    for at, piece in reversed(inserts):
+        out = out[:at] + piece + out[at:]
+    return out
+
+
+_BRACKETS = re.compile(r"[ \t]*\([ \t]*([^()]*?)[ \t]*\)")
+
+
+#: How many words back to look for the date a pair of brackets annotates.
+_WORDS_BACK = 6
+
+
+def _annotations_in(
+    text: str, render: Callable[[DateRange], str], read: Callable[[str], list[DateMatch]]
+) -> list[tuple[int, int]]:
+    """Brackets that already annotate a date, as sorted spans of ``text``.
+
+    That is: a date ends right before them, and they hold dates and nothing else -- or
+    exactly what ``render`` writes for that date, for output that does not read back as
+    one. All of it is judged on those few words alone, never in context, so inserting
+    brackets elsewhere cannot change the verdict; that is what makes a second pass find
+    exactly the brackets the first one wrote. "revenue (Q1 2024) grew" is not one:
+    "revenue" is not a date.
+    """
+    seen: dict[str, list[DateMatch]] = {}
+
+    def once(s: str) -> list[DateMatch]:
+        # A document repeats its phrases -- "last quarter", the same dates -- so each few
+        # words are read once however often they come round.
+        if s not in seen:
+            seen[s] = read(s)
+        return seen[s]
+
+    out: list[tuple[int, int]] = []
+    for m in _BRACKETS.finditer(text):
+        inner = m.group(1)
+        if not inner:
+            continue
+        before = _dates_ending_at(text, m.start(), once)
+        if _only_dates(inner, once):
+            if next(before, None) is not None:
+                out.append(m.span())
+        # The fallback reads every window, so only for something a formatter could have
+        # written: a date that does not read back still has a number in it.
+        elif any(ch.isdigit() for ch in inner) and any(
+            _same_words(inner, render(d.range)) for d in before
+        ):
+            out.append(m.span())
+    return out
+
+
+#: Words a formatter may put between or around dates: "1 April to 30 June", "up to ...".
+_DATE_GLUE = re.compile(
+    r"\b(?:to|and|through|until|till|from|since|onwards|before|after|as\s+of|up\s+to)\b",
+    re.IGNORECASE,
+)
+
+
+def _only_dates(s: str, read: Callable[[str], list[DateMatch]]) -> bool:
+    """Whether ``s`` is dates and the words and marks that join them, and nothing else."""
+    found = read(s)
+    if not found:
+        return False
+    rest = list(s)
+    for m in found:
+        lo, hi = m.span
+        rest[lo:hi] = " " * (hi - lo)
+    leftover = _DATE_GLUE.sub(" ", "".join(rest))
+    return not any(ch.isalnum() for ch in leftover)
+
+
+def _dates_ending_at(
+    text: str, at: int, read: Callable[[str], list[DateMatch]]
+) -> Iterator[DateMatch]:
+    """The dates the last few words before ``at`` end in, each read on its own, the
+    shortest first -- lazily, because one is usually all that is asked for."""
+    head = text[max(0, at - 200) : at]
+    for start in reversed([w.start() for w in re.finditer(r"\S+", head)][-_WORDS_BACK:]):
+        words = head[start:]
+        found = read(words)
+        if found and found[-1].span[1] == len(words):
+            yield found[-1]
+
+
+def _without(text: str, removed: list[tuple[int, int]]) -> str:
+    """``text`` with the sorted, disjoint ``removed`` spans taken out."""
+    pieces, at = [], 0
+    for lo, hi in removed:
+        pieces.append(text[at:lo])
+        at = hi
+    pieces.append(text[at:])
+    return "".join(pieces)
+
+
+def _to_bare(pos: int, removed: list[tuple[int, int]]) -> int:
+    """A position in the text, as a position in the text with ``removed`` taken out."""
+    return pos - sum(hi - lo for lo, hi in removed if hi <= pos)
+
+
+def _to_text(pos: int, removed: list[tuple[int, int]], *, end: bool) -> int:
+    """A position in the text with ``removed`` taken out, back in the text.
+
+    Where a removed span sat exactly at ``pos``, ``end`` puts the result before it -- the
+    end of the phrase it follows -- and otherwise after it.
+    """
+    shift = 0
+    for lo, hi in removed:
+        at = lo - shift  # where this span sat in the shorter text
+        if at < pos or (at == pos and not end):
+            shift += hi - lo
+        else:
+            break
+    return pos + shift
+
+
+def _same_words(typed: str, dates: str) -> bool:
+    """Whether the brackets would only repeat the phrase: "March 2024 (March 2024)"."""
+    return " ".join(typed.split()).casefold() == " ".join(dates.split()).casefold()

@@ -11,14 +11,15 @@ from datetime import date
 
 import pytest
 
-from date_wrangler import FiscalCalendar, WranglerConfig, diagnose, parse, parse_one
+from date_wrangler import Basis, FiscalCalendar, WranglerConfig, diagnose, parse, parse_one
 
 TODAY = date(2026, 10, 8)  # FY27 Q3 on an April start
+FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)
 JAN = WranglerConfig(fiscal=FiscalCalendar.calendar())
 
 
 def one(text, cfg=None):
-    matches, diags = diagnose(text, today=TODAY, config=cfg or WranglerConfig())
+    matches, diags = diagnose(text, today=TODAY, config=cfg or FISCAL)
     assert len(matches) == 1, (text, matches)
     return matches[0], diags
 

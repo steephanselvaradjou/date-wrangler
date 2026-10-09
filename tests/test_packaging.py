@@ -38,3 +38,14 @@ def test_the_readme_repeats_no_version_number():
         if re.search(r"\b\d+\.\d+\.\d+\b", line):
             offenders.append(f"{number}: {line.strip()}")
     assert not offenders, "README pins a version that will go stale:\n" + "\n".join(offenders)
+
+
+def test_the_status_matches_the_version():
+    """The same trap from the other side: from 1.0 the README must stop saying the API may
+    still change, and PyPI must stop calling the package alpha."""
+    if int(date_wrangler.__version__.split(".")[0]) < 1:
+        return
+    readme = README.read_text(encoding="utf-8")
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "early development" not in readme
+    assert "Development Status :: 5 - Production/Stable" in pyproject

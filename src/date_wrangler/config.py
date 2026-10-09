@@ -118,21 +118,25 @@ class WranglerConfig:
 
     fiscal: FiscalCalendar = field(default_factory=FiscalCalendar)
 
-    #: What a bare "Q1"/"H1" means when no year and no fy/cy marker is present.
-    bare_period_basis: Basis = Basis.FISCAL
+    #: The default for ``year_basis`` when that is not set. Calendar, so out of the box
+    #: "Q1 2024" is January to March 2024, which is what most people who write it mean.
+    #: Kept under its old name so configurations written for earlier versions, which set it
+    #: to "fiscal", still mean fiscal.
+    bare_period_basis: Basis = Basis.CALENDAR
 
-    #: What "Q1 of 2024" means. None inherits ``bare_period_basis``, so that phrasing and
-    #: "Q1 2024" agree -- they should never land a year apart.
+    #: An optional override for a period "of" a numbered year -- "Q1 of 2024", "the second
+    #: half of 2024", "early 2024". None, the default, inherits ``year_basis``, which is
+    #: almost always what you want; set it only to read those one way and the rest another.
     of_year_basis: Basis | None = None  # None => inherit
 
-    #: What a year counted from today means when the phrase does not say: "this year",
-    #: "last year", "next 2 years", "2 years ago", "YTD", "this year to date". None inherits
-    #: ``bare_period_basis``, so by default these move together with a bare "Q1".
+    #: **The** basis setting. Every phrase that does not say fiscal or calendar is read on
+    #: it: "2024", "the year 2024", "Q4 2024", "Q3'24", "Q1", "H1", "last quarter", "QTD",
+    #: "this year", "YTD", "the second half of 2024", "the last quarter of 2024".
     #:
-    #: Set it apart when they should not -- the common case is a finance team whose "Q1" is
-    #: the fiscal quarter but whose "this year" is the calendar year. It never touches a
-    #: year that names itself: "2013" and "the year 2013" are calendar, and "FY2013" and
-    #: "this fiscal year" are fiscal, whatever this is set to.
+    #: Only a phrase that names its basis is exempt. "FY2024", "FY24 Q3", "fiscal Q3" and
+    #: "this fiscal year" are fiscal; "CY2024", "CY Q3" and "this calendar year" are
+    #: calendar -- whatever this is set to. None inherits ``bare_period_basis``, which is
+    #: calendar; set "fiscal" for a finance team that says "Q1" and means its fiscal Q1.
     year_basis: Basis | None = None  # None => inherit
 
     #: Where a relative period's edges fall when the phrasing does not say. See
@@ -218,7 +222,7 @@ class WranglerConfig:
 
     @property
     def effective_of_year_basis(self) -> Basis:
-        return self.of_year_basis if self.of_year_basis is not None else self.bare_period_basis
+        return self.of_year_basis if self.of_year_basis is not None else self.effective_year_basis
 
     @property
     def effective_year_basis(self) -> Basis:

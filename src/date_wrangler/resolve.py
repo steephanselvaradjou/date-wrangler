@@ -102,18 +102,24 @@ _FROM_TODAY = frozenset({Kind.RELATIVE, Kind.THIS_PERIOD, Kind.TO_DATE, Kind.AGO
 
 
 def _basis_for(spec: Spec, cfg: WranglerConfig) -> Basis:
-    """The calendar a period is measured on.
+    """The calendar a period is measured on: what the phrase says, else ``year_basis``.
 
-    A basis the phrase states always wins. Otherwise a year counted from today -- "this
-    year", "last 2 years", "YTD" -- takes ``year_basis``, and everything else, a bare "Q1"
-    included, takes ``bare_period_basis``. Both default to the same thing, so the split
-    only shows when someone asks for it.
+    One rule, with no per-phrase exceptions. "FY2024", "fiscal Q3" and "this fiscal year"
+    say fiscal; "CY2024" and "this calendar year" say calendar; everything else -- "2024",
+    "Q4 2024", "Q1", "last quarter", "this year", "YTD", "the second half of 2024" --
+    follows ``year_basis``. Earlier versions decided this phrase by phrase, and the
+    phrases disagreed: "the second half of 2024" was calendar while "the last quarter of
+    2024" was fiscal, and "Q1 2024" and "Q1 of 2024" could land a year apart.
     """
     if spec.basis is not None:
         return spec.basis
-    if spec.kind in _FROM_TODAY and spec.unit is Grain.YEAR:
-        return cfg.effective_year_basis
-    return cfg.bare_period_basis
+    return cfg.effective_year_basis
+
+
+def _calendar_year_of(month: int, fiscal_label: int, cfg: WranglerConfig) -> int:
+    """The calendar year ``month`` falls in within fiscal year ``fiscal_label``."""
+    start = fiscal_year_start(fiscal_label, cfg.fiscal)
+    return start.year + (1 if month < start.month else 0)
 
 
 def _default_year(today: date, cfg: WranglerConfig, basis: Basis) -> int:
@@ -379,13 +385,20 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         if spec.month is None or spec.day is None:
             raise UnresolvableSpec("an absolute day needs a month and a day")
         # "meeting on March 3" states no year; assume the current calendar year.
-        return day_range(date(spec.year if spec.year is not None else today.year,
-                              spec.month, spec.day))
+        year = spec.year if spec.year is not None else today.year
+        if spec.basis is Basis.FISCAL and spec.year is not None:
+            year = _calendar_year_of(spec.month, spec.year, cfg)
+        return day_range(date(year, spec.month, spec.day))
 
     if spec.kind is Kind.ABS_MONTH:
         if spec.month is None:
             raise UnresolvableSpec("a month spec needs a month")
-        # Months are calendar facts; only the *year* they land in is in question.
+        # Months are calendar facts; only the *year* they land in is in question. With a
+        # fiscal label it is the one inside that fiscal year: April-start "June FY25" is
+        # June 2024.
+        if spec.basis is Basis.FISCAL and spec.year is not None:
+            index = (spec.month - cfg.fiscal.start_month) % 12 + 1
+            return fiscal_month_range(spec.year, index, cfg.fiscal)
         return month_range(spec.year if spec.year is not None else today.year, spec.month)
 
     if spec.kind is Kind.ABS_QUARTER:

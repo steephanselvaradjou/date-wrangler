@@ -11,11 +11,11 @@ from datetime import date
 
 import pytest
 
-from date_wrangler import Basis, WranglerConfig, parse, parse_one
+from date_wrangler import Basis, FiscalCalendar, WranglerConfig, YearLabel, parse, parse_one
 
 TODAY = date(2026, 10, 8)  # Thursday; FY27 Q3 on an April start
-FISCAL = WranglerConfig()
-CALENDAR = WranglerConfig(bare_period_basis=Basis.CALENDAR)
+FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)
+CALENDAR = WranglerConfig()
 
 
 def bounds(text, cfg=FISCAL):
@@ -163,3 +163,104 @@ def test_hours_and_part_numbers_are_not_halves_or_quarters(text):
 def test_lower_case_shorthand_with_a_year_still_reads():
     assert parse("sales from 1q 2024 to 3q 2024", today=TODAY) != []
     assert bounds("1h 2024") == (date(2023, 4, 1), date(2023, 10, 1))
+
+
+# ---------------------------------------------------------------------------
+# A month labelled with a fiscal year
+# ---------------------------------------------------------------------------
+
+JUNE_2024 = (date(2024, 6, 1), date(2024, 7, 1))
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Jun FY25", "June FY25", "June of FY25", "June FY2025", "Jun-FY25", "FY25 June",
+     "FY25 Jun", "June FY 2024-25", "FY2024-25 June"],
+)
+def test_a_month_of_a_fiscal_year_is_the_one_inside_it(text):
+    """REGRESSION: FY25 beside a month was read as the calendar year 2025, so with an April
+    year "Jun FY25" was June 2025 -- outside FY25 altogether. "Jun-FY25" was a span from
+    June to the end of FY25, and "FY25 June" the whole fiscal year with the month dropped."""
+    for cfg in (FISCAL, CALENDAR):
+        assert bounds(text, cfg) == JUNE_2024
+
+
+@pytest.mark.parametrize(
+    "fiscal,text,start",
+    [
+        (FiscalCalendar(4, YearLabel.START_YEAR), "Jun FY25", date(2025, 6, 1)),
+        (FiscalCalendar(4, YearLabel.START_YEAR), "Mar FY25", date(2026, 3, 1)),
+        (FiscalCalendar.australia(), "Jul FY25", date(2024, 7, 1)),
+        (FiscalCalendar.australia(), "Jun FY25", date(2025, 6, 1)),
+        (FiscalCalendar.us_federal(), "Oct FY25", date(2024, 10, 1)),
+        (FiscalCalendar.calendar(), "Jun FY25", date(2025, 6, 1)),
+    ],
+)
+def test_the_month_is_found_on_the_configured_fiscal_calendar(fiscal, text, start):
+    assert bounds(text, WranglerConfig(fiscal=fiscal))[0] == start
+
+
+def test_each_month_of_a_fiscal_span_lands_in_its_own_calendar_year():
+    """The label is kept until resolution, so October and March of FY25 are a year apart."""
+    assert bounds("Oct to Mar FY25") == (date(2024, 10, 1), date(2025, 4, 1))
+    assert bounds("Apr-Jun FY25") == (date(2024, 4, 1), date(2024, 7, 1))
+    found = parse("Mar, Apr and May FY25", today=TODAY)
+    assert [m.range.start for m in found] == [date(2025, 3, 1), date(2024, 4, 1), date(2024, 5, 1)]
+
+
+@pytest.mark.parametrize(
+    "text,start,end",
+    [
+        ("15 June FY25", date(2024, 6, 15), date(2024, 6, 16)),
+        ("June 15 FY25", date(2024, 6, 15), date(2024, 6, 16)),
+        ("the first week of June FY25", date(2024, 6, 1), date(2024, 6, 8)),
+        ("the first half of June FY25", date(2024, 6, 1), date(2024, 6, 16)),
+        ("end of June FY25", date(2024, 6, 21), date(2024, 7, 1)),
+    ],
+)
+def test_days_and_parts_of_a_fiscal_month_follow_it(text, start, end):
+    assert bounds(text, CALENDAR) == (start, end)
+
+
+@pytest.mark.parametrize("text", ["June 2025", "June of 2025", "Jun-25", "June CY25"])
+def test_a_month_with_a_plain_year_is_that_calendar_month_whatever_year_basis_says(text):
+    """Nobody means June 2024 by "June 2025". Only FY makes the year beside a month a label."""
+    for cfg in (FISCAL, CALENDAR, WranglerConfig(year_basis=Basis.FISCAL)):
+        assert bounds(text, cfg) == (date(2025, 6, 1), date(2025, 7, 1))
+
+
+def test_may_after_a_fiscal_year_is_a_verb():
+    assert [m.text for m in parse("FY25 may see growth", today=TODAY)] == ["FY25"]
+
+
+@pytest.mark.parametrize("fiscal", [FiscalCalendar(4), FiscalCalendar(4, YearLabel.START_YEAR)])
+@pytest.mark.parametrize("text", ["FY2024-25", "FY24/25", "FY 2024-2025"])
+def test_a_fiscal_year_written_with_both_years_starts_in_the_first(fiscal, text):
+    """REGRESSION: the second year was always taken as the label, so where years are named
+    by their start, "FY2024-25" came back as the year from April 2025."""
+    assert bounds(text, WranglerConfig(fiscal=fiscal)) == (date(2024, 4, 1), date(2025, 4, 1))
+
+
+def test_a_spaced_dash_before_a_fiscal_year_is_still_a_range():
+    """"Jun-FY25" is a label; "June - FY25" is how a range is written."""
+    assert bounds("June - FY25") == (date(2024, 6, 1), date(2025, 4, 1))
+    assert bounds("FY24 - 15 March 2024") == (date(2023, 4, 1), date(2024, 3, 16))
+
+
+def test_a_month_with_its_own_year_keeps_it_when_joined_to_a_fiscal_year():
+    """Joining shares one basis between the ends, but "March 2024" is a calendar fact: it
+    must not become the March of fiscal 2024, which is March 2025 where years are named by
+    their start."""
+    cfg = WranglerConfig(fiscal=FiscalCalendar(4, YearLabel.START_YEAR))
+    assert bounds("March 2024 to FY24", cfg) == (date(2024, 3, 1), date(2025, 4, 1))
+    assert bounds("15 March 2024 to FY24", cfg) == (date(2024, 3, 15), date(2025, 4, 1))
+
+
+@pytest.mark.parametrize("text", ["FY24 - 2023", "FY2023-2025", "FY24/26"])
+def test_two_years_that_are_not_one_fiscal_year_are_not_read_as_one(text):
+    """REGRESSION: any two numbers made a fiscal year -- "FY24 - 2023" was FY2023."""
+    from date_wrangler import diagnose
+
+    matches, diags = diagnose(text, today=TODAY)
+    assert matches == []
+    assert diags

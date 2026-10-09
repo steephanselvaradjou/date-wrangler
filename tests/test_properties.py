@@ -72,6 +72,8 @@ configs = st.builds(
 )
 
 todays = st.dates(min_value=date(1970, 1, 1), max_value=date(2100, 12, 31))
+#: substitute's default, and the rewrite-everything setting it replaced.
+floors = st.sampled_from([0.6, 0.0])
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +142,9 @@ def test_diagnostic_spans_are_in_bounds(text, cfg, today):
         assert 0 <= lo <= hi <= len(text)
 
 
-@given(text=texts, cfg=configs, today=todays)
+@given(text=texts, cfg=configs, today=todays, floor=floors)
 @SETTINGS
-def test_substitute_reaches_a_fixed_point(text, cfg, today):
+def test_substitute_reaches_a_fixed_point(text, cfg, today, floor):
     """Repeated substitution must settle, and must not grow without bound.
 
     One-pass idempotence does *not* hold in general, and cannot: substitution is textual,
@@ -157,7 +159,7 @@ def test_substitute_reaches_a_fixed_point(text, cfg, today):
     seen = []
     current = text
     for _ in range(12):
-        nxt = substitute(current, today=today, config=cfg)
+        nxt = substitute(current, today=today, config=cfg, min_confidence=floor)
         if nxt == current:
             break
         assert nxt not in seen, "substitution is cycling instead of converging"
@@ -167,6 +169,18 @@ def test_substitute_reaches_a_fixed_point(text, cfg, today):
         raise AssertionError(f"no fixed point after 12 passes: {text!r}")
 
 
+@given(text=texts, cfg=configs, today=todays, floor=floors)
+@SETTINGS
+def test_keep_text_twice_is_keep_text_once(text, cfg, today, floor):
+    """Stronger than the fixed point above, because the phrase stays where it was: the
+    second pass finds each phrase already followed by its dates, and leaves it."""
+    def run(s):
+        return substitute(s, today=today, config=cfg, keep_text=True, min_confidence=floor)
+
+    once = run(text)
+    assert run(once) == once
+
+
 def test_substitution_can_fuse_with_an_adjacent_number():
     """The known, documented limit of `substitute`, pinned so it stays known.
 
@@ -174,33 +188,34 @@ def test_substitution_can_fuse_with_an_adjacent_number():
     """
     today = date(2025, 9, 4)
     once = substitute("sales 15 Q1", today=today)
-    assert once == "sales 15 April 2025 to June 2025"
-    # "15 April 2025" now reads as a day, so the range no longer starts on a month
+    assert once == "sales 15 January 2025 to March 2025"
+    # "15 January 2025" now reads as a day, so the range no longer starts on a month
     # boundary and the second pass names days at both ends rather than months -- which is
     # the honest rendering of a period that begins on the 15th. Then it settles.
     twice = substitute(once, today=today)
-    assert twice == "sales 15 April 2025 to 30 June 2025"
+    assert twice == "sales 15 January 2025 to 31 March 2025"
     assert substitute(twice, today=today) == twice
 
 
 def test_substitute_leaves_flagged_matches_as_they_were_typed():
     """`substitute` is the one function that turns a flagged guess into a confident
-    sentence, so it has to be able to decline. Both of these come back from `diagnose` at
-    0.5 with an explanation that rewriting would throw away."""
+    sentence, so by default it declines. Both of these come back from `diagnose` at 0.5
+    with an explanation that rewriting would throw away."""
     today = date(2025, 9, 4)
-    assert substitute("revenue Q1 and Q3", today=today) == (
-        "revenue April 2025 to December 2025"  # Q2 silently included
+    assert substitute("revenue Q1 and Q3", today=today) == "revenue Q1 and Q3"
+    assert substitute("claims yesterday at 2pm", today=today) == "claims yesterday at 2pm"
+    # Confident matches are rewritten as before, and less confident ones still above 0.5.
+    assert substitute("revenue last month", today=today) == "revenue August 2025"
+    assert substitute("sales in 2024", today=today) == "sales in January 2024 to December 2024"
+
+
+def test_substitute_rewrites_everything_when_asked():
+    """min_confidence=0 is the pre-1.0 behaviour, for callers who want every match."""
+    today = date(2025, 9, 4)
+    assert substitute("revenue Q1 and Q3", today=today, min_confidence=0) == (
+        "revenue January 2025 to September 2025"  # Q2 silently included
     )
-    assert substitute("revenue Q1 and Q3", today=today, min_confidence=0.9) == (
-        "revenue Q1 and Q3"
-    )
-    assert substitute("claims yesterday at 2pm", today=today, min_confidence=0.9) == (
-        "claims yesterday at 2pm"
-    )
-    # Confident matches are rewritten as before.
-    assert substitute("revenue last month", today=today, min_confidence=0.9) == (
-        "revenue August 2025"
-    )
+    assert substitute("sales in 2024", today=today, min_confidence=0.9) == "sales in 2024"
 
 
 @given(text=texts, cfg=configs, today=todays)

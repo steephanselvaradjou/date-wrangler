@@ -11,13 +11,14 @@ from datetime import date
 
 import pytest
 
-from date_wrangler import format_range, make_formatter, parse_one
+from date_wrangler import Basis, WranglerConfig, format_range, make_formatter, parse_one
 
 TODAY = date(2026, 10, 15)  # mid-month, mid-quarter, so to-date periods are partial
+FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)  # YTD starts in April
 
 
 def rng(text):
-    m = parse_one(text, today=TODAY)
+    m = parse_one(text, today=TODAY, config=FISCAL)
     assert m is not None, f"{text!r} found no date"
     return m.range
 
@@ -159,7 +160,7 @@ def test_custom_templates_still_apply():
     [
         ("since March", "from March 2026 onwards"),
         ("after FY24", "from April 2024 onwards"),
-        ("before 2024", "before January 2024"),
+        ("before CY2024", "before January 2024"),
         ("up to March 2026", "up to March 2026"),
     ],
 )

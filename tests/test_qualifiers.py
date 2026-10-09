@@ -23,10 +23,14 @@ from date_wrangler import (
 
 TODAY = date(2025, 9, 4)  # a Thursday, in fiscal Q2 of FY2026 on an April start
 ROLLING = WranglerConfig(anchor=Anchor.ROLLING)
+#: Most cases here read undeclared periods fiscally, the case with the most to get wrong;
+#: the library default is calendar.
+FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)
+CALENDAR_YEARS = WranglerConfig(year_basis=Basis.CALENDAR)
 
 
 def rng(text, cfg=None):
-    m = parse_one(text, today=TODAY, config=cfg or WranglerConfig())
+    m = parse_one(text, today=TODAY, config=cfg or FISCAL)
     assert m is not None, f"{text!r} did not match"
     return m.range.start, m.range.end
 
@@ -74,9 +78,6 @@ def test_relative_year_is_one_match():
         ("mid March", date(2025, 3, 11), date(2025, 3, 21)),
         ("end of March", date(2025, 3, 21), date(2025, 4, 1)),
         # Months, because a year divides evenly into halves and thirds.
-        ("early 2024", date(2024, 1, 1), date(2024, 5, 1)),
-        ("late 2024", date(2024, 9, 1), date(2025, 1, 1)),
-        ("first half of 2024", date(2024, 1, 1), date(2024, 7, 1)),
     ],
 )
 def test_part_of_period(text, start, end):
@@ -91,15 +92,36 @@ def test_parts_tile_the_period_exactly():
     second = rng("second half of June")
     assert first[0] == date(2025, 3, 1) and first[1] == date(2025, 3, 16)
     assert second[1] == date(2025, 7, 1)
-    early, mid, late = rng("early 2024"), rng("mid 2024"), rng("late 2024")
-    assert early[1] == mid[0]
-    assert mid[1] == late[0]
-    assert early[0] == date(2024, 1, 1) and late[1] == date(2025, 1, 1)
+    for cfg, year_start, year_end in (
+        (CALENDAR_YEARS, date(2024, 1, 1), date(2025, 1, 1)),
+        (FISCAL, date(2023, 4, 1), date(2024, 4, 1)),
+    ):
+        early, mid, late = rng("early 2024", cfg), rng("mid 2024", cfg), rng("late 2024", cfg)
+        assert early[1] == mid[0]
+        assert mid[1] == late[0]
+        assert early[0] == year_start and late[1] == year_end
 
 
-def test_bare_year_part_is_a_calendar_year():
-    """"early 2024" must not quietly mean the fiscal year and start in 2023."""
-    assert rng("early 2024")[0].year == 2024
+@pytest.mark.parametrize(
+    "text,calendar,fiscal",
+    [
+        ("early 2024", (date(2024, 1, 1), date(2024, 5, 1)), (date(2023, 4, 1), date(2023, 8, 1))),
+        ("late 2024", (date(2024, 9, 1), date(2025, 1, 1)), (date(2023, 12, 1), date(2024, 4, 1))),
+        ("first half of 2024", (date(2024, 1, 1), date(2024, 7, 1)),
+         (date(2023, 4, 1), date(2023, 10, 1))),
+    ],
+)
+def test_a_part_of_a_numbered_year_follows_year_basis(text, calendar, fiscal):
+    """A year with a part taken out of it is read the way year_basis reads years.
+
+    0.3.0 forced it to the calendar year -- "early 2024" starting in 2023 was treated as
+    a bug -- which left "the second half of 2024" on the calendar and "the last quarter of
+    2024" on the fiscal setting, a year apart. Both now follow year_basis, so with it set
+    to calendar "early 2024" is January to April, and with it set to fiscal it is the
+    first third of FY2024.
+    """
+    assert rng(text, CALENDAR_YEARS) == calendar
+    assert rng(text) == fiscal
 
 
 # ---------------------------------------------------------------------------
@@ -322,8 +344,8 @@ def test_part_and_day_report_a_sensible_grain():
 
 
 def test_relative_year_keeps_its_basis():
-    assert parse_one("Q1 last year", today=TODAY).range.basis is Basis.FISCAL
-    assert parse_one("Q1 CY2024", today=TODAY).range.basis is Basis.CALENDAR
+    assert parse_one("Q1 last year", today=TODAY, config=FISCAL).range.basis is Basis.FISCAL
+    assert parse_one("Q1 CY2024", today=TODAY, config=FISCAL).range.basis is Basis.CALENDAR
 
 
 def test_qualified_periods_survive_a_round_trip_through_parse():
@@ -403,7 +425,7 @@ def test_a_bare_two_digit_year_is_not_read_as_a_clock():
 def test_and_joining_adjacent_periods_is_a_span_and_stays_confident():
     """This is why "and" is a connector at all: two touching periods are how people write
     a span, and the hull is exactly right."""
-    m = parse_one("Q1 and Q2", today=TODAY)
+    m = parse_one("Q1 and Q2", today=TODAY, config=FISCAL)
     assert m is not None and m.confidence == 1.0
     assert (m.range.start, m.range.end) == (date(2025, 4, 1), date(2025, 10, 1))
 
@@ -420,7 +442,7 @@ def test_and_joining_periods_with_a_gap_is_flagged(text, gap):
     """Read as one span, "Q1 and Q3" quietly returns Q2 as well -- a quarter of data nobody
     asked for, previously at full confidence. The range is unchanged; the claim about it
     is what was wrong."""
-    matches, diags = diagnose(text, today=TODAY)
+    matches, diags = diagnose(text, today=TODAY, config=FISCAL)
     assert matches and matches[0].confidence <= 0.5
     assert any(gap in d.reason for d in diags), [d.reason for d in diags]
 
@@ -463,7 +485,7 @@ def test_a_period_to_date_runs_from_its_start_through_today(text, start):
     """REGRESSION: only the abbreviations and "year to date" were read. "this year to
     date" read "this year", left "to date" over, and answered with the whole fiscal year
     at confidence 0.5 -- April 2026 to March 2027, five months of it in the future."""
-    m = parse_one(text, today=OCT6)
+    m = parse_one(text, today=OCT6, config=FISCAL)
     assert m is not None and m.confidence == 1.0, text
     assert (m.range.start, m.range.end) == (start, date(2026, 10, 7))
 
@@ -475,14 +497,14 @@ def test_this_year_to_date_is_the_same_window_as_ytd():
 def test_last_year_to_date_keeps_its_ytd_reading():
     """"last year to date" is last year's YTD -- the same window a year earlier -- not the
     span from the start of last year to today. The to_date rule reads it first."""
-    r = parse_one("last year to date", today=OCT6).range
+    r = parse_one("last year to date", today=OCT6, config=FISCAL).range
     assert (r.start, r.end) == (date(2025, 4, 1), date(2025, 10, 7))
 
 
 def test_an_undated_period_in_the_future_means_the_last_one():
     """The same choice "YTD March" makes: the most recent one, not the coming one."""
     assert parse_one("December to date", today=OCT6).range.start == date(2025, 12, 1)
-    assert parse_one("Q4 to date", today=OCT6).range.start == date(2026, 1, 1)
+    assert parse_one("Q4 to date", today=OCT6, config=FISCAL).range.start == date(2026, 1, 1)
 
 
 @pytest.mark.parametrize("text", ["FY28 to date", "December 2026 to date"])

@@ -11,7 +11,8 @@ straight to a query.
      rendered on PyPI, where the released version is already in the page header. Repeating
      it is one more thing to remember at release time, and it went stale once already.
      tests/test_packaging.py enforces this. -->
-> **Status: early development.** The API may still change before 1.0.
+> **Status: stable.** The public API follows semantic versioning: a change that breaks
+> existing callers comes only with a new major version.
 
 ## Why another date library
 
@@ -310,8 +311,7 @@ WranglerConfig(
     week_starts_on=6,                     # 0=Monday (default), 6=Sunday for the US
     weekend=(5, 6),                       # non-working days, for "business days"
     holidays=frozenset(),                 # yours to supply; never guessed
-    bare_period_basis=Basis.FISCAL,       # what a bare "Q1" means
-    year_basis=Basis.CALENDAR,            # what "this year" and YTD mean
+    year_basis="fiscal",                  # undeclared years and periods; calendar by default
     two_digit_pivot=68,                   # "99" -> 1999, not 2099
     strictness="balanced",
 )
@@ -323,33 +323,58 @@ Fiscal years follow the pandas `Q-MAR` convention by default — labelled by the
 **end**, so with an April start FY2024 runs Apr 2023 – Mar 2024 and Apr–Jun is Q1. Set
 `label_by=YearLabel.START_YEAR` for the US corporate convention.
 
-**Which basis a phrase is read on** comes down to what it says, never to which rule
-happened to match it:
+**Which calendar a phrase is read on** follows one rule: **what it says, otherwise
+`year_basis`.**
 
-| phrase | basis |
+| phrase | read on |
 |---|---|
-| `2013`, `in 2013`, `the year 2013`, `end of the year 2013` | calendar — a year on its own is a calendar year |
-| `FY2013`, `fiscal year 2013`, `this fiscal year`, `last FY` | fiscal — it says so |
-| `CY2013`, `this calendar year`, `next calendar quarter` | calendar — it says so |
-| `this year`, `last year`, `YTD`, `this year to date` | `year_basis` — nothing was said |
-| `Q1`, `H1`, `last quarter`, `QTD` | `bare_period_basis` — nothing was said |
-| `Q1 of 2013`, `Q1 of the year 2013`, `the last quarter of 2013` | `of_year_basis` — a year labelling a quarter is genuinely ambiguous |
-| `the second half of 2013`, `the first 3 months of 2013` | calendar — a slice of the year 2013, which is a calendar year |
+| `FY2024`, `FY24 Q3`, `fiscal year 2024`, `fiscal Q3`, `this fiscal year`, `last FY` | fiscal — it says so |
+| `CY2024`, `CY24`, `CY Q3`, `calendar year 2024`, `this calendar year` | calendar — it says so |
+| everything else — `2024`, `the year 2024`, `Q4 2024`, `Q3'24`, `Q1`, `H1`, `last quarter`, `QTD`, `this year`, `YTD`, `the second half of 2024`, `the last quarter of 2024` | `year_basis` |
 
-So an explicit `fiscal` or `calendar` always beats the configured default, and the word
-"year" on its own never makes anything fiscal.
+There are no per-phrase exceptions, which is the point: earlier versions decided this phrase
+by phrase, and the phrases disagreed — `the second half of 2024` came back on the calendar
+while `the last quarter of 2024` followed the fiscal setting. Now every spelling of a year
+agrees, and every part of a year lies inside it.
 
-`year_basis` exists for the team whose "Q1" is the fiscal quarter but whose "this year" is
-January to December. It defaults to `None`, which follows `bare_period_basis`, so the two
-only come apart when you ask. A value from a form or select works as-is — `"calendar"` and
-`"fiscal"` are accepted in any case — and anything else fails on construction, by name.
+`year_basis` defaults to **calendar**, so out of the box `Q1 2024` is January to March 2024
+and `in 2024` is the whole calendar year, which is what most people who write them mean. A
+finance team that says "Q1" and means its fiscal Q1 sets `year_basis="fiscal"`:
+
+| phrase | default (calendar) | `year_basis="fiscal"`, April start |
+|---|---|---|
+| `2024`, `the year 2024` | Jan – Dec 2024 | Apr 2023 – Mar 2024 |
+| `Q4 2024`, `the last quarter of 2024` | Oct – Dec 2024 | Jan – Mar 2024 |
+| `the second half of 2024` | Jul – Dec 2024 | Oct 2023 – Mar 2024 |
+| `Q1` | Jan – Mar 2026 | Apr – Jun 2026 |
+| `this year` | Jan – Dec 2026 | Apr 2026 – Mar 2027 |
+| `FY2024` | Apr 2023 – Mar 2024 | Apr 2023 – Mar 2024 |
+| `CY2024` | Jan – Dec 2024 | Jan – Dec 2024 |
+
+Only the last two rows hold still — they say which calendar they mean. A value from a form
+or select works as-is: `"calendar"` and `"fiscal"` are accepted in any case, and anything
+else fails on construction, by name.
 
 ```python
-cfg = WranglerConfig(year_basis="calendar")       # April fiscal year, calendar "this year"
-parse("this year", config=cfg)                     # January 2026 to December 2026
-parse("Q1", config=cfg)                            # April 2026 to June 2026 — still fiscal
-parse("FY2013", config=cfg)                        # April 2012 to March 2013 — says so
+parse("Q1 2024")                           # January to March 2024
+parse("FY2024")                            # April 2023 to March 2024 — it says fiscal
+
+cfg = WranglerConfig(year_basis="fiscal")
+parse("in 2024", config=cfg)               # April 2023 to March 2024
+parse("Q1", config=cfg)                    # April to June
+parse("CY2024", config=cfg)                # January to December 2024 — it says calendar
 ```
+
+Which one is right depends on who is asking, so in a multi-tenant app set it per tenant
+rather than relying on the default.
+
+`bare_period_basis` is now only the default for `year_basis`, kept under its old name so
+older configurations mean what they did: one that set `bare_period_basis="fiscal"` is still
+fiscal. Its own default used to be fiscal and is now calendar, so a configuration that set
+neither now reads `Q1` as January to March; set `year_basis="fiscal"` to keep the old
+answers. `of_year_basis` remains as an optional override for "*a period* of *a year*" —
+`Q1 of 2024`, `the second half of 2024` — and inherits `year_basis` unless set; you will
+rarely want it.
 
 Invalid configuration fails on construction with a message naming the field, not later
 from inside `date()` on the first request that mentions a quarter.
@@ -400,8 +425,9 @@ plausible.
 |---|---|
 | Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `fy-24`, `F.Y. 2024` |
 | Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `fiscal Q3`, `Q3 FY` |
-| Calendar periods | `CY2024`, `Q1 of 2024`, `January 2024`, `2024`, `the year 2024` |
+| Years and labelled periods | `2024`, `the year 2024`, `Q1 of 2024`, `January 2024`, `CY2024` — see [which calendar](#configuration) for how a year is read |
 | Fiscal month index | `third month of FY24`, `twelfth month` |
+| Month of a fiscal year | `June FY25`, `Jun-FY25`, `FY25 June`, `June FY 2024-25`, `Oct to Mar FY25` — the June *inside* FY25, so June 2024 with an April year; `June 2025` stays June 2025 |
 | Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` |
 | Stated basis | `this fiscal year`, `this FY`, `last 2 fiscal quarters`, `next calendar year` |
 | Weekdays | `last Monday`, `next Friday`, `this Tuesday` |
@@ -474,15 +500,16 @@ matches, diags = diagnose("5000 years ago", today=today)
 `parse()` never raises on user input.
 
 `substitute()` is the one function that turns a flagged guess into a confident sentence, so
-it can decline:
+by default it declines: anything flagged at 0.5 stays as typed.
 
 ```python
-substitute("revenue Q1 and Q3")                      # 'revenue April 2026 to December 2026'
-substitute("revenue Q1 and Q3", min_confidence=0.9)  # 'revenue Q1 and Q3'
+substitute("revenue Q1 and Q3")                    # 'revenue Q1 and Q3' — flagged
+substitute("revenue Q1 and Q3", min_confidence=0)  # 'revenue January 2026 to September 2026'
+substitute("sales in 2024", min_confidence=0.9)    # 'sales in 2024' — a bare year is 0.8
 ```
 
-Raise `min_confidence` whenever the output will be read as fact — by a person or a model.
-The default is 0.0, so nothing changes unless you ask.
+`min_confidence` defaults to 0.6: confident matches and bare years are rewritten, guesses
+are not. Pass `0` to rewrite every match, or `0.9` to leave bare years as typed too.
 
 A match whose neighbouring words change the period but could not be read comes back with
 **confidence 0.5** and an explanation, rather than a confident answer to a question nobody
@@ -565,25 +592,47 @@ it; `strict` needs an explicit year or period marker and never guesses.
 
 ### Rewriting text
 
-```python
-substitute("sales report of Q1", today=today)
-# 'sales report of from April 2025 to June 2025'
-```
-
-Only the matched phrase is replaced.
-
-**One limit worth knowing.** Substitution is textual, so an inserted phrase can fuse with a
-neighbouring token that was never part of a date:
+Two ways, picked with `keep_text`:
 
 ```python
-substitute("sales 15 Q1")   # 'sales 15 April 2025 to June 2025'
+substitute("sales of Q4", today=today)
+# 'sales of October 2025 to December 2025'           — the dates replace the phrase
+
+substitute("sales of Q4", today=today, keep_text=True)
+# 'sales of Q4 (October 2025 to December 2025)'      — the phrase, then its dates
 ```
 
-Read that back and `15 April 2025` is a perfectly good date, so a second pass gives a
-different answer. Repeated substitution always *converges* — it never grows without bound,
+Only the matched phrase is touched. `keep_text=True` is usually the better choice when a
+model or a person reads the result: the label survives — "Q4" still says quarter, which
+matters for grouping and for how an answer is worded — and the dates beside it show exactly
+which reading was taken, fiscal or calendar. `formatter` sets how the dates look in either
+mode, and `min_confidence` leaves flagged phrases as typed in either mode.
+
+With `keep_text`, a phrase is left alone when the brackets would only repeat it (`March
+2024`), or when it is already followed by dates in brackets — written by an earlier pass,
+on any day and with any formatter, or by the writer (`Q4 (2024)`). So running it again on
+its own output adds nothing:
+
+```python
+once = substitute("compare Q1 2024 to Q1 2025", keep_text=True)
+# 'compare Q1 2024 (January 2024 to March 2024) to Q1 2025 (January 2025 to March 2025)'
+substitute(once, keep_text=True) == once   # True
+```
+
+**One limit worth knowing**, for the default mode only. Replacing is textual, so the
+inserted dates can fuse with a neighbouring token that was never part of a date:
+
+```python
+substitute("sales 15 Q1")                  # 'sales 15 January 2025 to March 2025'
+substitute("sales 15 Q1", keep_text=True)  # 'sales 15 Q1 (January 2025 to March 2025)'
+```
+
+Read the first back and `15 January 2025` is a perfectly good date, so a second pass gives
+a different answer. Repeated replacing always *converges* — it never grows without bound,
 which is the failure that matters — but it is not idempotent in one pass when a bare number
-abuts a date expression. When exactness matters, use `parse()` and render the ranges
-yourself; `substitute` is a convenience.
+abuts a date expression. `keep_text` does not have the problem, because the phrase stays
+where it was. When exactness matters, use `parse()` and render the ranges yourself;
+`substitute` is a convenience.
 
 ## Output format
 
@@ -616,16 +665,16 @@ string says the last day *inside* the period (`2024-06-30`); set it `False` to e
 exclusive bound (`2024-07-01`) for a machine.
 
 **A coarse `date_format` never overstates a range.** With `date_format="%B %Y"`, a YTD
-asked on 15 October would read `April 2026 to October 2026` — which says all of October,
+asked on 15 October would read `January 2026 to October 2026` — which says all of October,
 sixteen days it does not cover. When the format cannot show a day *and* the range does not
 sit on whole months, both ends fall back to `day_format` (`"%Y-%m-%d"` by default):
 
 ```python
 fmt = make_formatter(date_format="%B %Y")
 fmt(last_quarter)   # 'July 2026 to September 2026'   — whole months, as asked
-fmt(ytd)            # '2026-04-01 to 2026-10-15'      — partial, so days
+fmt(ytd)            # '2026-01-01 to 2026-10-15'      — partial, so days
 make_formatter(date_format="%B %Y", day_format=None)(ytd)
-                    # 'April 2026 to October 2026'    — you asked for exactly this
+                    # 'January 2026 to October 2026'  — you asked for exactly this
 ```
 
 The default `date_format` already shows days, so nothing changes unless yours is coarse.
@@ -648,7 +697,7 @@ $ date-wrangler --today 2025-09-04 "revenue since Q1 FY25"
    SQL: d >= '2024-04-01'
 ```
 
-`--json` for machine-readable output; `--fiscal-start`, `--basis`, `--date-order` and
+`--json` for machine-readable output; `--fiscal-start`, `--year-basis`, `--date-order` and
 `--strictness` to try configurations.
 
 ## Development

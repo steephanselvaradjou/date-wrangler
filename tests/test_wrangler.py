@@ -2,8 +2,11 @@
 
 ``today`` is pinned to 2025-09-04 throughout. With an April fiscal start that day sits in
 FY2026 (Apr 2025 - Mar 2026) and in the *second* fiscal quarter, which is what makes it a
-useful anchor: a bare "Q1" resolving to April 2025 proves the current-fiscal-year default,
+useful anchor: a bare "Q1" resolving to April 2025 proves the current fiscal year is used,
 and "this quarter" resolving to July proves the quarter grid independently.
+
+The library reads bare periods on the calendar by default. Most tests here read them on
+the fiscal calendar instead (``CFG``), because that is the case with the most to get wrong.
 
 Cases marked REGRESSION reproduce a specific defect in the predecessor module.
 """
@@ -28,7 +31,7 @@ from date_wrangler import (
 )
 
 TODAY = date(2025, 9, 4)
-CFG = WranglerConfig()  # April fiscal start, bare periods fiscal
+CFG = WranglerConfig(bare_period_basis=Basis.FISCAL)  # April fiscal start, bare periods fiscal
 
 
 def rng(text: str, cfg: WranglerConfig = CFG):
@@ -92,8 +95,13 @@ def test_two_digit_years_use_the_pivot():
     assert rng("fy24") == (date(2023, 4, 1), date(2024, 4, 1))
 
 
-def test_bare_year_is_a_calendar_year():
-    assert rng("2024") == (date(2024, 1, 1), date(2025, 1, 1))
+def test_bare_year_follows_year_basis():
+    """No FY or CY on it, so year_basis decides -- calendar by default, fiscal on request."""
+    assert rng("2024", WranglerConfig()) == (date(2024, 1, 1), date(2025, 1, 1))
+    assert rng("2024", WranglerConfig(year_basis=Basis.FISCAL)) == (
+        date(2023, 4, 1),
+        date(2024, 4, 1),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +149,18 @@ def test_zero_count_is_reported_not_inverted():
     matches, diags = diagnose("last 0 months", today=TODAY)
     assert matches == []
     assert any("at least 1" in d.reason for d in diags)
+
+
+@pytest.mark.parametrize("text", ["¼q", "x½q", "½ Q1 and Q3", "Q1 – Q3 ¼ and Q1 and Q3"])
+def test_diagnostic_spans_index_the_text_as_given(text):
+    """REGRESSION: diagnostics kept offsets into the normalised text, where "¼" is three
+    characters, so a span could run past the end of the caller's string."""
+    _, diags = diagnose(text, today=TODAY, config=CFG)
+    assert diags
+    for d in diags:
+        lo, hi = d.span
+        assert 0 <= lo <= hi <= len(text)
+        assert text[lo:hi] == d.text
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +227,7 @@ def test_numeric_date_order_is_configurable():
         ("Q1 to Q2 FY24", (date(2023, 4, 1), date(2023, 10, 1))),
         ("from Jan 2024 to Mar 2024", (date(2024, 1, 1), date(2024, 4, 1))),
         ("FY24 to FY25", (date(2023, 4, 1), date(2025, 4, 1))),
-        ("2023 to 2024", (date(2023, 1, 1), date(2025, 1, 1))),
+        ("2023 to 2024", (date(2022, 4, 1), date(2024, 4, 1))),  # FY2023 to FY2024
     ],
 )
 def test_ranges(text, expected):
@@ -288,12 +308,12 @@ def test_and_still_joins_a_plain_pair():
         ("after FY24", date(2024, 4, 1), None, Mod.AFTER),
         ("up to March 2024", None, date(2024, 4, 1), Mod.UNTIL),
         ("till March 2024", None, date(2024, 4, 1), Mod.UNTIL),
-        ("before 2024", None, date(2024, 1, 1), Mod.BEFORE),
+        ("before 2024", None, date(2023, 4, 1), Mod.BEFORE),  # before FY2024 begins
         ("prior to Q3", None, date(2025, 10, 1), Mod.BEFORE),
     ],
 )
 def test_open_ended_ranges(text, start, end, mod):
-    r = parse_one(text, today=TODAY).range
+    r = parse_one(text, today=TODAY, config=CFG).range
     assert (r.start, r.end, r.mod) == (start, end, mod)
     assert not r.is_bounded
 
@@ -467,6 +487,83 @@ def test_substitute_output_does_not_re_match_itself():
     assert substitute(once, today=TODAY) == once
 
 
+# ---------------------------------------------------------------------------
+# substitute(keep_text=True): the phrase, then its dates in brackets
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("sales of Q4", "sales of Q4 (January 2026 to March 2026)"),
+        ("revenue last week", "revenue last week (25 August 2025 to 31 August 2025)"),
+        ("since April 2024", "since April 2024 (April 2024 onwards)"),
+        ("03/04/2024", "03/04/2024 (3 April 2024)"),  # shows which way it was read
+        ("Q1 vs Q2", "Q1 (April 2025 to June 2025) vs Q2 (July 2025 to September 2025)"),
+    ],
+)
+def test_keep_text_puts_the_dates_after_the_phrase(text, expected):
+    assert substitute(text, today=TODAY, config=CFG, keep_text=True) == expected
+
+
+def test_keep_text_is_off_by_default():
+    assert substitute("sales of Q4", today=TODAY, config=CFG) == (
+        "sales of January 2026 to March 2026"
+    )
+
+
+def test_keep_text_uses_the_formatter_for_the_dates():
+    from date_wrangler import make_formatter
+
+    out = substitute(
+        "sales of Q4", today=TODAY, config=CFG, keep_text=True,
+        formatter=make_formatter(date_format="%b-%Y"),
+    )
+    assert out == "sales of Q4 (Jan-2026 to Mar-2026)"
+
+
+@pytest.mark.parametrize("text", ["March 2024", "15 March 2024", "sales for March 2024"])
+def test_keep_text_does_not_repeat_a_phrase_that_already_says_it(text):
+    """"March 2024 (March 2024)" adds nothing to read."""
+    assert substitute(text, today=TODAY, keep_text=True) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["sales of Q4", "sales 15 Q1", "compare Q1 2024 to Q1 2025", "Q1 2024 versus Q1 2025",
+     "last week vs this week", "revenue Q1 and Q3", "since April 2024", "sales (Q4)"],
+)
+def test_keep_text_twice_is_keep_text_once(text):
+    """A second pass must not stack a second pair of brackets -- not with the same day, and
+    not on a later day either, when the phrase would now read differently."""
+    once = substitute(text, today=TODAY, config=CFG, keep_text=True)
+    assert substitute(once, today=TODAY, config=CFG, keep_text=True) == once
+    assert substitute(once, today=date(2027, 5, 1), keep_text=True) == once
+
+
+def test_keep_text_leaves_the_neighbouring_number_alone():
+    """Replacing "Q1" in "sales 15 Q1" can fuse "15" with the inserted month; keeping the
+    phrase cannot, because the phrase is still there."""
+    assert substitute("sales 15 Q1", today=TODAY, config=CFG, keep_text=True) == (
+        "sales 15 Q1 (April 2025 to June 2025)"
+    )
+
+
+def test_keep_text_still_declines_a_flagged_match():
+    assert substitute("revenue Q1 and Q3", today=TODAY, keep_text=True, min_confidence=0.9) == (
+        "revenue Q1 and Q3"
+    )
+
+
+def test_a_comparison_does_not_reach_inside_brackets():
+    """"compare ... to" makes a plain "to" a comparison, but not one inside brackets: there
+    "January 2024 to March 2024" is one span, and a bracket closed before the period does
+    not stop a comparison either."""
+    found = parse("compare Q1 2024 (January 2024 to March 2024) to Q1 2025", today=TODAY)
+    assert [m.text for m in found] == ["Q1 2024", "January 2024 to March 2024", "Q1 2025"]
+    assert len(parse("compare sales (net) in Q1 to Q2", today=TODAY)) == 2
+
+
 def test_output_is_locale_independent():
     """REGRESSION: strftime('%B') honours LC_TIME, so an unrelated setlocale elsewhere in
     the process changed "June" to "Juni"."""
@@ -518,9 +615,22 @@ def test_fiscal_calendar_is_honoured_per_call():
 
 
 def test_bare_period_basis_is_configurable():
-    calendar_first = WranglerConfig(bare_period_basis=Basis.CALENDAR)
-    assert rng("Q1", calendar_first) == (date(2025, 1, 1), date(2025, 4, 1))
-    assert rng("Q1") == (date(2025, 4, 1), date(2025, 7, 1))
+    """Calendar by default; the older setting still turns fiscal on, as it did."""
+    assert rng("Q1", WranglerConfig()) == (date(2025, 1, 1), date(2025, 4, 1))
+    assert rng("Q1", CFG) == (date(2025, 4, 1), date(2025, 7, 1))
+
+
+def test_the_default_reads_every_undeclared_period_on_the_calendar():
+    """Out of the box, "Q1 2024" is January to March 2024: what most people who write it
+    mean. Only a phrase that says fiscal is read on the fiscal calendar."""
+    default = WranglerConfig()
+    assert default.effective_year_basis is Basis.CALENDAR
+    assert rng("Q1 2024", default) == (date(2024, 1, 1), date(2024, 4, 1))
+    assert rng("this year", default) == (date(2025, 1, 1), date(2026, 1, 1))
+    assert rng("ytd", default) == (date(2025, 1, 1), date(2025, 9, 5))
+    assert rng("H1", default) == (date(2025, 1, 1), date(2025, 7, 1))
+    assert rng("FY24", default) == (date(2023, 4, 1), date(2024, 4, 1))
+    assert rng("fiscal Q1", default) == (date(2025, 4, 1), date(2025, 7, 1))
 
 
 def test_q1_and_q1_of_year_agree_by_default():
@@ -672,8 +782,8 @@ def test_datetime_is_accepted_wherever_a_date_is():
     from datetime import datetime
 
     assert rng("Q1") == (
-        parse_one("Q1", today=datetime(2025, 9, 4, 13, 30)).range.start,
-        parse_one("Q1", today=datetime(2025, 9, 4, 13, 30)).range.end,
+        parse_one("Q1", today=datetime(2025, 9, 4, 13, 30), config=CFG).range.start,
+        parse_one("Q1", today=datetime(2025, 9, 4, 13, 30), config=CFG).range.end,
     )
 
 
@@ -788,7 +898,7 @@ def test_bare_weekday_needs_a_cue_in_prose():
 
 def test_formatted_range_has_no_leading_from():
     """"sales report of from April to June" reads as a typo."""
-    out = substitute("sales report of Q1", today=TODAY)
+    out = substitute("sales report of Q1", today=TODAY, config=CFG)
     assert out == "sales report of April 2025 to June 2025"
 
 
@@ -821,7 +931,7 @@ def test_make_formatter_handles_open_ranges():
     fmt = make_formatter()
     assert fmt(parse_one("since April 2024", today=TODAY).range) == "2024-04-01 onwards"
     assert fmt(parse_one("up to March 2024", today=TODAY).range) == "up to 2024-03-31"
-    assert fmt(parse_one("before 2024", today=TODAY).range) == "before 2024-01-01"
+    assert fmt(parse_one("before CY2024", today=TODAY).range) == "before 2024-01-01"
     assert fmt(parse_one("as of March 2024", today=TODAY).range) == "as of 2024-03-31"
 
 

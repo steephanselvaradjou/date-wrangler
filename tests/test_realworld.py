@@ -150,7 +150,9 @@ def test_everyday_and_chat(text, start):
 
 def test_decades():
     assert first("Popular throughout the 1990s.") == (date(1990, 1, 1), date(2000, 1, 1))
-    assert first("The war ended in 1945.") == (date(1945, 1, 1), date(1946, 1, 1))
+    # General prose means the calendar year; the default basis is fiscal, so say so.
+    calendar = WranglerConfig(year_basis="calendar")
+    assert first("The war ended in 1945.", calendar) == (date(1945, 1, 1), date(1946, 1, 1))
 
 
 def test_duration_from_now():
