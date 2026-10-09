@@ -116,6 +116,12 @@ def _basis_for(spec: Spec, cfg: WranglerConfig) -> Basis:
     return cfg.effective_year_basis
 
 
+def _calendar_year_of(month: int, fiscal_label: int, cfg: WranglerConfig) -> int:
+    """The calendar year ``month`` falls in within fiscal year ``fiscal_label``."""
+    start = fiscal_year_start(fiscal_label, cfg.fiscal)
+    return start.year + (1 if month < start.month else 0)
+
+
 def _default_year(today: date, cfg: WranglerConfig, basis: Basis) -> int:
     """The year a bare period belongs to: the fiscal one in progress, not today.year."""
     if basis is Basis.FISCAL:
@@ -379,13 +385,20 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         if spec.month is None or spec.day is None:
             raise UnresolvableSpec("an absolute day needs a month and a day")
         # "meeting on March 3" states no year; assume the current calendar year.
-        return day_range(date(spec.year if spec.year is not None else today.year,
-                              spec.month, spec.day))
+        year = spec.year if spec.year is not None else today.year
+        if spec.basis is Basis.FISCAL and spec.year is not None:
+            year = _calendar_year_of(spec.month, spec.year, cfg)
+        return day_range(date(year, spec.month, spec.day))
 
     if spec.kind is Kind.ABS_MONTH:
         if spec.month is None:
             raise UnresolvableSpec("a month spec needs a month")
-        # Months are calendar facts; only the *year* they land in is in question.
+        # Months are calendar facts; only the *year* they land in is in question. With a
+        # fiscal label it is the one inside that fiscal year: April-start "June FY25" is
+        # June 2024.
+        if spec.basis is Basis.FISCAL and spec.year is not None:
+            index = (spec.month - cfg.fiscal.start_month) % 12 + 1
+            return fiscal_month_range(spec.year, index, cfg.fiscal)
         return month_range(spec.year if spec.year is not None else today.year, spec.month)
 
     if spec.kind is Kind.ABS_QUARTER:

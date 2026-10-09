@@ -487,7 +487,11 @@ def _unify(a: Spec, b: Spec) -> tuple[Spec, Spec]:
     """Make both endpoints agree on year and basis before resolving.
 
     Otherwise "Q1 to Q2 of 2024" resolves one end fiscally, the other on the calendar.
+
+    A month or day with a plain year of its own keeps the calendar: "March 2024" is March
+    2024, and joining it to "FY24" must not turn it into the March of fiscal 2024.
     """
+    a_dated, b_dated = _is_dated_month(a), _is_dated_month(b)
     if not a.is_relative and not b.is_relative:
         if a.year is None and b.year is not None:
             a = a.with_(year=b.year)
@@ -495,11 +499,16 @@ def _unify(a: Spec, b: Spec) -> tuple[Spec, Spec]:
             b = b.with_(year=a.year)
     basis = a.basis if a.basis is not None else b.basis
     if basis is not None:
-        if a.basis is None:
+        if a.basis is None and not a_dated:
             a = a.with_(basis=basis)
-        if b.basis is None:
+        if b.basis is None and not b_dated:
             b = b.with_(basis=basis)
     return a, b
+
+
+def _is_dated_month(spec: Spec) -> bool:
+    """A month or day that names its own year: a calendar fact, whatever it is joined to."""
+    return spec.kind in (Kind.ABS_MONTH, Kind.ABS_DAY) and spec.year is not None
 
 
 # ---------------------------------------------------------------------------

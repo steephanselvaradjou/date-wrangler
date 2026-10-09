@@ -15,7 +15,9 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 
+from .calendars import fiscal_year_of
 from .config import MonthNumber, WranglerConfig
 from .spec import Kind, Part, Spec
 from .types import Anchor, Basis, Grain
@@ -131,18 +133,40 @@ def _pivot_year(digits: str, cfg: WranglerConfig) -> int:
     return value
 
 
-def parse_year_token(token: str, cfg: WranglerConfig) -> tuple[int | None, Basis | None]:
-    """Read a year fragment, returning the year and any basis it declared."""
+def _stated_basis(token: str) -> Basis | None:
+    """The basis a year fragment declares -- "FY24", "CY2024", "fiscal year" -- if any."""
     low = token.lower()
-    basis: Basis | None = None
     # No trailing \b -- "cy2024" has no boundary between marker and digits, and
     # requiring one silently drops the CY the writer went out of their way to give.
     if re.search(rf"\bc\.?y\.?(?={_SEP}'?\d)|\bcalendar\s+year\b", low):
-        basis = Basis.CALENDAR
-    elif re.search(rf"\bf\.?y\.?(?={_SEP}'?\d)|\b(?:fiscal|financial)\s+year\b", low):
-        basis = Basis.FISCAL
-    m = _YEAR_DIGITS.search(low)
-    return (_pivot_year(m.group(1), cfg) if m else None), basis
+        return Basis.CALENDAR
+    if re.search(rf"\bf\.?y\.?(?={_SEP}'?\d)|\b(?:fiscal|financial)\s+year\b", low):
+        return Basis.FISCAL
+    return None
+
+
+def parse_year_token(token: str, cfg: WranglerConfig) -> tuple[int | None, Basis | None]:
+    """Read a year fragment, returning the year and any basis it declared."""
+    m = _YEAR_DIGITS.search(token.lower())
+    return (_pivot_year(m.group(1), cfg) if m else None), _stated_basis(token)
+
+
+def _fy_label_of_span(text: str, cfg: WranglerConfig) -> int | None:
+    """The fiscal year "2024-25" names: the one that starts in 2024.
+
+    Which number labels it depends on the convention -- 2025 when years are named by their
+    end, 2024 when by their start -- so take the first year and ask the calendar.
+
+    None unless the second year is the one after the first. "FY24 - 2023" or "FY24 - 15
+    March" is not one fiscal year, and reading it as one was confidently wrong.
+    """
+    m = re.search(r"'?(\d{2,4})\s*[-/]\s*'?(\d{2,4})", text)
+    if not m:
+        return None
+    first, second = _pivot_year(m.group(1), cfg), _pivot_year(m.group(2), cfg)
+    if (first + 1) % 100 != second % 100:
+        return None
+    return fiscal_year_of(date(first, cfg.fiscal.start_month, 1), cfg.fiscal)
 
 
 def _year_from_suffix(text: str, cfg: WranglerConfig) -> tuple[int | None, Basis | None]:
@@ -302,13 +326,14 @@ def _p_day_month_year(text: str, cfg: WranglerConfig) -> Spec | None:
     if month is None:
         return None
     year, _ = _year_from_suffix(text, cfg)
+    basis = _stated_basis(text) if year is not None else None  # "15 June FY25", as a month
     if year is None:
         # "15 Mar 24". A bare two-digit number is normally too ambiguous to be a year, but
         # here the day slot is already filled, so nothing else is left for it to be.
         short = re.search(r"\s+(\d{2})\s*$", text)
         if short:
             year = _pivot_year(short.group(1), cfg)
-    return Spec(Kind.ABS_DAY, year=year, month=month, day=int(m.group(1)))
+    return Spec(Kind.ABS_DAY, year=year, month=month, day=int(m.group(1)), basis=basis)
 
 
 def _p_month_day_year(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -327,7 +352,8 @@ def _p_month_day_year(text: str, cfg: WranglerConfig) -> Spec | None:
     digits, suffix = m.group(1), m.group(2)
     year, _ = _year_from_suffix(text, cfg)
     if year is not None or suffix or len(digits) == 1:
-        return Spec(Kind.ABS_DAY, year=year, month=month, day=int(digits))
+        basis = _stated_basis(text) if year is not None else None
+        return Spec(Kind.ABS_DAY, year=year, month=month, day=int(digits), basis=basis)
     value = int(digits)
     if value > 31 or cfg.month_number is MonthNumber.YEAR:
         return Spec(Kind.ABS_MONTH, month=month, year=_pivot_year(digits, cfg))
@@ -335,11 +361,15 @@ def _p_month_day_year(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 def _p_fy_range(text: str, cfg: WranglerConfig) -> Spec | None:
-    """One fiscal year written with both its calendar years: "FY2024-25"."""
-    m = re.search(r"'?(\d{2,4})\s*[-/]\s*'?(\d{2,4})", text)
-    if not m:
+    """One fiscal year written with both its calendar years: "FY2024-25".
+
+    REGRESSION: the second year was taken as the label whatever the convention, so where
+    years are named by their start "FY2024-25" came back as the year from April 2025.
+    """
+    label = _fy_label_of_span(text, cfg)
+    if label is None:
         return None
-    return Spec(Kind.ABS_YEAR, year=_pivot_year(m.group(2), cfg), basis=Basis.FISCAL)
+    return Spec(Kind.ABS_YEAR, year=label, basis=Basis.FISCAL)
 
 
 def _p_to_date(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -600,11 +630,45 @@ def _p_half(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 def _p_month(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"June", "June 2025", "June FY25", "Jun-FY25".
+
+    A plain year beside a month is the calendar year the month falls in, whatever
+    year_basis says -- nobody means June 2024 by "June 2025". Only FY makes the year a
+    fiscal label, and then the month is the one inside that fiscal year: with an April
+    year, "June FY25" is June 2024. The label is kept as written and looked up when
+    resolved, so in "Oct to Mar FY25" each end lands in its own calendar year.
+    """
     month = find_month(text)
     if month is None:
         return None
     year, _, offset = _period_suffix(text, cfg)
-    return Spec(Kind.ABS_MONTH, year=year, month=month, year_offset=offset)
+    basis = _stated_basis(text) if year is not None else None
+    return Spec(Kind.ABS_MONTH, year=year, month=month, year_offset=offset, basis=basis)
+
+
+def _p_month_of_fy_span(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"June FY 2024-25", "FY2024-25 June" -- a month of a fiscal year written in full."""
+    month = find_month(text)
+    label = _fy_label_of_span(text, cfg)
+    if month is None or label is None:
+        return None
+    return Spec(Kind.ABS_MONTH, year=label, month=month, basis=Basis.FISCAL)
+
+
+def _p_fy_month(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"FY25 June", "FY2024-25 March" -- the fiscal year first, then the month inside it."""
+    head = re.match(
+        rf"\s*{_FY_WORD}{_SEP}'?\d{{2,4}}(\s*[-/]\s*'?\d{{2,4}})?", text, re.IGNORECASE
+    )
+    if head is None:
+        return None
+    if head.group(1):
+        return _p_month_of_fy_span(text, cfg)
+    year, basis = parse_year_token(head.group(0), cfg)
+    month = find_month(text[head.end() :])
+    if year is None or month is None:
+        return None
+    return Spec(Kind.ABS_MONTH, year=year, month=month, basis=basis)
 
 
 def _p_year(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -765,10 +829,10 @@ def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
     tail = tail.strip()
     if not tail:
         return None
-    month = find_month(tail)
-    if month is not None:
-        year, _, offset = _period_suffix(tail, cfg)
-        return Spec(Kind.ABS_MONTH, month=month, year=year, year_offset=offset)
+    if find_month(tail) is not None:
+        # The month rule's own reader, so "the first week of June FY25" is June 2024 with
+        # an April year, the same as "June FY25" is.
+        return _p_month(tail, cfg)
     # Quarters and halves divide as neatly as months do -- "early Q1" is its first month.
     for reader in (_p_quarter, _p_half):
         spec = reader(tail, cfg)
@@ -1219,7 +1283,20 @@ RULES: tuple[Rule, ...] = (
     # in a log line was being skipped.
     Rule("iso", r"\b\d{4}-\d{1,2}-\d{1,2}(?!\d)", _p_iso),
     Rule("dashed_day", rf"\b\d{{1,2}}-{_MONTH}-'?\d{{2,4}}\b", _p_dashed_day),
-    Rule("fy_range", rf"\b{_FY_WORD}\s*'?\d{{2,4}}\s*[-/]\s*'?\d{{2,4}}\b", _p_fy_range),
+    # A fiscal year and then a month inside it, ahead of fy_range and year, which would
+    # each take the year and leave the month behind. Not "may": in "FY25 may see growth"
+    # it is a verb. "FY2024-25 June" only unspaced: "FY24 - 15 March" is a range.
+    Rule(
+        "fy_month",
+        rf"\b{_FY_WORD}{_SEP}'?\d{{2,4}}(?:[-/]'?\d{{2,4}})?[\s,]+(?!may\b){_MONTH}\b",
+        _p_fy_month,
+    ),
+    # Not when a month follows: in "FY24 - 15 March 2024" the 15 is a day.
+    Rule(
+        "fy_range",
+        rf"\b{_FY_WORD}\s*'?\d{{2,4}}\s*[-/]\s*'?\d{{2,4}}\b(?![\s,]+{_MONTH}\b)",
+        _p_fy_range,
+    ),
     # Ahead of the year, quarter and half rules, which start at the same place and would
     # each take one piece: "FY24" out of "FY24 Q3", "2024" out of "2024-Q3", "Q3" out of
     # "Q3'24". (?!\w) rather than \b, because "Q3'24" ends on a digit after a quote.
@@ -1403,7 +1480,20 @@ RULES: tuple[Rule, ...] = (
          _p_close_of_business),
     # "the" only before "year": "March of the year 2013". Without it the month had no cue,
     # was dropped by strictness, and the answer was the whole year at full confidence.
-    Rule("month_year", rf"\b{_MONTH}\s+(?:of\s+)?(?:the\s+(?=year\b))?{_YEAR}\b", _p_month),
+    # A month of a fiscal year written in full, ahead of month_year, which would stop at
+    # "June FY 2024" and leave the "-25" behind.
+    Rule(
+        "month_fy_span",
+        rf"\b{_MONTH}\s+(?:of\s+)?{_FY_WORD}\s*'?\d{{2,4}}\s*[-/]\s*'?\d{{2,4}}\b",
+        _p_month_of_fy_span,
+    ),
+    # A hyphen only before FY or CY, and unspaced: "Jun-FY25" is June of FY25, where
+    # "Jun-25" (the dashed_month rule) is a calendar month and "June - FY25" a range.
+    Rule(
+        "month_year",
+        rf"\b{_MONTH}(?:\s+(?:of\s+)?(?:the\s+(?=year\b))?{_YEAR}|-{_MARKED_YEAR})\b",
+        _p_month,
+    ),
     # "March last year" -- without this the month has no cue, is dropped by strictness,
     # and the answer becomes the whole of last year.
     Rule("month_rel_year", rf"\b{_MONTH}\s+(?:of\s+)?{_REL_YEAR}\b", _p_month),
