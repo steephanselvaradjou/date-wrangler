@@ -97,6 +97,10 @@ class Spec:
     #: A run of whole units inside the period: ``(index, count, unit)``. "the first week
     #: of April" is ``(1, 1, WEEK)``; "the last 3 months of the year" is ``(-1, 3, MONTH)``.
     sub_period: tuple[int, int, Grain] | None = None
+    #: The period of this grain that holds the date: "the week of 5 October" is WEEK.
+    within: Grain | None = None
+    #: The seven days from the date: "week commencing 5 October".
+    week_from: bool = False
     #: None => take it from configuration. Only relative periods can roll.
     anchor: Anchor | None = None
 

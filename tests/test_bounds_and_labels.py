@@ -264,3 +264,56 @@ def test_two_years_that_are_not_one_fiscal_year_are_not_read_as_one(text):
     matches, diags = diagnose(text, today=TODAY)
     assert matches == []
     assert diags
+
+
+# ---------------------------------------------------------------------------
+# The period that holds a date
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,start,end",
+    [
+        ("the week of 5 October", date(2026, 10, 5), date(2026, 10, 12)),
+        ("the week of October 7", date(2026, 10, 5), date(2026, 10, 12)),
+        ("week of 2026-10-07", date(2026, 10, 5), date(2026, 10, 12)),
+        ("the week of the 7th", date(2026, 10, 5), date(2026, 10, 12)),
+        ("the quarter of June", date(2026, 4, 1), date(2026, 7, 1)),
+        ("the year of 15 March 2024", date(2024, 1, 1), date(2025, 1, 1)),
+    ],
+)
+def test_a_period_named_by_a_date_in_it(text, start, end):
+    """REGRESSION: only the date was read -- "the week of 5 October" was that one day, at
+    full confidence."""
+    assert bounds(text, CALENDAR) == (start, end)
+
+
+def test_the_week_of_follows_the_configured_week():
+    sunday = WranglerConfig(week_starts_on=6)
+    assert bounds("the week of 7 October", sunday) == (date(2026, 10, 4), date(2026, 10, 11))
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["week commencing 7 October", "w/c 7 Oct", "week beginning 7 October", "week starting 7 Oct"],
+)
+def test_a_week_commencing_runs_seven_days_from_its_date(text):
+    assert bounds(text, CALENDAR) == (date(2026, 10, 7), date(2026, 10, 14))
+
+
+def test_the_quarter_of_a_fiscal_month_is_its_fiscal_quarter():
+    assert bounds("the quarter of June FY25", FISCAL) == (date(2024, 4, 1), date(2024, 7, 1))
+
+
+def test_the_month_of_a_month_is_that_month():
+    assert bounds("the month of March", CALENDAR) == (date(2026, 3, 1), date(2026, 4, 1))
+
+
+@pytest.mark.parametrize("text", ["the week of last Monday", "the quarter of last month"])
+def test_a_period_of_a_date_not_read_is_flagged_not_answered(text):
+    """Any shape the rule does not cover comes back at 0.5 with the words it dropped."""
+    from date_wrangler import diagnose
+
+    matches, diags = diagnose(text, today=TODAY)
+    assert matches[0].confidence == 0.5
+    assert any(" of'" in d.reason for d in diags)

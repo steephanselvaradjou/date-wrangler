@@ -175,6 +175,16 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
                 base = _pick_business_day(base, spec.day_of_period, cfg)
             else:
                 base = _pick_day(base, spec.day_of_period)
+        if spec.within is not None and base.start is not None:
+            # "the week of 5 October": the week that holds it, on the configured week.
+            basis = _basis_for(spec, cfg)
+            start = _period_start(base.start, cfg, spec.within, basis)
+            base = DateRange(start, _shift(start, spec.within, 1), spec.within, basis)
+        if spec.week_from and base.start is not None:
+            # "week commencing 5 October": seven days from it, whatever day it is.
+            base = DateRange(
+                base.start, base.start + timedelta(days=7), Grain.WEEK, Basis.CALENDAR
+            )
     except (ValueError, OverflowError) as exc:
         if isinstance(exc, UnresolvableSpec):
             raise

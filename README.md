@@ -459,8 +459,9 @@ plausible.
 | Chat and email | `EOD`, `COB Friday`, `on the 15th`, `meet Thursday` |
 | Decades | `the 1990s` |
 
-Connectors include `to`, `through`, `thru`, `until`, `till`, `upto`, `and`, and hyphen, en
-dash or em dash — the last three matter because editors rewrite `-` as `–` on sight.
+Span connectors are `to`, `through`, `thru`, `until`, `till`, `upto`, and hyphen, en dash or
+em dash — the last three matter because editors rewrite `-` as `–` on sight. `and` is not
+one of them: it lists periods (see below).
 
 **`<period> to date` runs from the start of the period up to and including today.** For
 the current period that is the period so far — `this year to date` is the same window as
@@ -503,13 +504,25 @@ matches, diags = diagnose("5000 years ago", today=today)
 by default it declines: anything flagged at 0.5 stays as typed.
 
 ```python
-substitute("revenue Q1 and Q3")                    # 'revenue Q1 and Q3' — flagged
-substitute("revenue Q1 and Q3", min_confidence=0)  # 'revenue January 2026 to September 2026'
-substitute("sales in 2024", min_confidence=0.9)    # 'sales in 2024' — a bare year is 0.8
+substitute("calls tomorrow morning")                    # unchanged — 'morning' was not read
+substitute("calls tomorrow morning", min_confidence=0)  # 'calls 10 October 2026 morning'
+substitute("sales in 2024", min_confidence=0.9)         # 'sales in 2024' — a bare year is 0.8
 ```
 
-`min_confidence` defaults to 0.6: confident matches and bare years are rewritten, guesses
-are not. Pass `0` to rewrite every match, or `0.9` to leave bare years as typed too.
+Confidence is not a probability. There are four levels, each with a reason:
+
+| confidence | what it means | examples | `substitute` by default |
+|---|---|---|---|
+| **1.0** | read in full, nothing in doubt | `last quarter`, `Q1 FY25`, `15 March 2024`, `last Monday` | rewritten |
+| **0.9** | an all-numeric date — which number is the day is a setting (`date_order`) | `03/04/2024` | rewritten |
+| **0.8** | probably a date, but the same words can be a plain number or name | `2024`, `Monday`, `due on the 15th`, `1 and 15 March` | rewritten |
+| **0.5** | flagged: part of the phrase was not read, or a span says less than it seems — `diagnose` gives the reason | `tomorrow morning`, `two weeks from Friday`, `Q1 to January` | left as typed |
+
+`min_confidence` defaults to **0.6**, which sits between the two lowest levels: everything
+is rewritten except what is flagged. Pass `0` to rewrite every match, `0.9` to leave bare
+years and the like as typed too, or `1` to rewrite only what is certain. The same numbers
+are on every match from `parse()`, so code that filters on `confidence` uses the same
+scale.
 
 A match whose neighbouring words change the period but could not be read comes back with
 **confidence 0.5** and an explanation, rather than a confident answer to a question nobody
@@ -530,8 +543,8 @@ still the most useful one available — it just isn't the whole answer:
 parse("yesterday at 2pm")   # the whole day, confidence 0.5
 # "read 'yesterday' but not 'at 2pm', which changes the period"
 
-parse("Q1 and Q3")          # Apr-Dec, confidence 0.5 — Q2 is in there too
-# "read 'Q1 and Q3' as one span, which also covers 2025-07-01 to 2025-10-01 in between"
+parse("Q1 to January")      # January, confidence 0.5 — under a January year Q1 adds nothing
+# "read 'Q1 to January' as ..., but it ends inside the period it starts with"
 ```
 
 Times of day are out of scope, so a date beside a clock resolves to the day. That is worth
@@ -540,16 +553,31 @@ preposition counts** — `at`, `by`, `around`. A clock sitting straight against 
 of a timestamp (`2024-03-15T14:30:00Z`, `Mar 15 14:30:00`), where the day *is* the intended
 answer, so log lines stay at full confidence.
 
-**A list and a span are different things.** `Q1 and Q2` is a list — the union of the
-periods in it, in any order, so `this year and Q1` is the whole year and `Q3 and Q1` is two
-quarters of one year. `Q1 to Q2`, `from March to June` and `between March and June` are
-spans — from the start of the first to the end of the last, wrapping a year if they
-invert. A year written on one item reaches the others either way: `Q1 and Q2 2024`.
+**`and` lists periods; `to` makes a span.** `Q1 and Q3` is two periods, each returned on its
+own — one range for both would hold Q2, which nobody named — and so are `Q1 and Q2`, `FY24
+& FY25`, `Monday and Friday` and `this year and Q1`, exactly as `Q1, Q2 and Q3` is. `Q1 to
+Q3`, `from March to June` and `between March and June` are spans, from the start of the
+first to the end of the last, wrapping a year if they invert; `between … and` is the one
+place `and` makes a span. A list may hold spans of its own — `Jan to Mar and Jul to Sep` is
+two — and a year written on one item reaches the others: `Q1 and Q3 2024`.
 
-Two cases come back at **confidence 0.5** rather than being guessed at. A list with a gap —
-`Q1 and Q3` holds Q2, which nobody named. And a span whose end lies at its own start —
-under a January year `Q1 to January` is just January, so Q1 added nothing. A span that
-stops partway through its first period is fine: `Q1 to 15 March` is a reasonable question.
+```python
+substitute("revenue Q1 and Q3")
+# 'revenue January 2026 to March 2026 and July 2026 to September 2026'
+substitute("revenue Q1 and Q3", keep_text=True)
+# 'revenue Q1 (January 2026 to March 2026) and Q3 (July 2026 to September 2026)'
+```
+
+Days that share a month are a list too: `1st and 15th March`, `1, 5 and 9 March 2024`,
+`March 1 and 15`, `1st vs 15th March`. Each day comes back on its own, with the month and
+any year it shares. A bare number before the month — `1 and 15 March` — reads at
+confidence 0.8, since `top 3 and 15 March` would read the same way; a suffix or a month in
+front (`1st and 15th`, `March 1 and 15`) settles it. `between 1 and 15 March` is a run.
+
+A span whose end lies at its own start comes back at **confidence 0.5** rather than being
+guessed at: under a January year `Q1 to January` is just January, so Q1 added nothing. A
+span that stops partway through its first period is fine: `Q1 to 15 March` is a
+reasonable question.
 
 **Bare `last day` is yesterday** — "the last day", read as "the last 1 day". With a period
 after it, `the last day of the month` is the month's final day; on its own it is ambiguous

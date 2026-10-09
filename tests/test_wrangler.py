@@ -151,7 +151,9 @@ def test_zero_count_is_reported_not_inverted():
     assert any("at least 1" in d.reason for d in diags)
 
 
-@pytest.mark.parametrize("text", ["¼q", "x½q", "½ Q1 and Q3", "Q1 – Q3 ¼ and Q1 and Q3"])
+@pytest.mark.parametrize(
+    "text", ["¼q", "x½q", "½ calls tomorrow morning", "Q1 – Q3 ¼ and calls tomorrow morning"]
+)
 def test_diagnostic_spans_index_the_text_as_given(text):
     """REGRESSION: diagnostics kept offsets into the normalised text, where "¼" is three
     characters, so a span could run past the end of the caller's string."""
@@ -235,11 +237,12 @@ def test_ranges(text, expected):
 
 
 @pytest.mark.parametrize(
-    "connector", ["to", "through", "thru", "until", "till", "upto", "-", "–", "—", "and"]
+    "connector", ["to", "through", "thru", "until", "till", "upto", "-", "–", "—"]
 )
 def test_connector_vocabulary(connector):
     """REGRESSION: only to/and/- were connectors; everything else produced two separate
-    matches that read as garbage, and Word turns "-" into an en dash on sight."""
+    matches that read as garbage, and Word turns "-" into an en dash on sight. "and" is
+    not one of them: it lists periods rather than spanning them."""
     assert rng(f"Q1 {connector} Q2") == (date(2025, 4, 1), date(2025, 10, 1))
 
 
@@ -291,8 +294,12 @@ def test_lists_stay_separate_and_share_a_year():
     ]
 
 
-def test_and_still_joins_a_plain_pair():
-    assert rng("Q1 and Q2") == (date(2025, 4, 1), date(2025, 10, 1))
+def test_and_lists_a_plain_pair_and_between_spans_it():
+    assert ranges("Q1 and Q2") == [
+        (date(2025, 4, 1), date(2025, 7, 1)),
+        (date(2025, 7, 1), date(2025, 10, 1)),
+    ]
+    assert rng("between Q1 and Q2") == (date(2025, 4, 1), date(2025, 10, 1))
 
 
 # ---------------------------------------------------------------------------
@@ -550,8 +557,14 @@ def test_keep_text_leaves_the_neighbouring_number_alone():
 
 
 def test_keep_text_still_declines_a_flagged_match():
-    assert substitute("revenue Q1 and Q3", today=TODAY, keep_text=True, min_confidence=0.9) == (
-        "revenue Q1 and Q3"
+    assert substitute("calls tomorrow morning", today=TODAY, keep_text=True) == (
+        "calls tomorrow morning"
+    )
+
+
+def test_keep_text_annotates_each_period_of_a_list():
+    assert substitute("revenue Q1 and Q3", today=TODAY, config=CFG, keep_text=True) == (
+        "revenue Q1 (April 2025 to June 2025) and Q3 (October 2025 to December 2025)"
     )
 
 
@@ -986,3 +999,103 @@ def test_month_number_year_reads_the_authors_range_correctly():
 
     cfg = WranglerConfig(month_number=MonthNumber.YEAR)
     assert rng("jan 24-mar 2025", cfg) == (date(2024, 1, 1), date(2025, 4, 1))
+
+
+# ---------------------------------------------------------------------------
+# "the" belongs to the phrase it introduces
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("sales for the year 2013", "sales for January 2013 to December 2013"),
+        ("sales for the fiscal year 2025", "sales for April 2024 to March 2025"),
+        ("sales for the last quarter", "sales for April 2025 to June 2025"),
+        ("sales for the first quarter", "sales for January 2025 to March 2025"),
+        ("on the 15th of March", "on 15 March 2025"),
+    ],
+)
+def test_the_is_replaced_with_the_phrase_it_introduces(text, expected):
+    """REGRESSION: "the" was left outside the match, so replacing gave "sales for the
+    January 2013 to December 2013"."""
+    assert substitute(text, today=TODAY) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("the March figures", "the March 2025 figures"),
+        ("the 15 March meeting", "the 15 March 2025 meeting"),
+    ],
+)
+def test_the_stays_with_the_noun_a_date_describes(text, expected):
+    assert substitute(text, today=TODAY) == expected
+
+
+@pytest.mark.parametrize(
+    "text,start,end,mod",
+    [
+        ("since the last quarter", date(2025, 4, 1), None, Mod.SINCE),
+        ("after the first quarter", date(2025, 4, 1), None, Mod.AFTER),
+        ("before the last week", None, date(2025, 8, 25), Mod.BEFORE),
+        ("up to the previous month", None, date(2025, 9, 1), Mod.UNTIL),
+        ("since the year 2013", date(2013, 1, 1), None, Mod.SINCE),
+    ],
+)
+def test_an_open_end_is_read_past_the(text, start, end, mod):
+    """REGRESSION: the article hid the prefix, so "since the last quarter" was the closed
+    quarter at full confidence -- the opposite of open-ended."""
+    r = parse_one(text, today=TODAY).range
+    assert (r.start, r.end, r.mod) == (start, end, mod)
+
+
+@pytest.mark.parametrize(
+    "text,start",
+    [
+        ("from 15 March", date(2025, 3, 15)),
+        ("from 15th of March", date(2025, 3, 15)),
+        ("from the 15th of March", date(2025, 3, 15)),
+        ("from the last day of March", date(2025, 3, 31)),
+        ("from the first Monday of March", date(2025, 3, 3)),
+    ],
+)
+def test_from_opens_a_range_before_any_single_day(text, start):
+    """REGRESSION: only some spellings of a day counted, so "from 15 March" ran onwards
+    while "from 15th of March" was the 15th alone."""
+    r = parse_one(text, today=TODAY).range
+    assert (r.start, r.end, r.mod) == (start, None, Mod.SINCE)
+
+
+def test_a_duration_from_a_day_is_flagged_past_the():
+    """"two weeks from the 15th" is not the 15th; the article hid the duration."""
+    matches, diags = diagnose("two weeks from the 15th", today=TODAY)
+    assert matches[0].confidence == 0.5
+    assert any("two weeks from" in d.reason for d in diags)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["last 3 hours", "in the last 24 hours", "the past hour", "in 30 minutes", "2 hours ago",
+     "an hour ago", "half an hour ago", "next 15 mins", "within the last 24 hours"],
+)
+def test_hours_get_a_reason_not_silence(text):
+    """REGRESSION: "last 3 hours" gave neither a match nor a diagnostic, which looks exactly
+    like text with no date in it. It is still not resolved -- the library answers in whole
+    days -- but the caller is told why."""
+    matches, diags = diagnose(text, today=TODAY)
+    assert matches == []
+    assert len(diags) == 1
+    assert "shorter than a day" in diags[0].reason
+    assert diags[0].text.strip() in text
+
+
+def test_hours_beside_a_date_leave_the_date_alone():
+    matches, diags = diagnose("last 3 hours and yesterday", today=TODAY)
+    assert [m.text for m in matches] == ["yesterday"]
+    assert [d.text for d in diags] == ["last 3 hours"]
+
+
+@pytest.mark.parametrize("text", ["a 2 hour meeting", "bake for 30 minutes", "last 3 days"])
+def test_durations_that_are_not_relative_say_nothing(text):
+    assert not any("shorter than a day" in d.reason for d in diagnose(text, today=TODAY)[1])
