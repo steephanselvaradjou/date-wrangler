@@ -153,9 +153,29 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the year ended 31 March 2024", "2023-04..2024-03"),
         ("FY ending June 30, 2024", "2023-07..2024-06"),
         ("FY22-24", "!"),  # not one fiscal year
-        ("2024-25", "!"),  # fiscal 2024-25, or 2024 to 2025?
-        ("sales 2024-25", "!"),
-        ("2012-13", "!"),
+        # With no FY, year_basis decides: on the calendar, two years. Fiscal is below.
+        ("2024-25", "2024..2025"),
+        ("sales 2024-25", "2024..2025"),
+        ("2012-13", "2012..2013"),
+        ("2012/13", "2012..2013"),
+        ("2011-12", "2011-12"),  # also a month, in ISO; December 2011
+        ("Q3 2024-25", "!"),  # a quarter of two calendar years is not one period
+        ("June 2024-25", "!"),
+        ("2024-30", "!"),  # not one fiscal year either way
+    ]),
+    ("split years on a fiscal basis", TODAY, FY, [
+        ("2024-25", "2024-04..2025-03"),
+        ("sales 2024-25", "2024-04..2025-03"),
+        ("2012-13", "2012-04..2013-03"),
+        ("2012/13", "2012-04..2013-03"),
+        ("2011-12", "2011-04..2012-03"),
+        ("Q3 2024-25", "2024-10..2024-12"),
+        ("H1 2024-25", "2024-04..2024-09"),
+        ("June 2024-25", "2024-06"),
+        ("15 June 2024-25", "2024-06-15"),
+        ("Q1 2024-25 vs Q1 2023-24", "2024-04..2024-06 ; 2023-04..2023-06"),
+        ("2024-03", "2024-03"),  # not the year after, so a month on any basis
+        ("FY2024-25", "2024-04..2025-03"),
     ]),
     ("quarters and halves", TODAY, CAL, [
         ("Q1 2024", "2024-01..2024-03"),
@@ -600,7 +620,8 @@ def test_every_line_of_the_request_file_has_an_answer():
 
 
 def test_no_phrase_is_listed_twice_with_different_answers():
-    seen: dict[str, str] = {}
-    for _, _, _, cases in SECTIONS:
+    """Under one configuration; "2024-25" rightly has one answer per year_basis."""
+    seen: dict[tuple[str, str], str] = {}
+    for _, _, cfg, cases in SECTIONS:
         for phrase, want in cases:
-            assert seen.setdefault(phrase, want) == want, phrase
+            assert seen.setdefault((phrase, repr(cfg)), want) == want, phrase

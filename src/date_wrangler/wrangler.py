@@ -699,7 +699,9 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
     links: list[str | None] = []
     for a, b in zip(raws, raws[1:], strict=False):
         gap = text[a.end : b.start]
-        if _COMPARISON_GAP.match(gap):
+        if a.rule == b.rule == "split_year" and gap.strip() in ("-", "/"):
+            links.append("range")  # "2024-25" on a calendar basis: 2024 to 2025
+        elif _COMPARISON_GAP.match(gap):
             links.append("compare")
         elif _SLASH_LINK.match(gap):
             # Two dated days either side of a slash are an ISO 8601 interval.
@@ -1389,6 +1391,31 @@ def _merge(
                         (a.start, b.end),
                         "range",
                         "range does not end after it starts",
+                    )
+                )
+            return None
+
+    # "1Q to yesterday to 2000": a middle that falls outside the two ends does not run
+    # forward, so the chain is not one span. REGRESSION: the middle was never looked at,
+    # and the span ran from Q1 to 2000 over a "yesterday" that came before both.
+    for mid in chain[1:-1]:
+        try:
+            rm = resolve(_unify(mid.spec, sb)[0], day, cfg)
+        except UnresolvableSpec:
+            rm = None
+        if rm is None or (
+            ra.start is not None
+            and rb.end is not None
+            and (
+                (rm.start is not None and rm.start < ra.start)
+                or (rm.end is not None and rm.end > rb.end)
+            )
+        ):
+            if diags is not None:
+                diags.append(
+                    Diagnostic(
+                        body[a.start : b.end], (a.start, b.end), "range",
+                        "range does not run forward through its middle",
                     )
                 )
             return None

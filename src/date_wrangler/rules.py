@@ -25,7 +25,6 @@ from .vocab import (
     CARDINALS,
     DECADE_WORDS,
     FUTURE_WORDS,
-    MONTH_DISPLAY,
     MONTH_NAMES,
     MONTHS,
     ORDINALS,
@@ -82,10 +81,19 @@ _FY_YEAR = (
 #: A bare two-digit number is never a year -- that is how a day-of-month becomes one.
 _MARKED_YEAR = rf"(?:{_FY_YEAR}|{_CY_WORD}{_SEP}'?\d{{2,4}})"
 
+#: A split year with no FY in front: "Q3 2024-25". year_basis decides what it is -- see
+#: parse_year_token. Not before a day or a month, so "15 Mar 2024-15 Apr 2024" stays a range.
+_SPLIT_YEAR = (
+    rf"(?:19|20)\d{{2}}[-/]\d{{2}}(?![\d/-])"
+    rf"(?![\s,]+(?:\d{{1,2}}(?:st|nd|rd|th)?\s+)?(?:of\s+)?{_MONTH}\b)"
+)
+
 #: A year where nothing else can be meant -- after a month, quarter or half. Any four
 #: digits, since "January 2100" is unambiguous. Restricting this to 19xx/20xx meant we
 #: could not read back our own output, and substitute() grew the text on every pass.
-_YEAR = rf"(?:{_FY_YEAR}|(?:{_CY_WORD}|year){_SEP}'?\d{{2,4}}|'\d{{2}}|\d{{4}})"
+_YEAR = (
+    rf"(?:{_FY_YEAR}|(?:{_CY_WORD}|year){_SEP}'?\d{{2,4}}|'\d{{2}}|{_SPLIT_YEAR}|\d{{4}})"
+)
 
 #: A year standing alone. Here the century is all that separates a date from a
 #: quantity, so "5000" stays a number.
@@ -168,6 +176,8 @@ def _stated_basis(token: str) -> Basis | None:
 
 
 _SPAN_DIGITS = re.compile(r"\d\s*[-/]\s*'?\d")
+#: "2024-25" with nothing in front of it.
+_PLAIN_SPLIT = re.compile(r"(?<![\w'])(?:19|20)\d{2}[-/]\d{2}(?![\d/-])")
 
 
 def parse_year_token(token: str, cfg: WranglerConfig) -> tuple[int | None, Basis | None]:
@@ -175,15 +185,36 @@ def parse_year_token(token: str, cfg: WranglerConfig) -> tuple[int | None, Basis
 
     A fiscal year written with both its calendar years -- "FY2024-25" -- is the label the
     calendar gives it, which is not the first number when years are named by their end.
+
+    Without the FY, "2024-25" is what year_basis says, as any other year is: the fiscal
+    year 2024-25 on a fiscal basis, and on a calendar one two years -- of which a quarter
+    or a month is not one period, so it is refused with what to write instead.
     """
     basis = _stated_basis(token)
-    if basis is Basis.FISCAL and _SPAN_DIGITS.search(token):
+    split = basis is None and _PLAIN_SPLIT.fullmatch(token.strip())
+    if split and cfg.effective_year_basis is not Basis.FISCAL:
+        raise ValueError(
+            f"{token.strip()!r} is two calendar years with year_basis='calendar', so a period "
+            f"of it is not one period: write FY{token.strip()} for the fiscal year, or set "
+            "year_basis='fiscal'"
+        )
+    if split or (basis is Basis.FISCAL and _SPAN_DIGITS.search(token)):
         label = _fy_label_of_span(token, cfg)
         if label is None:
             raise ValueError(_not_one_fiscal_year(token))
-        return label, basis
+        return label, Basis.FISCAL
     m = _YEAR_DIGITS.search(token.lower())
     return (_pivot_year(m.group(1), cfg) if m else None), basis
+
+
+def _month_year_basis(text: str) -> Basis | None:
+    """The basis of the year written after a month or a day.
+
+    A plain year leaves a month on the calendar: "June 2025" is June 2025. FY makes it a
+    label -- "June FY25" is the June inside FY25 -- and so does a split year read as a
+    fiscal year: on a fiscal basis "June 2024-25" is June 2024.
+    """
+    return _stated_basis(text) or (Basis.FISCAL if _PLAIN_SPLIT.search(text) else None)
 
 
 def _not_one_fiscal_year(text: str) -> str:
@@ -414,7 +445,7 @@ def _p_day_month_year(text: str, cfg: WranglerConfig) -> Spec | None:
     # "2nd March last year": REGRESSION -- the "last year" was matched and then not read,
     # so the answer was this year's 2 March at full confidence.
     year, _, offset = _period_suffix(text, cfg)
-    basis = _stated_basis(text) if year is not None else None  # "15 June FY25", as a month
+    basis = _month_year_basis(text) if year is not None else None  # "15 June FY25", as a month
     if year is None and offset is None:
         # "15 Mar 24". A bare two-digit number is normally too ambiguous to be a year, but
         # here the day slot is already filled, so nothing else is left for it to be.
@@ -445,7 +476,7 @@ def _p_month_day_year(text: str, cfg: WranglerConfig) -> Spec | None:
     digits, suffix = m.group(1), m.group(2)
     year, _, offset = _period_suffix(text, cfg)
     if year is not None or offset is not None or suffix or len(digits) == 1:
-        basis = _stated_basis(text) if year is not None else None
+        basis = _month_year_basis(text) if year is not None else None
         return Spec(
             Kind.ABS_DAY, year=year, month=month, day=int(digits), basis=basis,
             year_offset=offset,
@@ -468,30 +499,38 @@ def _p_fy_range(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.ABS_YEAR, year=label, basis=Basis.FISCAL)
 
 
-def _p_split_year(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"2024-25", "2012/13" -- with no FY in front, nothing says which of two things it is.
+def _p_split_year(text: str, cfg: WranglerConfig) -> Spec | Parts | None:
+    """"2024-25", "2012/13" -- with no FY in front, year_basis decides.
 
-    In a finance team it is a fiscal year; to anyone else, two years. Either guess is
-    confidently wrong half the time, so it is declined with the two ways to say it.
+    In a finance team it is a fiscal year; to anyone else, two years. Nothing in the
+    phrase says which, so it is read the way every other year is: by year_basis. On a
+    fiscal basis it is the fiscal year 2024-25; on a calendar one, 2024 to 2025 -- the two
+    years come back as a span, each end its own, exactly as "2024-2025" does.
     """
     m = re.fullmatch(r"\s*((?:19|20)\d{2})\s*[-/]\s*(\d{2}|\d{4})\s*", text)
     if not m:
         return None
     first, second = int(m.group(1)), int(m.group(2))
     if (first + 1) % 100 != second % 100:
-        return None
-    raise ValueError(
-        f"{text.strip()!r} could be the fiscal year {first}-{(first + 1) % 100:02d} or the "
-        f"years {first} to {first + 1}: write FY{first}-{(first + 1) % 100:02d} or "
-        f"{first} to {first + 1}"
-    )
+        raise ValueError(
+            f"{text.strip()!r} is not one fiscal year, whose second year follows the first; "
+            "if it is a run of years, write it as one -- '2024 to 2030'"
+        )
+    if cfg.effective_year_basis is Basis.FISCAL:
+        label = _fy_label_of_span(text, cfg)
+        return None if label is None else Spec(Kind.ABS_YEAR, year=label, basis=Basis.FISCAL)
+    return [
+        (Spec(Kind.ABS_YEAR, year=first, confidence=0.8), m.start(1), m.end(1)),
+        (Spec(Kind.ABS_YEAR, year=first + 1, confidence=0.8), m.start(2), m.end(2)),
+    ]
 
 
 def _p_numeric_month(text: str, cfg: WranglerConfig) -> Spec | None:
     """"2024-03", "2024/03", "03/2024" -- a month written as numbers.
 
-    "2011-12" is also how a fiscal year is written, and the two cannot be told apart, so a
-    month that is also the year after is declined rather than guessed.
+    "2011-12" is also how a fiscal year is written. year_basis decides, as it does for
+    "2024-25": on a fiscal basis it is the fiscal year 2011-12, on a calendar one December
+    2011, the ISO reading.
     """
     t = text.strip()
     m = re.fullmatch(r"((?:19|20)\d{2})[-/](\d{1,2})", t) or re.fullmatch(
@@ -505,11 +544,11 @@ def _p_numeric_month(text: str, cfg: WranglerConfig) -> Spec | None:
     )
     if not 1 <= month <= 12:
         return None
-    if year_first and len(m.group(2)) == 2 and (year + 1) % 100 == month:
-        raise ValueError(
-            f"{t!r} could be {MONTH_DISPLAY[month - 1]} {year} or the fiscal year "
-            f"{year}-{month:02d}: write {MONTH_DISPLAY[month - 1]} {year} or FY{t}"
-        )
+    fiscal = cfg.effective_year_basis is Basis.FISCAL
+    if fiscal and year_first and len(m.group(2)) == 2 and (year + 1) % 100 == month:
+        label = _fy_label_of_span(t, cfg)
+        if label is not None:
+            return Spec(Kind.ABS_YEAR, year=label, basis=Basis.FISCAL)
     return Spec(Kind.ABS_MONTH, year=year, month=month)
 
 
@@ -851,7 +890,7 @@ def _p_month(text: str, cfg: WranglerConfig) -> Spec | None:
     if month is None:
         return None
     year, _, offset = _period_suffix(text, cfg)
-    basis = _stated_basis(text) if year is not None else None
+    basis = _month_year_basis(text) if year is not None else None
     return Spec(Kind.ABS_MONTH, year=year, month=month, year_offset=offset, basis=basis)
 
 
@@ -1431,7 +1470,7 @@ def _p_day_list(text: str, cfg: WranglerConfig) -> Parts | None:
     if month is None:
         return None
     year, _, year_offset = _period_suffix(rest.replace(",", " "), cfg)
-    basis = _stated_basis(rest) if year is not None else None
+    basis = _month_year_basis(rest) if year is not None else None
     days = list(_DAY_TOKEN.finditer(m.group("days")))
     values = [int(re.sub(r"\D", "", d.group(0))) for d in days]
     if len(days) < 2 or not all(1 <= v <= 31 for v in values):

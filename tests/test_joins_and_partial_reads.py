@@ -115,6 +115,16 @@ def test_a_span_whose_end_lies_at_its_own_start_is_flagged(text):
     assert any("adds nothing" in d.reason for d in diags)
 
 
+def test_a_chain_that_runs_backwards_through_its_middle_is_not_one_span():
+    """REGRESSION (found by Hypothesis): "1Q to yesterday to 2000" was one span from Q1 to
+    2000, over a "yesterday" that came before both. With the bare 2000 dropped -- strict
+    mode -- the same words gave two dates, so strictness found more than greedy did."""
+    cfg = WranglerConfig(fiscal=FiscalCalendar.calendar(), strictness="greedy")
+    found, diags = diagnose("1Q UPTO YESTERDAY UPTO 2000", today=date(2000, 1, 1), config=cfg)
+    assert not any(m.text == "1Q UPTO YESTERDAY UPTO 2000" for m in found)
+    assert any("middle" in d.reason for d in diags)
+
+
 @pytest.mark.parametrize(
     "text", ["Q1 to Q3", "Nov to Feb", "from March to June", "between March and June"]
 )
