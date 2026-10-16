@@ -1,11 +1,12 @@
 """Reading dates in steps: split the text into pieces, name each piece, build dates from them.
 
-A prototype of the reader the rules may move to, for the day-month-year family only, and
-not used by :func:`parse` yet. Today each of those rules is one regular expression that
-has to spell out every way of writing every piece -- a full stop after "Sept", an
-apostrophe before "18", a comma before the year -- and a spelling added to one rule is
-missing from the next. Here a piece is recognised once, by looking the word up, and a date
-is a short sequence of pieces in which the joining words are optional.
+The dates written with month names -- days, months and the years beside them -- are read
+here; :func:`~date_wrangler.wrangler._scan` takes turns with the regular expressions for
+every other rule. Each of those used to be one regular expression that had to spell out
+every way of writing every piece -- a full stop after "Sept", an apostrophe before "18", a
+comma before the year -- and a spelling added to one rule was missing from the next. Here a
+piece is recognised once, by looking the word up, and a date is a short sequence of pieces
+in which the joining words are optional.
 
     "01may 2018"  ->  01 | may | 2018  ->  DAY(1) MONTH(5) YEAR(2018)  ->  1 May 2018
 """
@@ -17,7 +18,7 @@ from bisect import bisect_left
 from collections.abc import Callable
 
 from .config import MonthNumber, WranglerConfig
-from .rules import parse_year_token
+from .rules import _fy_label_of_span, _not_one_fiscal_year, parse_year_token
 from .spec import Kind, Spec
 from .types import Basis
 from .vocab import MONTHS, ORDINALS
@@ -59,8 +60,14 @@ def tokenize(text: str) -> list[Token]:
     return out
 
 
-#: Text with neither a digit nor a month name holds none of these dates.
-_MAY_HOLD = re.compile(r"\d|\b(?:" + "|".join(sorted(MONTHS, key=len, reverse=True)) + r")\b", re.I)
+#: Every date of this family names a month -- "15 March", "Mar-24", "FY25 June", and the
+#: "MAR" of "15MAR2024", where digits touch it -- so text without one holds none, and is
+#: not split into tokens at all. Most questions with a date in them have no month name:
+#: "Q1 2024", "from 2012 to 2013".
+_MAY_HOLD = re.compile(
+    r"(?<![a-z])(?:" + "|".join(sorted(MONTHS, key=len, reverse=True)) + r")(?![a-z])",
+    re.IGNORECASE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -108,17 +115,18 @@ class _Pieces:
     def __init__(self, toks: list[Token]) -> None:
         self.toks = toks
         self.n = len(toks)
+        # What each token is, looked up once: every reader asks, often of the same token.
+        self.months = [MONTHS.get(t.low) for t in toks]
+        self.days = [_day(t) if t.low[0].isdigit() else None for t in toks]
 
     def at(self, i: int) -> Token | None:
         return self.toks[i] if 0 <= i < self.n else None
 
     def month(self, i: int) -> int | None:
-        t = self.at(i)
-        return MONTHS.get(t.low) if t else None
+        return self.months[i] if 0 <= i < self.n else None
 
     def day(self, i: int) -> int | None:
-        t = self.at(i)
-        return _day(t) if t else None
+        return self.days[i] if 0 <= i < self.n else None
 
     def is_(self, i: int, *words: str, tight: bool | None = None) -> bool:
         t = self.at(i)
@@ -142,6 +150,19 @@ class _Pieces:
         quarter_check = quarter_check or comma
         if self.is_(k, "of"):
             k += 1
+        if self.is_(k, "the") and self.is_(k + 1, "year"):
+            k += 1  # "March of the year 2013"
+        if self.is_(k, "year"):
+            j = k + 1
+            while self.is_(j, "-"):
+                j += 1
+            if self.is_(j, "'"):
+                j += 1
+            y = self.at(j)
+            if y is not None and y.low.isdigit() and len(y.low) in (2, 4):
+                value = int(y.low)
+                return (_pivot(value, cfg) if value < 100 else value), None, None, j + 1
+            return None
         t = self.at(k)
         if t is None:
             return None
@@ -184,16 +205,67 @@ class _Pieces:
             return None, None, offset, k + 2
         return None
 
-    def label_year(self, k: int, cfg: WranglerConfig) -> tuple[int, Basis, int] | None:
-        """"FY25", "FY2025", "CY2024" at token ``k``: the year, its basis, and its end."""
-        t, nxt = self.at(k), self.at(k + 1)
-        if t is None or t.low not in ("fy", "cy") or nxt is None or not nxt.tight:
+    def year_word(self, k: int) -> tuple[Basis, int] | None:
+        """A word saying which kind of year follows, at token ``k``: "FY", "F.Y.", "fiscal
+        year", "financial year", "fiscal" before a number, "CY", "C.Y.", "calendar year".
+        Returns the basis and the token after the word."""
+        t = self.at(k)
+        if t is None:
             return None
-        if not nxt.low.isdigit() or len(nxt.low) not in (2, 4):
+        if t.low in ("fy", "cy"):
+            j = k + 1
+        elif t.low in ("f", "c") and self.is_(k + 1, ".") and self.is_(k + 2, "y"):
+            j = k + 3 + (1 if self.is_(k + 3, ".") else 0)  # "F.Y.", "c.y"
+        elif t.low in ("fiscal", "financial", "calendar") and self.is_(k + 1, "year"):
+            j = k + 2
+        elif t.low in ("fiscal", "financial") and self.number_follows(k + 1):
+            j = k + 1  # "fiscal 2024", as US filings write it
+        else:
             return None
-        value = int(nxt.low)
-        basis = Basis.FISCAL if t.low == "fy" else Basis.CALENDAR
-        return (_pivot(value, cfg) if value < 100 else value), basis, k + 2
+        return (Basis.CALENDAR if t.low[0] == "c" else Basis.FISCAL), j
+
+    def label_year(
+        self, k: int, cfg: WranglerConfig, month_may_follow: bool = False
+    ) -> tuple[int, Basis, int] | None:
+        """A labelled year at token ``k`` -- "FY25", "FY 2024-25", "F.Y. 24", "fiscal year
+        2024", "CY2024" -- as the year it names, its basis, and the token after it.
+
+        Both calendar years may be written: "FY2024-25" is the fiscal year that starts in
+        2024, which is not 2024 where years are named by their end. Unspaced, and not
+        before a month, so "FY24 - 15 March" stays a range.
+        """
+        word = self.year_word(k)
+        if word is None:
+            return None
+        basis, j = word
+        while self.is_(j, "-"):  # "fy-24"
+            j += 1
+        if self.is_(j, "'"):
+            j += 1
+        t = self.at(j)
+        if t is None or not t.low.isdigit() or len(t.low) not in (2, 4):
+            return None
+        value = int(t.low)
+        year = _pivot(value, cfg) if value < 100 else value
+        end = j + 1
+        q = end + 1 + (1 if self.is_(end + 1, "'") else 0)  # the second year: "-25", "-'25"
+        dash, two = self.at(end), self.at(q)
+        if (
+            basis is Basis.FISCAL
+            and dash is not None and dash.tight and dash.text in "-/"
+            and two is not None and two.tight and two.low.isdigit() and len(two.low) in (2, 4)
+        ):
+            after = q + 1
+            month_after = self.month(after) is not None or (
+                self.is_(after, ",", "of") and self.month(after + 1) is not None
+            )
+            if month_may_follow or not month_after:
+                span = f"{t.low}-{two.low}"
+                label = _fy_label_of_span(span, cfg)
+                if label is None:
+                    raise Declined(_not_one_fiscal_year(f"FY{span}"), q + 1)
+                return label, basis, q + 1
+        return year, basis, end
 
     def _quarter_follows(self, k: int) -> bool:
         """A quarter or half label at token ``k``, after an optional dash: "Q3", "- H1", "3Q"."""
@@ -317,16 +389,34 @@ def _month_day_year(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
             return None
         j += 1
     day_tok = p.at(j)
-    day = p.day(j)
-    if day_tok is None or day is None:
+    number = _DAY.fullmatch(day_tok.low) if day_tok is not None else None
+    if day_tok is None or number is None:
         return None
+    day = p.day(j)
+    if day is None:
+        # "jan 87": above 31, a bare two-digit number after a month can only be its year.
+        if number.group(2) or len(number.group(1)) != 2:
+            return None
+        if p.number_follows(j + 1) or p.is_(j + 1, ":"):
+            return None
+        spec = Spec(Kind.ABS_MONTH, month=month, year=_pivot(int(number.group(1)), cfg))
+        return "month_day_year", spec, j + 1
     after = p.year_after(j + 1, cfg, quarter_check=True)
     if after is not None:
         year, basis, offset, end = after
         spec = Spec(Kind.ABS_DAY, year=year, month=month, day=day, basis=basis, year_offset=offset)
         return "month_day_year", spec, end
+    hour, colon, minute = p.at(j + 1), p.at(j + 2), p.at(j + 3)
+    if (
+        hour is not None and hour.low.isdigit() and len(hour.low) <= 2
+        and colon is not None and colon.tight and colon.text == ":"
+        and minute is not None and minute.tight and minute.low.isdigit()
+    ):
+        # "Mar 15 14:30:00", the start of every syslog line: the day, and the time is the
+        # timestamp's own -- nothing left unread.
+        return "syslog", Spec(Kind.ABS_DAY, month=month, day=day), j + 1
     if p.number_follows(j + 1) or p.is_(j + 1, ":"):
-        return None  # "Mar 15 14:30" is syslog's; "March 1 15" is nobody's
+        return None  # "March 1 15" is nobody's
     digits = re.sub(r"\D", "", day_tok.low)
     if day_tok.low.isdigit() and len(digits) == 2 and (
         int(digits) > 31 or cfg.month_number is MonthNumber.YEAR
@@ -383,12 +473,32 @@ def _month_alone(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     return None if month is None else ("month", Spec(Kind.ABS_MONTH, month=month), i + 1)
 
 
-#: In priority order. A weekday in front -- "Friday, 15 March" -- is left to the join step,
-#: which already handles "last Friday, 15 March" as well.
-_READERS: tuple[Callable[[_Pieces, int, WranglerConfig], _Read | None], ...] = (
-    _compact_day, _dashed_month_day, _year_month_day, _day_month_year, _month_day_year,
-    _month_ordinal_word, _month_year, _month_alone,
+def _fy_month(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
+    """"FY25 June", "FY2024-25 March" -- the fiscal year first, then the month inside it.
+    Not "may": in "FY25 may see growth" it is a verb."""
+    label = p.label_year(i, cfg, month_may_follow=True)
+    if label is None or label[1] is not Basis.FISCAL:
+        return None
+    year, basis, end = label
+    t = p.at(end)
+    month = p.month(end)
+    if t is None or t.tight or month is None or t.low == "may":
+        return None
+    return "fy_month", Spec(Kind.ABS_MONTH, year=year, month=month, basis=basis), end + 1
+
+
+_ReadFn = Callable[[_Pieces, int, WranglerConfig], _Read | None]
+
+#: In priority order, by what the date opens with -- only those readers are tried. A
+#: weekday in front -- "Friday, 15 March" -- is left to the join step, which already handles
+#: "last Friday, 15 March" as well.
+_OPENING_WITH_A_NUMBER: tuple[_ReadFn, ...] = (_compact_day, _year_month_day, _day_month_year)
+_OPENING_WITH_A_MONTH: tuple[_ReadFn, ...] = (
+    _dashed_month_day, _month_day_year, _month_ordinal_word, _month_year, _month_alone,
 )
+_OPENING_WITH_A_YEAR_WORD: tuple[_ReadFn, ...] = (_fy_month,)
+#: Words a date of this family can open with, besides a number or a month.
+_OPENERS = frozenset({"fy", "f", "fiscal", "financial"})
 
 
 #: A date found: the rule it stands in for, its spec (None when declined, with the reason),
@@ -424,13 +534,20 @@ class Reader:
     def _open(self, i: int) -> Found | None:
         p = self.p
         t = p.toks[i]
-        # Only a number or a month name can open one of these dates; most words are neither.
-        if not (t.low[0].isdigit() or t.low in MONTHS):
+        # Only a number, a month or a fiscal-year word can open one of these dates; most
+        # words are none of them.
+        if t.low[0].isdigit():
+            readers = _OPENING_WITH_A_NUMBER
+        elif p.months[i] is not None:
+            readers = _OPENING_WITH_A_MONTH
+        elif t.low in _OPENERS:
+            readers = _OPENING_WITH_A_YEAR_WORD
+        else:
             return None
         # A word boundary, as every rule opens with: not the "123" of "abc123".
         if t.tight and i and p.toks[i - 1].low[-1:].isalnum():
             return None
-        for reader in _READERS:
+        for reader in readers:
             try:
                 got = reader(p, i, self.cfg)
             except Declined as no:

@@ -675,7 +675,23 @@ def test_every_rule_opens_with_a_word_boundary():
     from date_wrangler.rules import RULES
 
     for rule in RULES:
-        assert rule.pattern.startswith(r"\b"), f"rule {rule.name!r} must open with \\b"
+        if rule.pattern is not None:  # the rest are read from tokens
+            assert rule.pattern.startswith(r"\b"), f"rule {rule.name!r} must open with \\b"
+
+
+def test_rules_without_a_pattern_are_exactly_the_ones_the_token_reader_returns():
+    """A rule with no pattern holds a place in the order for a date the token reader finds.
+    One the reader never returns would be a rule nothing reads, and a name the reader
+    returns that is not in RULES would have no place in the order at all."""
+    import re
+    from pathlib import Path
+
+    from date_wrangler import tokens
+    from date_wrangler.rules import RULES
+
+    source = Path(tokens.__file__).read_text("utf-8")
+    returned = set(re.findall(r'"(\w+)", (?:Spec\(|spec, )', source))
+    assert {r.name for r in RULES if r.pattern is None} == returned
 
 
 def test_the_factored_scanner_finds_exactly_what_the_rules_do():
@@ -693,7 +709,10 @@ def test_the_factored_scanner_finds_exactly_what_the_rules_do():
     import test_formats
     import test_snapshot
 
-    plain = re.compile("|".join(f"(?P<{r.name}>{r.pattern})" for r in RULES), re.IGNORECASE)
+    plain = re.compile(
+        "|".join(f"(?P<{r.name}>{r.pattern})" for r in RULES if r.pattern is not None),
+        re.IGNORECASE,
+    )
     texts = [
         "sales for Q1 FY25 compared with last year", "since March 2024", "2024-03-15T14:30Z",
         "the first week of April", "1-15 March", "six months to June 2024", "Q3'24 and 2024-Q3",
@@ -720,6 +739,8 @@ def test_both_scanners_accept_the_same_fragments():
     from date_wrangler.wrangler import _SCANNER, _SCANNER_CS
 
     for rule in RULES:
+        if rule.pattern is None:
+            continue  # read from tokens, which lower each word themselves
         # Capitals inside an escape (\b, \d, \W...) are the escape, not a literal.
         literal = re.sub(r"\\.", "", rule.pattern)
         assert not re.search(r"[A-Z]", literal), (

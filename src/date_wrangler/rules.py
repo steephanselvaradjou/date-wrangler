@@ -144,11 +144,20 @@ Parts = list[tuple[Spec, int, int]]
 
 @dataclass(frozen=True, slots=True)
 class Rule:
-    """A named recogniser."""
+    """A named recogniser.
+
+    A rule with no pattern is read from tokens (:mod:`.tokens`) rather than by a regular
+    expression. It keeps its place in :data:`RULES`, which is still the order that decides
+    between two dates starting at the same place.
+    """
 
     name: str
-    pattern: str
-    parse: Callable[[str, WranglerConfig], Spec | Parts | None]
+    pattern: str | None
+    parse: Callable[[str, WranglerConfig], Spec | Parts | None] | None
+
+
+def _from_tokens(name: str) -> Rule:
+    return Rule(name, None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -1875,19 +1884,13 @@ RULES: tuple[Rule, ...] = (
         r"\b(?:19|20)\d{2}(?:[-/]\d{2}|/(?:19|20)\d{2})(?![\d/.-])",
         _p_split_year,
     ),
-    Rule(
-        "dashed_day",
-        rf"\b\d{{1,2}}(?:-{_MONTH}-|/{_MONTH}/|\.{_MONTH}\.|{_MONTH})'?\d{{2,4}}\b",
-        _p_dashed_day,
-    ),
+    # Days, months and years written with month names are read from tokens -- see
+    # tokens.py -- and these entries hold their places in the order. "15-Mar-2024",
+    # "15MAR2024", "13june2018".
+    _from_tokens("dashed_day"),
     # A fiscal year and then a month inside it, ahead of fy_range and year, which would
-    # each take the year and leave the month behind. Not "may": in "FY25 may see growth"
-    # it is a verb. "FY2024-25 June" only unspaced: "FY24 - 15 March" is a range.
-    Rule(
-        "fy_month",
-        rf"\b{_FY_WORD}{_SEP}'?\d{{2,4}}(?:[-/]'?\d{{2,4}})?\s+(?!may\b){_MONTH}\b",
-        _p_fy_month,
-    ),
+    # each take the year and leave the month behind: "FY25 June", "FY2024-25 March".
+    _from_tokens("fy_month"),
     # Not when a month follows: in "FY24 - 15 March 2024" the 15 is a day. Not when a
     # quarter does: "FY2024-25 Q3" is a quarter of that year, for labelled_period.
     Rule(
@@ -2027,8 +2030,10 @@ RULES: tuple[Rule, ...] = (
         rf"{_DAY_NUM}\s+(?:of\s+)?{_MONTH}{_YEAR_SUFFIX}"
         rf"|\b(?:between\s+{_MONTH}\s+{_DAY_NUM}\s+and\s+|{_MONTH}\s+{_DAY_NUM}{_DAY_JOIN})"
         rf"{_DAY_NUM}"
-        # "March 1 to 15 April" runs across two months; leave that to the range merge.
-        rf"(?!\d)(?!\s+(?:of\s+)?{_MONTH})(?:,?\s*\d{{4}})?\b",
+        # "March 1 to 15 April" runs across two months; leave that to the range merge. Nor
+        # a number that begins a date of its own: REGRESSION -- "March 15 to 03/04/2024" was
+        # taken as "March 15 to 03", refused, and its "04/2024" read as April.
+        rf"(?!\d)(?![/.-]\d)(?!\s+(?:of\s+)?{_MONTH})(?:,?\s*\d{{4}})?\b",
         _p_day_span,
     ),
     # Days sharing a month, listed: "1st and 15th March", "March 1, 5 and 9". Each comes
@@ -2079,43 +2084,14 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule("final_quarter", r"\bthe\s+final\s+(?:quarter|qtr)\b(?!\s+(?:of|in)\b)", _p_final_quarter),
     Rule("nth_of", rf"\b(?:the\s+)?{_ORD}\s+of\s+{_PART_TARGET}\b", _p_nth_of),
-    Rule(
-        "day_month_year",
-        # The bare two-digit year is only allowed here, and only when no colon follows,
-        # so "15 Mar 14:30:00" stays a syslog time rather than becoming the year 2014.
-        # It has to be tried first: _YEAR_SUFFIX is optional, so it matches empty and
-        # would win the alternation before the two-digit form is ever considered.
-        # The day may touch the month -- "01may 2018", as statements are asked for.
-        rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s*{_MONTH}(?![a-z])"
-        rf"(?:\s+\d{{2}}\b(?!\s*:)|{_YEAR_SUFFIX})",
-        _p_day_month_year,
-    ),
-    # Syslog: "Mar 15 14:30:00". The month_day_year guard below refuses a following
-    # number, so without this the timestamp on every syslog line is invisible.
-    Rule("syslog", rf"\b{_MONTH}\s+\d{{1,2}}(?=\s+\d{{1,2}}:\d{{2}})", _p_month_day_year),
-    # "March 15 2024" needs no comma, and "March the 15th" an article. REGRESSION: a
-    # number after the day was refused outright, to keep syslog times out, so "JUNE 1 2018"
-    # matched nothing; a four-digit year is not a time.
-    Rule(
-        "month_day_year",
-        rf"\b{_MONTH}\s+(?:the\s+(?=\d{{1,2}}(?:st|nd|rd|th)))?\d{{1,2}}(?:st|nd|rd|th)?"
-        # Not a year that a quarter follows: in "March 15, FY24 Q3" the FY24 is Q3's.
-        rf"(?:\s*,?\s+{_YEAR}\b(?!\s*-?\s*{_QH}(?!\w))|\b(?!\s*\d))",
-        _p_month_day_year,
-    ),
-    Rule(
-        "year_month_day",
-        rf"\b(?:19|20)\d{{2}}\s+{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?\b(?!\s*[\d:])",
-        _p_year_month_day,
-    ),
-    # "January first, 2024": only before a year or the end of a clause, so "March first,
-    # then June" and "the June first-quarter results" stay what they are.
-    Rule(
-        "month_ordinal_word",
-        rf"\b{_MONTH}\s+(?:the\s+)?{alt(w for w in ORDINALS if not w[0].isdigit())}\b"
-        rf"(?=\s*,?\s*(?:{_YEAR}\b|[.;:!?)]|$))(?:\s*,?\s*{_YEAR}\b)?",
-        _p_month_ordinal_word,
-    ),
+    # "15 March 2024", "01may 2018", "15 Mar 24"; "Mar 15 14:30:00" (syslog); "March 15
+    # 2024", "March the 15th"; "2024 March 15"; "January first, 2024". After the rules that
+    # take a day out of something larger: "1-15 March", "15th of March", "first Monday of".
+    _from_tokens("day_month_year"),
+    _from_tokens("syslog"),
+    _from_tokens("month_day_year"),
+    _from_tokens("year_month_day"),
+    _from_tokens("month_ordinal_word"),
     # Before "fiscal_month": both open with a bare number, and "3 months ago" would
     # otherwise read as "the 3rd month".
     Rule("ago", rf"\b{_NUM}\s+{_UNIT}\s+(?:{_AGO_WORDS})\b", _p_ago),
@@ -2210,8 +2186,8 @@ RULES: tuple[Rule, ...] = (
         rf"\b(?:h\s*[12](?!\d)|half\s*[12](?!\d)|[12]\s*h\b|{_ORD}\s+{_HWORD}){_YEAR_SUFFIX}\b",
         _p_half,
     ),
-    Rule("dashed_month_day", rf"\b{_MONTH}-\d{{1,2}}-(?:\d{{4}}|\d{{2}})\b", _p_dashed_month_day),
-    Rule("dashed_month", rf"\b{_MONTH}-'?\d{{2,4}}\b", _p_dashed_month),
+    _from_tokens("dashed_month_day"),  # "Mar-15-2024"
+    _from_tokens("dashed_month"),  # "Mar-24": the hyphen settles "jan 24" as a month
     Rule(
         "decade",
         rf"\b(?:the\s+)?(?:(?:1[89]|20)\d0'?s|{alt(DECADE_WORDS)})\b|\bthe\s+'?\d0s\b",
@@ -2225,34 +2201,19 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule("cob", r"\b(?:eod|cob|eob)(?:\s+(?:on\s+)?" + alt(WEEKDAY_NAMES) + r")?\b",
          _p_close_of_business),
-    # "the" only before "year": "March of the year 2013". Without it the month had no cue,
-    # was dropped by strictness, and the answer was the whole year at full confidence.
-    # A month of a fiscal year written in full, ahead of month_year, which would stop at
-    # "June FY 2024" and leave the "-25" behind.
-    Rule(
-        "month_fy_span",
-        rf"\b{_MONTH}\s+(?:of\s+)?{_FY_WORD}\s*'?\d{{2,4}}\s*[-/]\s*'?\d{{2,4}}\b",
-        _p_month_of_fy_span,
-    ),
-    # A hyphen only before FY or CY, and unspaced: "Jun-FY25" is June of FY25, where
-    # "Jun-25" (the dashed_month rule) is a calendar month and "June - FY25" a range.
-    Rule(
-        "month_year",
-        rf"\b{_MONTH}(?:\s+(?:of\s+)?(?:the\s+(?=year\b))?{_YEAR}|-{_MARKED_YEAR})\b"
-        rf"|\b{_MONTH}(?:'\s*\d{{4}}\b|'\d{{2}}(?!\d))",  # "Mar'24", "June' 2018"
-        _p_month,
-    ),
+    # "March 2024", "June, 2013", "March of the year 2013", "Mar'24", "June' 2018", "June FY
+    # 2024-25", "Jun-FY25", "March last year" -- where "June - FY25", spaced, is a range.
+    # REGRESSION: a rule that took "Jun FY25 - 15" as one fiscal year failed on it and lost
+    # both ends.
+    _from_tokens("month_year"),
     # "last March", "this March", "next March": the nearest one, as "last Monday" is.
     Rule(
         "month_nearest",
         rf"\b(?:last|this|next|previous|coming)\s+{_MONTH}\b(?!\s*(?:\d|'))",
         _p_month_nearest,
     ),
-    # "March last year" -- without this the month has no cue, is dropped by strictness,
-    # and the answer becomes the whole of last year.
-    Rule("month_rel_year", rf"\b{_MONTH}\s+(?:of\s+)?{_REL_YEAR}\b", _p_month),
     Rule("year", rf"\b{_YEAR_WORD}{_SEP}'?\d{{2,4}}\b", _p_year),
-    Rule("month", rf"\b{_MONTH}\b", _p_month),
+    _from_tokens("month"),
     # "Monday next" -- British for next Monday. Not "Monday next week", read above.
     Rule("weekday_next", rf"\b{alt(WEEKDAY_NAMES)}\s+next\b(?!\s+{_UNIT})", _p_weekday),
     Rule("weekday", rf"\b{alt(WEEKDAY_NAMES)}\b", _p_weekday),

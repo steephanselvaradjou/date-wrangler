@@ -21,6 +21,7 @@ from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
 from .rules import RULES, Rule
 from .spec import Kind, Part, Spec
+from .tokens import Reader
 from .types import DateMatch, DateRange, Grain, Mod, grain_rank
 from .vocab import (
     DECADE_WORDS,
@@ -151,11 +152,17 @@ def _first_chars(pattern: str) -> str | None:
 
 
 def _guarded(rule: Rule) -> str:
+    assert rule.pattern is not None
     first = _first_chars(rule.pattern)
     return rule.pattern if first is None else f"(?={first}){rule.pattern}"
 
 
-_SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{_guarded(rule)})" for rule in RULES)
+#: The rules read by a regular expression. The rest are read from tokens (tokens.py).
+_PATTERN_RULES = [rule for rule in RULES if rule.pattern is not None]
+_SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{_guarded(rule)})" for rule in _PATTERN_RULES)
+#: Where each rule stands in RULES: of two dates starting at the same place, the earlier
+#: rule's wins, whichever of the two readers found it.
+_ORDER: dict[str, int] = {rule.name: k for k, rule in enumerate(RULES)}
 #: Every rule opens with \b, so it is checked once, ahead of the alternation, instead of
 #: once per rule at every position. Most positions are inside a word and fail it, and they
 #: now fail after one test rather than forty-eight -- about a third of scanning time, with
@@ -266,16 +273,29 @@ _DURATION_FROM = re.compile(
     re.IGNORECASE,
 )
 
+#: Not followed by the start of another date: a number, a quarter or half, a month, a
+#: fiscal or calendar year, or a word counting from today.
+_NO_DATE_AFTER = (
+    rf"(?!\s+(?:the\s+)?(?:\d|[qh]\s*\d|(?:{alt(MONTH_NAMES)}|fy|cy|last|next|this|today"
+    rf"|yesterday|tomorrow)\b))"
+)
+
 #: "before the end of March" is a deadline for all of March, not "before its last third".
 _END_OF = re.compile(r"(?:the\s+)?end\s+of\b", re.IGNORECASE)
 _MOD_SUFFIXES: tuple[tuple[re.Pattern[str], Mod | None], ...] = (
     (re.compile(r"^\s*onwards?\b", re.IGNORECASE), Mod.SINCE),
-    # "2012 and later", "2012 or after": everything from it, inclusive.
+    # "2012 and later", "2012 or after": everything from it, inclusive -- but not when
+    # another date follows, as in "Q1 and after Q2", where the word is that date's.
+    # REGRESSION (found by Hypothesis): "1Q and since 1Q" gave the word to both quarters,
+    # and the two matches overlapped.
     (
-        re.compile(r"^\s*(?:and|or)\s+(?:later|after|beyond|onwards?|since)\b", re.IGNORECASE),
+        re.compile(rf"^\s*(?:and|or)\s+(?:later|after|beyond|onwards?)\b{_NO_DATE_AFTER}", re.I),
         Mod.SINCE,
     ),
-    (re.compile(r"^\s*(?:and|or)\s+(?:earlier|before|prior)\b", re.IGNORECASE), Mod.UNTIL),
+    (
+        re.compile(rf"^\s*(?:and|or)\s+(?:earlier|before|prior)\b{_NO_DATE_AFTER}", re.I),
+        Mod.UNTIL,
+    ),
     (re.compile(r"^\s*to\s+date\b", re.IGNORECASE), None),  # handled by the to_date rule
 )
 
@@ -494,7 +514,12 @@ class _Raw:
 
 
 def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> list[_Raw]:
-    """Run every rule's pattern over ``text`` in one pass.
+    """Find every date fragment in ``text``, left to right.
+
+    Two readers take turns: one regular expression over the rules that have a pattern, and
+    the token reader (tokens.py) for the dates written with month names. Whichever finds
+    the next date first takes it, and of two starting at the same place the one whose rule
+    comes first in RULES -- exactly what one alternation over every rule does.
 
     Scanning is where most of the time goes, and IGNORECASE over an alternation this size
     costs roughly half as much again as a plain match -- so ASCII text is lowered once and
@@ -507,35 +532,64 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
         target, scanner = text.lower(), _SCANNER_CS
     else:
         target, scanner = text, _SCANNER
+    reader = Reader(text, cfg)
     out: list[_Raw] = []
-    for m in scanner.finditer(target):
-        name = m.lastgroup
-        if name is None:
-            continue
-        rule = _RULES_BY_NAME.get(name)
-        if rule is None:
-            continue
-        fragment = text[m.start() : m.end()]
-        try:
-            spec = rule.parse(fragment, cfg)
-        except (ValueError, KeyError) as exc:
-            # The rule said why; that reason alone, not a second, vaguer one beside it.
-            if diags is not None:
-                diags.append(Diagnostic(fragment, m.span(), name, str(exc)))
-            continue
-        if spec is None:
-            if diags is not None:
-                diags.append(
-                    Diagnostic(fragment, m.span(), name, "matched but could not be read")
-                )
-            continue
-        if isinstance(spec, list):
-            # Several dates in one fragment -- "1st and 15th March" -- each with its own
-            # span, so they link as a list like any other.
-            out.extend(_Raw(name, s, m.start() + lo, m.start() + hi) for s, lo, hi in spec)
-            continue
-        out.append(_Raw(name, spec, m.start(), m.end()))
+    pos = 0
+    m = scanner.search(target, pos)
+    d = reader.next_date(pos)
+    while m is not None or d is not None:
+        if d is not None and (
+            m is None
+            or d[2] < m.start()
+            or (d[2] == m.start() and _ORDER[d[0]] < _ORDER[m.lastgroup or ""])
+        ):
+            name, spec, lo, hi, reason = d
+            if spec is not None:
+                out.append(_Raw(name, spec, lo, hi))
+            elif diags is not None:
+                diags.append(Diagnostic(text[lo:hi], (lo, hi), name, reason or ""))
+            pos = hi
+        else:
+            assert m is not None
+            pos = m.end()
+            _read_match(m, text, cfg, out, diags)
+        if m is not None and m.start() < pos:
+            m = scanner.search(target, pos)
+        if d is not None and d[2] < pos:
+            d = reader.next_date(pos)
     return out
+
+
+def _read_match(
+    m: re.Match[str],
+    text: str,
+    cfg: WranglerConfig,
+    out: list[_Raw],
+    diags: list[Diagnostic] | None,
+) -> None:
+    """Hand one regular-expression match to its rule, and keep what it reads."""
+    name = m.lastgroup
+    rule = _RULES_BY_NAME.get(name) if name is not None else None
+    if name is None or rule is None or rule.parse is None:
+        return
+    fragment = text[m.start() : m.end()]
+    try:
+        spec = rule.parse(fragment, cfg)
+    except (ValueError, KeyError) as exc:
+        # The rule said why; that reason alone, not a second, vaguer one beside it.
+        if diags is not None:
+            diags.append(Diagnostic(fragment, m.span(), name, str(exc)))
+        return
+    if spec is None:
+        if diags is not None:
+            diags.append(Diagnostic(fragment, m.span(), name, "matched but could not be read"))
+        return
+    if isinstance(spec, list):
+        # Several dates in one fragment -- "1st and 15th March" -- each with its own span,
+        # so they link as a list like any other.
+        out.extend(_Raw(name, s, m.start() + lo, m.start() + hi) for s, lo, hi in spec)
+        return
+    out.append(_Raw(name, spec, m.start(), m.end()))
 
 
 def _passes_strictness(

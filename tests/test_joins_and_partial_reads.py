@@ -115,6 +115,24 @@ def test_a_span_whose_end_lies_at_its_own_start_is_flagged(text):
     assert any("adds nothing" in d.reason for d in diags)
 
 
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("1Q and since 1Q", ["1Q", "since 1Q"]),
+        ("Q1 and after Q2", ["Q1", "after Q2"]),
+        ("2012 and later years", ["2012 and later"]),
+    ],
+)
+def test_and_later_belongs_to_the_date_before_it_only_when_no_date_follows(text, expected):
+    """REGRESSION (found by Hypothesis, in 2.1.0): "1Q and since 1Q" gave "since" to both
+    quarters -- "and since" as the first one's ending, "since" as the second one's start --
+    and the two matches overlapped."""
+    cfg = WranglerConfig(fiscal=FiscalCalendar.calendar(), strictness="strict")
+    found = parse(text, today=TODAY, config=cfg if text.startswith("1Q") else JAN)
+    assert [m.text for m in found] == expected
+    assert all(a.span[1] <= b.span[0] for a, b in zip(found, found[1:], strict=False))
+
+
 def test_a_chain_that_runs_backwards_through_its_middle_is_not_one_span():
     """REGRESSION (found by Hypothesis): "1Q to yesterday to 2000" was one span from Q1 to
     2000, over a "yesterday" that came before both. With the bare 2000 dropped -- strict

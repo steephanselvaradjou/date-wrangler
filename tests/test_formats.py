@@ -95,6 +95,12 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("01may 2018", "2018-05-01"),
         ("18th may'18", "2018-05-18"),
         ("13th June' 2018", "2018-06-13"),
+        # Read since the token reader: each was nothing, or wrong, before it.
+        ("15th-Mar-2024", "2024-03-15"),
+        ("15th/March/24", "2024-03-15"),
+        ("15 March2024", "2024-03-15"),
+        ("2024Mar15", "2024-03-15"),
+        ("MAR15, 2024", "2024-03-15"),
     ]),
     ("a weekday with its date", TODAY, CAL, [
         ("Friday, 15 March 2024", "2024-03-15"),
@@ -288,6 +294,11 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("between March 1st and March 15th, 2024", "2024-03-01..2024-03-15"),
         ("from start of 2012 to end of 2013", "2012..2013"),
         ("June, 2013 to August, 2013", "2013-06..2013-08"),
+        ("Jun FY25 - 15 March", "2024-06-01..2025-03-15"),
+        ("Jun FY25 - 03/04/2024", "2024-06 ; 2024-04-03"),  # runs backwards: two, and why
+        ("Jun FY25 - 2023", "2024-06 ; 2023"),
+        ("March 15 to 03/04/2024", "2024-03-15..2024-04-03"),
+        ("March 15, 2024-03-15", "2024-03-15 ; 2024-03-15"),
     ]),
     ("spans up to now", TODAY, CAL, [
         ("2012 to date", "2012-01-01..2026-10-16"),
