@@ -25,7 +25,7 @@ from .resolve import UnresolvableSpec
 from .types import Anchor, Basis, DateMatch, DateRange, Grain, Mod, SqlDialect
 from .wrangler import YEAR_GUESSED, Diagnostic, diagnose, parse, parse_one, substitute
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 __all__ = [
     # Values
