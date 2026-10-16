@@ -706,6 +706,17 @@ class DateMatch:
     text: str
     span: tuple[int, int]
     confidence: float = 1.0
+    #: Dates named together share a group: "Q1 and Q3", "2019 versus 2020". Groups are
+    #: numbered from 0 in the order they appear, and a date on its own has one to itself,
+    #: so two dates in different sentences of one question are never taken as compared.
+    group: int = 0
+    #: How this match is joined to the one before it in its group: "list" for and, & or a
+    #: comma; "compare" for vs, versus, against or compared to; "range" for a span that
+    #: could not be made, which the diagnostics explain. None for the first in a group.
+    joined_by: str | None = None
+    #: The two periods a span was made from, each as it reads on its own: "from 2012 to
+    #: 2013" is 2012 and 2013, "1-15 March" the 1st and the 15th. None for anything else.
+    endpoints: tuple[DateRange, DateRange] | None = None
 
     @property
     def start(self) -> date | None:
@@ -722,15 +733,29 @@ class DateMatch:
             "span": list(self.span),
             "confidence": self.confidence,
             "range": self.range.to_dict(),
+            "group": self.group,
+            "joined_by": self.joined_by,
+            "endpoints": (
+                None if self.endpoints is None else [e.to_dict() for e in self.endpoints]
+            ),
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> DateMatch:
         span = data["span"]
         assert isinstance(span, (list, tuple))
+        ends = data.get("endpoints")
+        joined = data.get("joined_by")
         return cls(
             range=DateRange.from_dict(data["range"]),  # type: ignore[arg-type]
             text=str(data["text"]),
             span=(int(span[0]), int(span[1])),
             confidence=float(data.get("confidence", 1.0)),  # type: ignore[arg-type]
+            group=int(data.get("group", 0)),  # type: ignore[call-overload]
+            joined_by=None if joined is None else str(joined),
+            endpoints=(
+                None
+                if not isinstance(ends, (list, tuple))
+                else (DateRange.from_dict(ends[0]), DateRange.from_dict(ends[1]))
+            ),
         )

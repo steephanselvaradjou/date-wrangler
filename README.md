@@ -419,6 +419,37 @@ A comparison stays **two** matches. Merging `compare Q1 2024 to Q1 2025` into on
 month span is the kind of error that survives review because the number still looks
 plausible.
 
+### Which dates go together
+
+Each match says which dates were named with it, so a question that compares two periods can
+be told from one that merely mentions two dates:
+
+```python
+[(m.text, m.group, m.joined_by) for m in parse("revenue in Q1 and Q3 2024 vs 2023")]
+# [('Q1', 0, None), ('Q3 2024', 0, 'list'), ('2023', 0, 'compare')]
+
+[(m.text, m.group) for m in parse("diagnosed on 1994/2/19, tested on 1993/11/12")]
+# [('1994/2/19', 0), ('1993/11/12', 1)]          — two groups: nothing joins them
+```
+
+`group` numbers the dates named together from 0, in order; a date on its own has a group to
+itself. `joined_by` is how a match is joined to the one before it: `"list"` (`and`, `&`, a
+comma), `"compare"` (`vs`, `versus`, `against`, `compared to`), or `"range"` for a span that
+could not be made, which `diagnose` explains. It is `None` for the first in a group.
+
+A span is one match, and `endpoints` holds the two periods it was made from, for questions
+about a change between them:
+
+```python
+m = parse_one("decrease rate from 2012 to 2013")
+str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
+[str(e) for e in m.endpoints]  # ['2012-01-01 .. 2012-12-31 (366 days)',
+                               #  '2013-01-01 .. 2013-12-31 (365 days)']
+```
+
+`endpoints` is `None` for anything that is not a span between two periods: `Q1 2024`,
+`since 2012`, `the year to March 2024`.
+
 ### What it understands
 
 | | |

@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
-from datetime import date, datetime, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 
 from .config import DEFAULT_CONFIG, WranglerConfig
 from .normalize import Normalized, normalize
@@ -686,8 +686,10 @@ def parse(
     links = _demote_lists(_link_kinds(raws, body))
     _propagate_year(raws, links)
 
-    # Group linked matches into chains, so strictness judges the chain as a whole.
+    # Group linked matches into chains, so strictness judges the chain as a whole. A chain
+    # is also what the caller sees as a group: the dates named together.
     chain_of: dict[int, tuple[int, int]] = {}
+    run_of: dict[int, int] = {}
     i = 0
     while i < len(raws):
         j = i
@@ -695,6 +697,7 @@ def parse(
             j += 1
         for k in range(i, j + 1):
             chain_of[k] = (raws[i].start, raws[j].end)
+            run_of[k] = i
         i = j + 1
 
     kept = {
@@ -705,6 +708,15 @@ def parse(
 
     matches: list[DateMatch] = []
     floor = 0  # where the previous match ended, so modifiers cannot reach back over it
+    started: set[int] = set()  # groups that have a match already
+
+    def placed(m: DateMatch, i: int) -> DateMatch:
+        run = run_of[i]
+        link = links[i - 1] if i else None
+        joined = _JOINED_BY.get(link) if run in started and link is not None else None
+        started.add(run)
+        return replace(m, group=run, joined_by=joined)
+
     i = 0
     while i < len(raws):
         if i not in kept:
@@ -716,17 +728,36 @@ def parse(
         if j > i:
             merged = _merge(raws[i : j + 1], day, config, body, norm, diagnostics, floor)
             if merged is not None:
-                matches.append(merged)
+                matches.append(placed(merged, i))
                 floor = raws[j].end
                 i = j + 1
                 continue
         single = _single(raws[i], day, config, body, norm, diagnostics, floor)
         if single is not None:
-            matches.append(single)
+            matches.append(placed(single, i))
             floor = max(floor, raws[i].end)
         i += 1
     _diagnostics_to_original(diagnostics, mark, norm)
-    return _take_article(_flag_unread_qualifiers(matches, body, norm, diagnostics), norm.original)
+    found = _take_article(_flag_unread_qualifiers(matches, body, norm, diagnostics), norm.original)
+    return _number_groups(found)
+
+
+#: The link before a match, as the caller sees it. "and" and a comma both list.
+_JOINED_BY = {"and": "list", "list": "list", "compare": "compare", "range": "range"}
+
+
+def _number_groups(matches: list[DateMatch]) -> list[DateMatch]:
+    """Number the groups 0, 1, 2... in the order they appear.
+
+    Inside :func:`parse` a group is known by the index of its first scanned fragment, which
+    counts fragments that never became a match. The caller should not see that.
+    """
+    number: dict[int, int] = {}
+    out: list[DateMatch] = []
+    for m in matches:
+        n = number.setdefault(m.group, len(number))
+        out.append(m if n == m.group else replace(m, group=n))
+    return out
 
 
 _ARTICLE = re.compile(r"(?<![\w'])the\s+$", re.IGNORECASE)
@@ -836,10 +867,29 @@ def _flag_unread_qualifiers(
 
 
 def _emit(
-    r: DateRange, start: int, end: int, norm: Normalized, confidence: float
+    r: DateRange,
+    start: int,
+    end: int,
+    norm: Normalized,
+    confidence: float,
+    endpoints: tuple[DateRange, DateRange] | None = None,
 ) -> DateMatch:
     lo, hi = norm.to_original(start, end)
-    return DateMatch(range=r, text=norm.original[lo:hi], span=(lo, hi), confidence=confidence)
+    return DateMatch(
+        range=r, text=norm.original[lo:hi], span=(lo, hi), confidence=confidence,
+        endpoints=endpoints,
+    )
+
+
+def _day_span_ends(spec: Spec, r: DateRange) -> tuple[DateRange, DateRange] | None:
+    """The first and last day of "1-15 March", read as one fragment rather than two."""
+    if spec.day_span is None or spec.mod is not None or r.start is None or r.end is None:
+        return None
+    last = r.end - timedelta(days=1)
+    return (
+        DateRange(r.start, r.start + timedelta(days=1), Grain.DAY, r.basis),
+        DateRange(last, r.end, Grain.DAY, r.basis),
+    )
 
 
 def _usable(r: DateRange) -> bool:
@@ -878,7 +928,9 @@ def _single(
                 )
             )
         return None
-    return _emit(r, raw.start, raw.end, norm, raw.spec.confidence)
+    return _emit(
+        r, raw.start, raw.end, norm, raw.spec.confidence, _day_span_ends(raw.spec, r)
+    )
 
 
 def _merge(
@@ -989,7 +1041,7 @@ def _merge(
                     "period it starts with, so the first period adds nothing",
                 )
             )
-    return _emit(merged, start, b.end, norm, confidence)
+    return _emit(merged, start, b.end, norm, confidence, (ra, rb))
 
 
 #: Coarsest grain wins when a range joins two resolutions. The ordering itself lives beside

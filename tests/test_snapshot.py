@@ -18,7 +18,15 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from date_wrangler import DateMatch, DateOrder, FiscalCalendar, WranglerConfig, YearLabel, diagnose
+from date_wrangler import (
+    DateMatch,
+    DateOrder,
+    DateRange,
+    FiscalCalendar,
+    WranglerConfig,
+    YearLabel,
+    diagnose,
+)
 
 SNAPSHOT = Path(__file__).resolve().parent / "snapshots" / "answers.txt"
 
@@ -134,19 +142,28 @@ ENDPOINTS = [
 JOINERS = [" and ", " & ", ", ", " to ", " - ", " through ", " until ", " vs "]
 
 
+def _days(r: DateRange) -> str:
+    start = r.start.isoformat() if r.start else "..."
+    end = r.end_inclusive.isoformat() if r.end_inclusive else "..."
+    return f"{start}..{end}"
+
+
 def _answer(matches: list[DateMatch]) -> str:
+    """Each match; dates named together are joined by how they were joined ("+list+")."""
     if not matches:
         return "(none)"
-    parts = []
-    for m in matches:
+    out = ""
+    for k, m in enumerate(matches):
         r = m.range
-        start = r.start.isoformat() if r.start else "..."
-        end = r.end_inclusive.isoformat() if r.end_inclusive else "..."
         mod = f" {r.mod.value}" if r.mod is not None else ""
-        parts.append(
-            f"{m.text!r} {start}..{end} {r.grain.value} {r.basis.value}{mod} c={m.confidence:g}"
+        ends = f" ends {_days(m.endpoints[0])}|{_days(m.endpoints[1])}" if m.endpoints else ""
+        if k:
+            same = m.group == matches[k - 1].group
+            out += f" +{m.joined_by}+ " if same else " ; "
+        out += (
+            f"{m.text!r} {_days(r)} {r.grain.value} {r.basis.value}{mod} c={m.confidence:g}{ends}"
         )
-    return " ; ".join(parts)
+    return out
 
 
 def _line(label: str, day: date, phrase: str, cfg: WranglerConfig) -> str:
