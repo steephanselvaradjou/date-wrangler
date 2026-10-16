@@ -95,6 +95,11 @@ _YEAR = (
     rf"(?:{_FY_YEAR}|(?:{_CY_WORD}|year){_SEP}'?\d{{2,4}}|'\d{{2}}|{_SPLIT_YEAR}|\d{{4}})"
 )
 
+#: A year or a run of two -- "2015", "2015-16", "2015/2016" -- as a season is named by.
+_YEAR_RUN = r"(?:19|20)\d{2}(?:\s*[-/]\s*(?:19|20)?\d{2})?"
+#: Words that make the years before or after them a name: "the 2015-16 season".
+_SEASON_WORD = r"(?:season|academic\s+year|school\s+year|session)"
+
 #: A year standing alone. Here the century is all that separates a date from a
 #: quantity, so "5000" stays a number.
 _BARE_YEAR = r"(?:19|20|21)\d{2}"
@@ -1839,6 +1844,18 @@ RULES: tuple[Rule, ...] = (
     # and a word boundary between "5" and "T" does not exist -- so every ISO 8601 instant
     # in a log line was being skipped.
     Rule("iso", r"\b\d{4}-\d{1,2}-\d{1,2}(?!\d)", _p_iso),
+    # "the 2015-2016 season", "season 2015/16", "the 2015-16 academic year": a name, not
+    # dates. A season runs over months of its own, so 2015 to 2016 overstates it by a year
+    # and the calendar cannot say which months. REGRESSION: read as Jan 2015 to Dec 2016,
+    # where the data held it as a label. Ahead of every rule that would take the years.
+    Rule(
+        "season_label",
+        rf"\b(?:the\s+)?{_YEAR_RUN}\s+{_SEASON_WORD}s?\b|\b{_SEASON_WORD}\s+(?:of\s+)?{_YEAR_RUN}\b",
+        _p_decline(
+            "{text!r} names a season, which runs over months of its own -- a sport's, a "
+            "school's -- so it is read as a label, not as dates"
+        ),
+    ),
     # "2023-24 financial year": the fiscal year written before its name.
     Rule(
         "fy_range_after",

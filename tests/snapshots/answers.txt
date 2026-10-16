@@ -37,6 +37,10 @@ default 2026-10-08 | Q3 2024-25 | (none) !! '2024-25' is two calendar years with
 default 2026-10-08 | June 2024-25 | (none) !! '2024-25' is two calendar years with year_basis='calendar', so a period of it is not one period: write FY2024-25 for the fiscal year, or set year_basis='fiscal'
 default 2026-10-08 | 2011-12 | '2011-12' 2011-12-01..2011-12-31 month calendar c=1
 default 2026-10-08 | 2024-03 | '2024-03' 2024-03-01..2024-03-31 month calendar c=1
+default 2026-10-08 | the 2015–2016 season | (none) !! 'the 2015-2016 season' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+default 2026-10-08 | season 2015/16 | (none) !! 'season 2015/16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+default 2026-10-08 | academic year 2015-16 | (none) !! 'academic year 2015-16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+default 2026-10-08 | 2015–2016 | '2015–2016' 2015-01-01..2016-12-31 year calendar c=0.8 ends 2015-01-01..2015-12-31|2016-01-01..2016-12-31
 default 2026-10-08 | today | 'today' 2026-10-08..2026-10-08 day calendar c=1
 default 2026-10-08 | yesterday | 'yesterday' 2026-10-07..2026-10-07 day calendar c=1
 default 2026-10-08 | tomorrow | 'tomorrow' 2026-10-09..2026-10-09 day calendar c=1
@@ -332,6 +336,10 @@ default 2026-03-31 | Q3 2024-25 | (none) !! '2024-25' is two calendar years with
 default 2026-03-31 | June 2024-25 | (none) !! '2024-25' is two calendar years with year_basis='calendar', so a period of it is not one period: write FY2024-25 for the fiscal year, or set year_basis='fiscal'
 default 2026-03-31 | 2011-12 | '2011-12' 2011-12-01..2011-12-31 month calendar c=1
 default 2026-03-31 | 2024-03 | '2024-03' 2024-03-01..2024-03-31 month calendar c=1
+default 2026-03-31 | the 2015–2016 season | (none) !! 'the 2015-2016 season' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+default 2026-03-31 | season 2015/16 | (none) !! 'season 2015/16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+default 2026-03-31 | academic year 2015-16 | (none) !! 'academic year 2015-16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+default 2026-03-31 | 2015–2016 | '2015–2016' 2015-01-01..2016-12-31 year calendar c=0.8 ends 2015-01-01..2015-12-31|2016-01-01..2016-12-31
 default 2026-03-31 | today | 'today' 2026-03-31..2026-03-31 day calendar c=1
 default 2026-03-31 | yesterday | 'yesterday' 2026-03-30..2026-03-30 day calendar c=1
 default 2026-03-31 | tomorrow | 'tomorrow' 2026-04-01..2026-04-01 day calendar c=1
@@ -627,6 +635,10 @@ fiscal 2026-10-08 | Q3 2024-25 | 'Q3 2024-25' 2024-10-01..2024-12-31 quarter fis
 fiscal 2026-10-08 | June 2024-25 | 'June 2024-25' 2024-06-01..2024-06-30 month fiscal c=1
 fiscal 2026-10-08 | 2011-12 | '2011-12' 2011-04-01..2012-03-31 year fiscal c=1
 fiscal 2026-10-08 | 2024-03 | '2024-03' 2024-03-01..2024-03-31 month calendar c=1
+fiscal 2026-10-08 | the 2015–2016 season | (none) !! 'the 2015-2016 season' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+fiscal 2026-10-08 | season 2015/16 | (none) !! 'season 2015/16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+fiscal 2026-10-08 | academic year 2015-16 | (none) !! 'academic year 2015-16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+fiscal 2026-10-08 | 2015–2016 | '2015–2016' 2014-04-01..2016-03-31 year fiscal c=0.8 ends 2014-04-01..2015-03-31|2015-04-01..2016-03-31
 fiscal 2026-10-08 | today | 'today' 2026-10-08..2026-10-08 day calendar c=1
 fiscal 2026-10-08 | yesterday | 'yesterday' 2026-10-07..2026-10-07 day calendar c=1
 fiscal 2026-10-08 | tomorrow | 'tomorrow' 2026-10-09..2026-10-09 day calendar c=1
@@ -922,6 +934,10 @@ fiscal 2026-03-31 | Q3 2024-25 | 'Q3 2024-25' 2024-10-01..2024-12-31 quarter fis
 fiscal 2026-03-31 | June 2024-25 | 'June 2024-25' 2024-06-01..2024-06-30 month fiscal c=1
 fiscal 2026-03-31 | 2011-12 | '2011-12' 2011-04-01..2012-03-31 year fiscal c=1
 fiscal 2026-03-31 | 2024-03 | '2024-03' 2024-03-01..2024-03-31 month calendar c=1
+fiscal 2026-03-31 | the 2015–2016 season | (none) !! 'the 2015-2016 season' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+fiscal 2026-03-31 | season 2015/16 | (none) !! 'season 2015/16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+fiscal 2026-03-31 | academic year 2015-16 | (none) !! 'academic year 2015-16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+fiscal 2026-03-31 | 2015–2016 | '2015–2016' 2014-04-01..2016-03-31 year fiscal c=0.8 ends 2014-04-01..2015-03-31|2015-04-01..2016-03-31
 fiscal 2026-03-31 | today | 'today' 2026-03-31..2026-03-31 day calendar c=1
 fiscal 2026-03-31 | yesterday | 'yesterday' 2026-03-30..2026-03-30 day calendar c=1
 fiscal 2026-03-31 | tomorrow | 'tomorrow' 2026-04-01..2026-04-01 day calendar c=1
@@ -1217,6 +1233,10 @@ us 2026-10-08 | Q3 2024-25 | (none) !! '2024-25' is two calendar years with year
 us 2026-10-08 | June 2024-25 | (none) !! '2024-25' is two calendar years with year_basis='calendar', so a period of it is not one period: write FY2024-25 for the fiscal year, or set year_basis='fiscal'
 us 2026-10-08 | 2011-12 | '2011-12' 2011-12-01..2011-12-31 month calendar c=1
 us 2026-10-08 | 2024-03 | '2024-03' 2024-03-01..2024-03-31 month calendar c=1
+us 2026-10-08 | the 2015–2016 season | (none) !! 'the 2015-2016 season' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+us 2026-10-08 | season 2015/16 | (none) !! 'season 2015/16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+us 2026-10-08 | academic year 2015-16 | (none) !! 'academic year 2015-16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+us 2026-10-08 | 2015–2016 | '2015–2016' 2015-01-01..2016-12-31 year calendar c=0.8 ends 2015-01-01..2015-12-31|2016-01-01..2016-12-31
 us 2026-10-08 | today | 'today' 2026-10-08..2026-10-08 day calendar c=1
 us 2026-10-08 | yesterday | 'yesterday' 2026-10-07..2026-10-07 day calendar c=1
 us 2026-10-08 | tomorrow | 'tomorrow' 2026-10-09..2026-10-09 day calendar c=1
@@ -1512,6 +1532,10 @@ us 2026-03-31 | Q3 2024-25 | (none) !! '2024-25' is two calendar years with year
 us 2026-03-31 | June 2024-25 | (none) !! '2024-25' is two calendar years with year_basis='calendar', so a period of it is not one period: write FY2024-25 for the fiscal year, or set year_basis='fiscal'
 us 2026-03-31 | 2011-12 | '2011-12' 2011-12-01..2011-12-31 month calendar c=1
 us 2026-03-31 | 2024-03 | '2024-03' 2024-03-01..2024-03-31 month calendar c=1
+us 2026-03-31 | the 2015–2016 season | (none) !! 'the 2015-2016 season' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+us 2026-03-31 | season 2015/16 | (none) !! 'season 2015/16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+us 2026-03-31 | academic year 2015-16 | (none) !! 'academic year 2015-16' names a season, which runs over months of its own -- a sport's, a school's -- so it is read as a label, not as dates
+us 2026-03-31 | 2015–2016 | '2015–2016' 2015-01-01..2016-12-31 year calendar c=0.8 ends 2015-01-01..2015-12-31|2016-01-01..2016-12-31
 us 2026-03-31 | today | 'today' 2026-03-31..2026-03-31 day calendar c=1
 us 2026-03-31 | yesterday | 'yesterday' 2026-03-30..2026-03-30 day calendar c=1
 us 2026-03-31 | tomorrow | 'tomorrow' 2026-04-01..2026-04-01 day calendar c=1

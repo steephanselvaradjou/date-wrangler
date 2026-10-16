@@ -7,6 +7,14 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## Unreleased
+
+### Fixed
+- `the 2015–2016 season`, `season 2015/16`, `academic year 2015-16` and `the 2015-16
+  school year` were read as the two calendar years they span. A season is a name, with
+  months of its own, so it is now kept as a label: no match, and `diagnose` says why.
+  `2015–2016` on its own still reads as the years.
+
 ## 2.1.0 — 2026-10-16
 
 Which dates go together, what a span runs between, how sure the year is — and about 150
