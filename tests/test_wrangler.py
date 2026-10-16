@@ -679,22 +679,35 @@ def test_every_rule_opens_with_a_word_boundary():
 
 
 def test_the_factored_scanner_finds_exactly_what_the_rules_do():
-    """Belt and braces for the above: the shared \\b changes speed, never matches."""
+    """Belt and braces for the above: the shared \\b and each rule's first-character guard
+    change speed, never matches. Checked against the rules as written, over every phrase
+    the format catalogue, the snapshot and the real requests hold."""
     import re
+    import sys
+    from pathlib import Path
 
-    from date_wrangler.wrangler import _SCAN_PATTERN, _SCANNER
+    from date_wrangler.rules import RULES
+    from date_wrangler.wrangler import _SCANNER, _SCANNER_CS
 
-    plain = re.compile(_SCAN_PATTERN, re.IGNORECASE)
+    sys.path.insert(0, str(Path(__file__).parent))
+    import test_formats
+    import test_snapshot
+
+    plain = re.compile("|".join(f"(?P<{r.name}>{r.pattern})" for r in RULES), re.IGNORECASE)
     texts = [
         "sales for Q1 FY25 compared with last year", "since March 2024", "2024-03-15T14:30Z",
         "the first week of April", "1-15 March", "six months to June 2024", "Q3'24 and 2024-Q3",
         "on or before 31 March", "this year and Q1", "week 42, 2026", "5 business days ago",
-        "no date here at all", "a 2h drive and 3 days to March",
+        "no date here at all", "a 2h drive and 3 days to March", "٢٠٢٤-03-15", "MARCH 2024",
     ]
+    texts += [p for _, _, _, cases in test_formats.SECTIONS for p, _ in cases]
+    texts += test_formats._bank_lines() + test_snapshot.PHRASES
     for text in texts:
-        assert [(m.span(), m.lastgroup) for m in _SCANNER.finditer(text)] == [
-            (m.span(), m.lastgroup) for m in plain.finditer(text)
-        ], text
+        want = [(m.span(), m.lastgroup) for m in plain.finditer(text)]
+        assert [(m.span(), m.lastgroup) for m in _SCANNER.finditer(text)] == want, text
+        if text.isascii():
+            low = text.lower()
+            assert [(m.span(), m.lastgroup) for m in _SCANNER_CS.finditer(low)] == want, text
 
 
 def test_both_scanners_accept_the_same_fragments():

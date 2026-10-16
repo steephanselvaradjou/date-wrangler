@@ -10,6 +10,7 @@ offset map exact, at the cost of not composing accents, which no date needs.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
@@ -39,6 +40,17 @@ _FOLD = {
     "‍": "",
     "﻿": "",
 }
+
+#: The full stop of an abbreviated month before a number: "Sept. 2013", "Mar. 15",
+#: "FEB.2018". It becomes a space -- the same length, so every offset still holds -- and
+#: only before a number, so a month that ends a sentence keeps its full stop.
+_ABBREV_DOT = re.compile(
+    r"\b(jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\.(?=\s*,?\s*'?\d)", re.IGNORECASE
+)
+
+
+def _undot(text: str) -> str:
+    return _ABBREV_DOT.sub(lambda m: m.group(1) + " ", text) if "." in text else text
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,12 +90,13 @@ class Normalized:
 def normalize(text: str) -> Normalized:
     """Fold typographic variants to ASCII, keeping an offset map to ``text``.
 
-    Pure ASCII input is returned untouched. Every key in :data:`_FOLD` is non-ASCII and
-    NFKC is a no-op on ASCII, so there is provably nothing to do -- and skipping the
-    per-character walk is worth roughly half the cost of a short parse.
+    Pure ASCII input skips the per-character walk. Every key in :data:`_FOLD` is non-ASCII
+    and NFKC is a no-op on ASCII, so there is provably nothing to fold -- and skipping the
+    walk is worth roughly half the cost of a short parse. Only a month's full stop may
+    change, and that keeps the length, so no map is needed.
     """
     if text.isascii():
-        return Normalized(text=text, original=text, _starts=None, _ends=None)
+        return Normalized(text=_undot(text), original=text, _starts=None, _ends=None)
 
     out: list[str] = []
     starts: list[int] = []
@@ -98,7 +111,7 @@ def normalize(text: str) -> Normalized:
             starts.append(i)
             ends.append(i + 1)
     return Normalized(
-        text="".join(out),
+        text=_undot("".join(out)),
         original=text,
         _starts=tuple(starts),
         _ends=tuple(ends),

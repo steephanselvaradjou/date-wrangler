@@ -12,6 +12,7 @@ from datetime import date
 import pytest
 
 from date_wrangler import (
+    YEAR_GUESSED,
     Anchor,
     Basis,
     Grain,
@@ -222,15 +223,21 @@ def test_rolling_months_land_on_the_same_day_of_month():
 
 
 def test_unread_qualifier_lowers_confidence_and_explains():
-    # "March 2024 to date" was the example here until 0.7.1 learned to read it. A future
-    # period still has nothing "to date", so this one stays a partial read.
-    matches, diags = diagnose("next month to date", today=TODAY)
+    # "March 2024 to date" was the example here until 0.7.1 learned to read it, and "next
+    # month to date" until "to date" was read after any period.
+    matches, diags = diagnose("next week at 3pm", today=TODAY)
     assert matches and matches[0].confidence <= 0.5
-    assert any("to date" in d.reason for d in diags)
+    assert any("at 3pm" in d.reason for d in diags)
+
+
+def test_a_future_period_has_nothing_to_date():
+    matches, diags = diagnose("next month to date", today=TODAY)
+    assert matches == []
+    assert any("nothing to date" in d.reason for d in diags)
 
 
 def test_clean_matches_keep_full_confidence():
-    for text in ("sales in March", "Q1 FY25", "last month", "first half of March"):
+    for text in ("sales in March 2024", "Q1 FY25", "last month", "first half of March 2024"):
         matches, diags = diagnose(text, today=TODAY)
         assert matches, text
         assert matches[0].confidence == 1.0, text
@@ -397,7 +404,7 @@ def test_a_time_of_day_beside_a_date_is_reported_not_ignored(text, dropped):
         "2024-03-15T14:30:00+05:30",
         "[2024-03-15 14:30:00] INFO started",
         "Mar 15 14:30:00 host sshd[1234]: accepted",
-        "Last-Modified: Wed, 15 Mar 2024 14:30:00 GMT",
+        "Last-Modified: Fri, 15 Mar 2024 14:30:00 GMT",
         "2024-03-15 14:30",
     ],
 )
@@ -405,9 +412,10 @@ def test_a_timestamp_is_a_format_not_an_unread_qualifier(text):
     """A clock sitting straight against a date is part of a timestamp, and the day is the
     documented answer -- nothing was overlooked, so nothing is flagged. Only a preposition
     turns a time into a qualifier. Without this line every ISO instant in a log file would
-    come back at half confidence."""
-    matches, _ = diagnose(text, today=TODAY)
-    assert matches and matches[0].confidence == 1.0
+    come back at half confidence. (A syslog line names no year, so it reads at 0.7.)"""
+    matches, diags = diagnose(text, today=TODAY)
+    assert matches and matches[0].confidence > 0.5
+    assert diags == []
 
 
 def test_a_bare_two_digit_year_is_not_read_as_a_clock():
@@ -432,19 +440,23 @@ def test_and_keeps_each_period_whole_and_confident(text, count):
     too, which happened to be exact but turned "and" into "to". Each is its own period."""
     matches, diags = diagnose(text, today=TODAY, config=FISCAL)
     assert len(matches) == count
-    assert all(m.confidence == 1.0 for m in matches)
+    # Not flagged: only the year, which none of them writes, is a guess.
+    assert all(m.confidence == YEAR_GUESSED for m in matches)
     assert diags == []
 
 
 @pytest.mark.parametrize("text", ["between March and June", "from March to June", "Q1 to Q3"])
 def test_an_explicit_span_lead_in_settles_it(text):
-    """"between X and Y" is a span by construction, so the gap is not a guess."""
+    """"between X and Y" is a span by construction, so the gap is not a guess -- the only
+    doubt left is the year, which is today's."""
     m = parse_one(text, today=TODAY)
+    assert m is not None and m.confidence == YEAR_GUESSED
+    m = parse_one(f"{text} 2024", today=TODAY)
     assert m is not None and m.confidence == 1.0
 
 
 def test_a_comma_separated_list_still_comes_back_as_separate_periods():
-    found = parse("Q1, Q2 and Q3", today=TODAY)
+    found = parse("Q1, Q2 and Q3 2024", today=TODAY)
     assert len(found) == 3
     assert all(m.confidence == 1.0 for m in found)
 

@@ -18,7 +18,15 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from date_wrangler import DateMatch, DateOrder, FiscalCalendar, WranglerConfig, YearLabel, diagnose
+from date_wrangler import (
+    DateMatch,
+    DateOrder,
+    DateRange,
+    FiscalCalendar,
+    WranglerConfig,
+    YearLabel,
+    diagnose,
+)
 
 SNAPSHOT = Path(__file__).resolve().parent / "snapshots" / "answers.txt"
 
@@ -41,6 +49,8 @@ PHRASES = [
     "FY2024-25", "CY2024", "fiscal year 2025", "Q1", "Q3", "Q1 FY25", "Q1 2024", "Q1 of 2024",
     "Q1 of the year 2024", "H1", "H2 FY25", "the 1990s", "week 42", "2026-W42", "CW42",
     "Jun FY25", "FY25 June", "Jun-FY25", "June FY 2024-25",
+    # a split year with no FY: year_basis decides
+    "2024-25", "sales 2024-25", "2012/13", "Q3 2024-25", "June 2024-25", "2011-12", "2024-03",
     # relative
     "today", "yesterday", "tomorrow", "this week", "last week", "next week", "this month",
     "last month", "next month", "this quarter", "last quarter", "next quarter", "this year",
@@ -134,19 +144,28 @@ ENDPOINTS = [
 JOINERS = [" and ", " & ", ", ", " to ", " - ", " through ", " until ", " vs "]
 
 
+def _days(r: DateRange) -> str:
+    start = r.start.isoformat() if r.start else "..."
+    end = r.end_inclusive.isoformat() if r.end_inclusive else "..."
+    return f"{start}..{end}"
+
+
 def _answer(matches: list[DateMatch]) -> str:
+    """Each match; dates named together are joined by how they were joined ("+list+")."""
     if not matches:
         return "(none)"
-    parts = []
-    for m in matches:
+    out = ""
+    for k, m in enumerate(matches):
         r = m.range
-        start = r.start.isoformat() if r.start else "..."
-        end = r.end_inclusive.isoformat() if r.end_inclusive else "..."
         mod = f" {r.mod.value}" if r.mod is not None else ""
-        parts.append(
-            f"{m.text!r} {start}..{end} {r.grain.value} {r.basis.value}{mod} c={m.confidence:g}"
+        ends = f" ends {_days(m.endpoints[0])}|{_days(m.endpoints[1])}" if m.endpoints else ""
+        if k:
+            same = m.group == matches[k - 1].group
+            out += f" +{m.joined_by}+ " if same else " ; "
+        out += (
+            f"{m.text!r} {_days(r)} {r.grain.value} {r.basis.value}{mod} c={m.confidence:g}{ends}"
         )
-    return " ; ".join(parts)
+    return out
 
 
 def _line(label: str, day: date, phrase: str, cfg: WranglerConfig) -> str:

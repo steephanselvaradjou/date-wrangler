@@ -419,11 +419,43 @@ A comparison stays **two** matches. Merging `compare Q1 2024 to Q1 2025` into on
 month span is the kind of error that survives review because the number still looks
 plausible.
 
+### Which dates go together
+
+Each match says which dates were named with it, so a question that compares two periods can
+be told from one that merely mentions two dates:
+
+```python
+[(m.text, m.group, m.joined_by) for m in parse("revenue in Q1 and Q3 2024 vs 2023")]
+# [('Q1', 0, None), ('Q3 2024', 0, 'list'), ('2023', 0, 'compare')]
+
+[(m.text, m.group) for m in parse("diagnosed on 1994/2/19, tested on 1993/11/12")]
+# [('1994/2/19', 0), ('1993/11/12', 1)]          — two groups: nothing joins them
+```
+
+`group` numbers the dates named together from 0, in order; a date on its own has a group to
+itself. `joined_by` is how a match is joined to the one before it: `"list"` (`and`, `&`, a
+comma), `"compare"` (`vs`, `versus`, `against`, `compared to`), or `"range"` for a span that
+could not be made, which `diagnose` explains. It is `None` for the first in a group.
+
+A span is one match, and `endpoints` holds the two periods it was made from, for questions
+about a change between them:
+
+```python
+m = parse_one("decrease rate from 2012 to 2013")
+str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
+[str(e) for e in m.endpoints]  # ['2012-01-01 .. 2012-12-31 (366 days)',
+                               #  '2013-01-01 .. 2013-12-31 (365 days)']
+```
+
+`endpoints` is `None` for anything that is not a span between two periods: `Q1 2024`,
+`since 2012`, `the year to March 2024`.
+
 ### What it understands
 
 | | |
 |---|---|
-| Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `fy-24`, `F.Y. 2024` |
+| Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `Q1 FY2024-25`, `FY2024-25 Q3`, `fiscal 2024`, `2023-24 financial year`, `fy-24`, `F.Y. 2024`, `FY ending June 30, 2024` |
+| Split years | `2024-25`, `2012/13` with no FY follow `year_basis`, as any year does: on a fiscal basis the fiscal year 2024-25 (and `Q3 2024-25` its third quarter); on a calendar basis the years 2024 to 2025, of which `Q3 2024-25` is not one period, so `diagnose` says to write `FY2024-25`. `2011-12` is a fiscal year on a fiscal basis and December 2011 on a calendar one |
 | Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `fiscal Q3`, `Q3 FY` |
 | Years and labelled periods | `2024`, `the year 2024`, `Q1 of 2024`, `January 2024`, `CY2024` — see [which calendar](#configuration) for how a year is read |
 | Fiscal month index | `third month of FY24`, `twelfth month` |
@@ -435,9 +467,19 @@ plausible.
 | Period to date | `this year to date`, `Q3 to date`, `October to date`, `March 2024 to date` |
 | Reporting shorthand | `TTM`, `LTM`, `T12M`, `L3M`, `trailing 12 months`, `rolling 3 months` |
 | Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024` |
-| Absolute | `2024-03-15`, `15 January 2024`, `January 15, 2024`, `03/04/2024` |
-| Ranges | `Q1 to Q2`, `Jan–Mar`, `from April to September 2024`, `Nov to Feb` (wraps) |
-| Open-ended | `since March`, `from Q1 onwards`, `up to March 2024`, `before 2024`, `after FY24` |
+| Absolute | `2024-03-15`, `15 January 2024`, `January 15, 2024`, `March 15 2024`, `2024 March 15`, `03/04/2024`, `01-04-2018`, `13.06.18` |
+| A comma or weekday inside the date | `June, 2013`, `12 March, 2014`, `Q1, 2024`, `Friday, 15 March 2024` — one date, and a weekday that does not match it is flagged |
+| Months as numbers | `2024-03`, `2024/03`, `03/2024` |
+| Abbreviations and run-together forms | `Sept. 2013`, `Mar. 15, 2024`, `FEB.2018`, `15MAR2024`, `13june2018`, `01may 2018`, `may'18`, `June' 2018`, `Mar-15-2024` |
+| Ranges | `Q1 to Q2`, `Jan–Mar`, `from April to September 2024`, `Nov to Feb` (wraps), `2024-03-15/2024-03-20`, `1-4-2018-31-5-2018`, `the years 2012 through 2014` |
+| Up to today | `01/06/2018 to till date`, `April 2015 to till date`, `1st march 2018 to as on date`, `from 2012 to present`, `2012-present`, `as on date` |
+| Open-ended | `since March`, `from Q1 onwards`, `up to March 2024`, `before 2024`, `after FY24`, `prior to 2012`, `pre-2012`, `post-2012`, `2012 and later`, `in or after 2012`, `starting 2012` |
+| Counted from a date | `3 days before 15 March 2024`, `two weeks after 1 April`, `a year after March 2024`, `the day after 15 March` |
+| Two back | `the month before last`, `the year before last`, `the week before last` |
+| The nearest month | `last March`, `this March`, `next March` |
+| Weekdays of a week | `Friday last week`, `Monday to Friday last week`, `Monday next` |
+| Decades | `the 1990s`, `the 1990's`, `the '90s`, `the 90s`, `the nineties`, `the early 1990s`, `mid-1990s`, `the late 90s` |
+| Reporting periods | `9M 2024`, `9M FY24` (the first nine months), `the March quarter 2024` (the quarter ending March), `the first 3 quarters of 2024`, `first fortnight of March` |
 | Point-in-time | `as of 31 March 2024` |
 | Relative year | `Q1 last year`, `March last year`, `H2 next year` |
 | Part of a period | `first half of March`, `early 2024`, `mid March`, `end of Q1` |
@@ -457,11 +499,20 @@ plausible.
 | Written formats | `15-Mar-2024`, `15 Mar 24`, `Mar-24`, `15.03.2024`, `2024/03/15` |
 | Timestamps | `2024-03-15T14:30:00Z`, `Mar 15 14:30:00`, `Wed, 15 Mar 2024 14:30:00 GMT` |
 | Chat and email | `EOD`, `COB Friday`, `on the 15th`, `meet Thursday` |
-| Decades | `the 1990s` |
 
 Span connectors are `to`, `through`, `thru`, `until`, `till`, `upto`, and hyphen, en dash or
 em dash — the last three matter because editors rewrite `-` as `–` on sight. `and` is not
-one of them: it lists periods (see below).
+one of them: it lists periods (see below), and so do `or` and a slash (`Jan/Feb 2024`) —
+except between two full dates, where a slash is an ISO 8601 interval.
+
+**A relative period beside a named one counts from it.** `March 2024 compared to the
+previous month` is February 2024, `2024 vs prior year` is 2023, and `Q1 2024 versus the same
+quarter last year` is Q1 2023 — not periods counted back from today, which nobody named. On
+its own, `the year before` has nothing to count from, and says so.
+
+[tests/test_formats.py](tests/test_formats.py) holds every shape above with the answer it
+must give, including real requests read exactly as they arrived
+([tests/additional_formats.txt](tests/additional_formats.txt)).
 
 **`<period> to date` runs from the start of the period up to and including today.** For
 the current period that is the period so far — `this year to date` is the same window as
@@ -483,9 +534,12 @@ date, so these are left alone on purpose:
 | `cob` in lower case | corn, not close of business — `COB` is read |
 | `19th century` | centuries are unsupported, and guessing a day would be worse |
 | `Christmas`, `Diwali` | holidays need a locale and a calendar of their own |
-| `every Monday` | recurrence is a different shape from a range |
+| `every Monday` | recurrence is a different shape from a range — `diagnose` says so |
 | `within 30 days of the Effective Date` | a duration with no anchor to measure from |
 | `bake for 30 minutes` | durations and times of day are out of scope |
+| `summer 2024`, `last winter` | seasons fall in different months either side of the equator |
+| `recently`, `a few days ago`, `the other day` | too vague to name a period |
+| `the year before`, on its own | before what? With a date beside it — `2024 vs the year before` — it is read |
 
 Version numbers, prices, phone numbers, invoice IDs, scores and measurements are all left
 alone too. See [tests/test_realworld.py](tests/test_realworld.py) for the full corpus.
@@ -509,20 +563,28 @@ substitute("calls tomorrow morning", min_confidence=0)  # 'calls 10 October 2026
 substitute("sales in 2024", min_confidence=0.9)         # 'sales in 2024' — a bare year is 0.8
 ```
 
-Confidence is not a probability. There are four levels, each with a reason:
+Confidence is not a probability. There are five levels, each with a reason:
 
 | confidence | what it means | examples | `substitute` by default |
 |---|---|---|---|
-| **1.0** | read in full, nothing in doubt | `last quarter`, `Q1 FY25`, `15 March 2024`, `last Monday` | rewritten |
-| **0.9** | an all-numeric date — which number is the day is a setting (`date_order`) | `03/04/2024` | rewritten |
-| **0.8** | probably a date, but the same words can be a plain number or name | `2024`, `Monday`, `due on the 15th`, `1 and 15 March` | rewritten |
-| **0.5** | flagged: part of the phrase was not read, or a span says less than it seems — `diagnose` gives the reason | `tomorrow morning`, `two weeks from Friday`, `Q1 to January` | left as typed |
+| **1.0** | read in full, nothing in doubt | `last quarter`, `Q1 FY25`, `15 March 2024`, `last Monday`, `13/06/2018` | rewritten |
+| **0.9** | an all-numeric date that reads either way round — which number is the day is a setting (`date_order`) | `03/04/2024` | rewritten |
+| **0.8** | probably a date, but the same words can be a plain number or name | `2024`, `Monday`, `due on the 15th`, `1 and 15 March 2024` | rewritten |
+| **0.7** | the period is certain, but no year is written, so it is today's — `YEAR_GUESSED` | `September`, `Q1`, `15 March`, `the first week of April` | rewritten |
+| **0.5** | flagged: part of the phrase was not read, or a span says less than it seems — `diagnose` gives the reason | `tomorrow morning`, `two weeks from Friday`, `Q1 to January`, `Monday, 15 March 2024` | left as typed |
 
 `min_confidence` defaults to **0.6**, which sits between the two lowest levels: everything
-is rewritten except what is flagged. Pass `0` to rewrite every match, `0.9` to leave bare
+is rewritten except what is flagged. Pass `0` to rewrite every match, `0.75` to leave a
+month or quarter with no year as typed while still rewriting `1995`, `0.9` to leave bare
 years and the like as typed too, or `1` to rewrite only what is certain. The same numbers
 are on every match from `parse()`, so code that filters on `confidence` uses the same
 scale.
+
+**A year that is not written is a guess.** `events in September and October` names two
+months and no year; today's year is the library's guess, and on historic data it is the
+wrong one. So such a period reads at 0.7 rather than 1.0. A year written anywhere in the
+phrase is not a guess — `Q1 and Q3 2024` gives Q1 the 2024, `Q1 to last month` is this
+year's Q1 — and neither is `last March`, which says which one it means.
 
 A match whose neighbouring words change the period but could not be read comes back with
 **confidence 0.5** and an explanation, rather than a confident answer to a question nobody

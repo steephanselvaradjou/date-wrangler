@@ -13,7 +13,8 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
-from datetime import date, datetime, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
+from typing import Any
 
 from .config import DEFAULT_CONFIG, WranglerConfig
 from .normalize import Normalized, normalize
@@ -22,15 +23,17 @@ from .rules import RULES, Rule
 from .spec import Kind, Part, Spec
 from .types import DateMatch, DateRange, Grain, Mod, grain_rank
 from .vocab import (
+    DECADE_WORDS,
     FUTURE_WORDS,
     MONTH_NAMES,
     PAST_WORDS,
     UNIT_WORDS,
+    WEEKDAY_DISPLAY,
     WEEKDAY_NAMES,
     alt,
 )
 
-__all__ = ["parse", "parse_one", "substitute", "diagnose", "Diagnostic"]
+__all__ = ["parse", "parse_one", "substitute", "diagnose", "Diagnostic", "YEAR_GUESSED"]
 
 
 # ---------------------------------------------------------------------------
@@ -58,8 +61,11 @@ _TRIGGERS = (
         "beginning", "start", "early", "mid", "middle", "late", "end", "close",
         # Read only to say why they are not answered: "an hour ago" has no other trigger.
         "hour", "hours", "hr", "hrs", "minute", "minutes", "min", "mins",
-        "second", "seconds", "sec", "secs",
+        "second", "seconds", "sec", "secs", "recently", "lately", "ago", "every",
+        # "as on date", "till date": today, as statements are asked for.
+        "date", "dated", "tonight",
     }
+    | set(DECADE_WORDS)
 )
 #: Tokenising and intersecting a set beats a 116-way alternation by roughly ten times on
 #: text with no date in it, which is the case that has to be cheap: the alternation retries
@@ -77,7 +83,79 @@ def _might_hold_a_date(text: str) -> bool:
     return not _TRIGGERS.isdisjoint(_WORDS.findall(text.lower()))
 
 
-_SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{rule.pattern})" for rule in RULES)
+try:  # Python 3.11 moved the regex parser; it is the same module either way.
+    from re import _parser as _sre  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover
+    import sre_parse as _sre
+
+
+def _first_chars(pattern: str) -> str | None:
+    """A character class holding every character a match of ``pattern`` can begin with,
+    or None when that cannot be narrowed down.
+
+    Python tries the alternatives of a pattern one at a time, so at every word in the text
+    each rule runs until it fails -- and a rule that opens with thirty month names fails
+    slowly. A one-character lookahead in front of it fails at once. It can only be a
+    superset of what the rule accepts, so it changes the speed, never the matches; a test
+    holds the guarded scanner to the plain one.
+    """
+    found: set[str] = set()
+
+    def walk(items: Any) -> bool | None:
+        """Add the first characters of a sequence; True if it can match empty, None if
+        it can start with anything."""
+        for op, av in items:
+            empty = step(op, av)
+            if empty is None:
+                return None
+            if not empty:
+                return False
+        return True
+
+    def step(op: Any, av: Any) -> bool | None:
+        if op is _sre.LITERAL:
+            found.add(re.escape(chr(av)))
+            return False
+        if op is _sre.IN:
+            for o, a in av:
+                if o is _sre.LITERAL:
+                    found.add(re.escape(chr(a)))
+                elif o is _sre.RANGE:
+                    found.add(f"{re.escape(chr(a[0]))}-{re.escape(chr(a[1]))}")
+                elif o is _sre.CATEGORY and a is _sre.CATEGORY_DIGIT:
+                    found.add(r"\d")
+                else:
+                    return None  # \s, \w, a negated class: too wide to be worth it
+            return False
+        if op is _sre.SUBPATTERN:
+            return walk(av[-1])
+        if op is _sre.BRANCH:
+            empty = False
+            for branch in av[1]:
+                result = walk(branch)
+                if result is None:
+                    return None
+                empty = empty or result
+            return empty
+        if op in (_sre.MAX_REPEAT, _sre.MIN_REPEAT):
+            low, _, item = av
+            result = walk(item)
+            return None if result is None else (result or low == 0)
+        if op in (_sre.AT, _sre.ASSERT, _sre.ASSERT_NOT):
+            return True  # takes up no characters
+        return None
+
+    if walk(_sre.parse(pattern)) is not False or not found:
+        return None
+    return "[" + "".join(sorted(found)) + "]"
+
+
+def _guarded(rule: Rule) -> str:
+    first = _first_chars(rule.pattern)
+    return rule.pattern if first is None else f"(?={first}){rule.pattern}"
+
+
+_SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{_guarded(rule)})" for rule in RULES)
 #: Every rule opens with \b, so it is checked once, ahead of the alternation, instead of
 #: once per rule at every position. Most positions are inside a word and fail it, and they
 #: now fail after one test rather than forty-eight -- about a third of scanning time, with
@@ -97,13 +175,24 @@ _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 #: A gap that joins two periods into one span.
 _STRONG_LINK = re.compile(r"^\s*(?:to|through|thru|until|till|up\s*to|upto|-|–|—)\s*$", re.I)
 #: "and" joins a range only when nothing suggests a list.
-_WEAK_LINK = re.compile(r"^\s*(?:and|&)\s*$", re.IGNORECASE)
-#: A comma means the writer is enumerating, not describing a span.
-_LIST_LINK = re.compile(r"^\s*,\s*(?:and\s+)?$", re.IGNORECASE)
+#: "and" joins a range only when nothing suggests a list. A relative period after it may
+#: keep its article: "2024 and the year before".
+_WEAK_LINK = re.compile(r"^\s*(?:and|&)\s*(?:the\s+)?$", re.IGNORECASE)
+#: A comma means the writer is enumerating, not describing a span; so does "or".
+#: REGRESSION: "in 2012 or 2013" was 2012 alone -- "or" linked nothing, and the second
+#: year, left without a cue, was dropped.
+_LIST_LINK = re.compile(
+    r"^\s*(?:,\s*(?:and\s+|or\s+)?|,?\s*(?:or|and/or)\s+)(?:the\s+)?$", re.IGNORECASE
+)
+#: "Jan/Feb 2024" lists; "2024-03-15/2024-03-20" is an ISO interval. The ends decide.
+_SLASH_LINK = re.compile(r"^\s*/\s*$")
 
-#: Gaps that mean "these are two things being contrasted", never one range.
+#: Gaps that mean "these are two things being contrasted", never one range. REGRESSION:
+#: "compared to the previous month" linked nothing, for the "the".
 _COMPARISON_GAP = re.compile(
-    r"^\s*(?:vs\.?|versus|against|compared\s+(?:to|with)|relative\s+to|over)\s*$", re.I
+    r"^\s*(?:vs\.?|v\.?|versus|against|compared\s+(?:to|with)|relative\s+to|over)\s*"
+    r"(?:the\s+)?$",
+    re.IGNORECASE,
 )
 #: Text before the first period that turns even a plain "to" into a comparison.
 _COMPARISON_LEAD = re.compile(
@@ -118,26 +207,36 @@ _MOD_PREFIXES: tuple[tuple[re.Pattern[str], Mod], ...] = (
     # or the meaning is reversed ("not before 1 April" meant up to 31 March).
     (
         re.compile(
-            r"\b(?:on\s+or\s+after|not\s+before|no\s+earlier\s+than|from\s+and\s+including)"
-            r"\s+$",
+            r"\b(?:(?:on|in)\s+or\s+after|not\s+before|no\s+earlier\s+than"
+            r"|from\s+and\s+including)\s+$",
             re.IGNORECASE,
         ),
         Mod.SINCE,
     ),
     (
         re.compile(
-            r"\b(?:on\s+or\s+before|not\s+after|no\s+later\s+than"
+            r"\b(?:(?:on|in)\s+or\s+before|not\s+after|no\s+later\s+than"
             r"|up\s+to\s+and\s+including|by)\s+$",
             re.IGNORECASE,
         ),
         Mod.UNTIL,
     ),
-    (re.compile(r"\bsince\s+$", re.IGNORECASE), Mod.SINCE),
+    # "starting 2012", "beginning from Q1": REGRESSION -- the word was not read, and the
+    # answer was 2012 alone rather than everything from it.
+    (
+        re.compile(
+            r"\b(?:since|(?:starting|beginning|commencing)(?:\s+(?:from|in|on|with))?)\s+$",
+            re.IGNORECASE,
+        ),
+        Mod.SINCE,
+    ),
     (re.compile(r"\b(?:prior\s+to|earlier\s+than|before)\s+$", re.IGNORECASE), Mod.BEFORE),
+    (re.compile(r"\bpre-$", re.IGNORECASE), Mod.BEFORE),
     # "through 31 March" on its own is a deadline, inclusive. Inside a range ("Jan through
     # Mar") the two ends are merged before any modifier is looked for, so this never sees it.
     (re.compile(r"\b(?:up\s*to|upto|until|till|through|thru)\s+$", re.IGNORECASE), Mod.UNTIL),
-    (re.compile(r"\bafter\s+$", re.IGNORECASE), Mod.AFTER),
+    (re.compile(r"\b(?:after|later\s+than)\s+$", re.IGNORECASE), Mod.AFTER),
+    (re.compile(r"\bpost-$", re.IGNORECASE), Mod.AFTER),
 )
 
 #: "from" starts something only when what follows is a single day: "from 1 April",
@@ -171,18 +270,27 @@ _DURATION_FROM = re.compile(
 _END_OF = re.compile(r"(?:the\s+)?end\s+of\b", re.IGNORECASE)
 _MOD_SUFFIXES: tuple[tuple[re.Pattern[str], Mod | None], ...] = (
     (re.compile(r"^\s*onwards?\b", re.IGNORECASE), Mod.SINCE),
-    (re.compile(r"^\s*or\s+later\b", re.IGNORECASE), Mod.SINCE),
-    (re.compile(r"^\s*or\s+earlier\b", re.IGNORECASE), Mod.UNTIL),
+    # "2012 and later", "2012 or after": everything from it, inclusive.
+    (
+        re.compile(r"^\s*(?:and|or)\s+(?:later|after|beyond|onwards?|since)\b", re.IGNORECASE),
+        Mod.SINCE,
+    ),
+    (re.compile(r"^\s*(?:and|or)\s+(?:earlier|before|prior)\b", re.IGNORECASE), Mod.UNTIL),
     (re.compile(r"^\s*to\s+date\b", re.IGNORECASE), None),  # handled by the to_date rule
 )
 
 #: Words that introduce a range and belong inside its span -- leaving them out makes
-#: substitution ungrammatical ("between from April to September").
-_RANGE_LEAD = re.compile(r"\b(?:from|between|betwn|b/w)\s+$", re.IGNORECASE)
+#: substitution ungrammatical ("between from April to September"). "the years" may follow:
+#: "between the years 2010 and 2015".
+_RANGE_LEAD = re.compile(
+    r"\b(?:from|between|betwn|b/w)\s+(?:the\s+)?(?:(?:years?|period)\s+)?$", re.IGNORECASE
+)
 
 #: The only words that make "and" a span rather than a list: "between March and June".
 #: Not "from" -- "the figures from Q1 and Q3" are each quarter's figures.
-_BETWEEN_LEAD = re.compile(r"\b(?:between|betwn|b/w)\s+$", re.IGNORECASE)
+_BETWEEN_LEAD = re.compile(
+    r"\b(?:between|betwn|b/w)\s+(?:the\s+)?(?:(?:years?|period)\s+)?$", re.IGNORECASE
+)
 
 #: Words that make a bare month or year read as a date rather than a noun.
 _CUE = re.compile(
@@ -196,7 +304,9 @@ _CUE = re.compile(
     r"meet|meeting|due|deadline|scheduled|schedule|booked|book|expires|expiry|effective|"
     r"dated|born|joined|starts|starting|ends|ending|arrives|arriving|departing|returning|"
     r"delivered|delivery|ships|shipping|submitted|signed|executed|commencing|"
-    r"admitted|discharged|appointment|renew|renewal|payable)"
+    r"admitted|discharged|appointment|renew|renewal|payable|"
+    # "the years 2012 through 2014", "for the period 2012-2014".
+    r"years?|period)"
     # An article may sit between the cue and the date: "on the 15th", "in the March figures".
     r"(?:\s+the)?\W*$",
     re.IGNORECASE,
@@ -245,7 +355,18 @@ _MONTH_NOUNS = frozenset({
 })
 
 #: Rules whose matches are weak enough to need a cue in "balanced" mode.
-_WEAK_RULES = frozenset({"month", "bare_year", "weekday", "ordinal_day", "week_bare"})
+_WEAK_RULES = frozenset(
+    {"month", "bare_year", "weekday", "ordinal_day", "week_bare", "quoted_year"}
+)
+
+#: In front of these, a dotted number is a version, not a date: "version 2.1.2024".
+_VERSION_LEAD = re.compile(
+    r"\b(?:v|ver|version|release|rel|build|rev|revision|firmware|update|patch)\.?\s*$",
+    re.IGNORECASE,
+)
+
+#: Rules that only mean something joined to the date before them: "to present", "to date".
+_ENDS_ONLY = frozenset({"to_now"})
 
 #: Words that change which days a period covers. Left unread beside a match, the answer is
 #: not the one the writer asked for -- "March 2024 to date" is not all of March 2024. We
@@ -269,6 +390,9 @@ _QUALIFIER_AFTER = re.compile(
     re.IGNORECASE,
 )
 
+#: The "-25" of "Q3 2024-25", where nothing said whether 2024-25 is one fiscal year or two.
+_SPLIT_YEAR_TAIL = re.compile(r"^[-/]'?\d{2}(?![\d/-])")
+
 #: "next Monday week", "Monday week" -- British for the Monday after next. Read as the
 #: weekday alone it is a week early, so a weekday followed by "week" is a partial read.
 _WEEKDAY_THEN_WEEK = re.compile(r"^\s+week\b(?!\s*\d)", re.IGNORECASE)
@@ -289,6 +413,11 @@ _QUALIFIER_BEFORE = re.compile(
     # are actually resolved, so any other tail here is a period we did not compute.
     r"|\b(?:a|an|\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
     r"(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+(?:the\s+)?\W*$"
+    # "between 2 and 5 years ago" is a run of years; only its far end was read.
+    r"|\bbetween\s+(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)\s+and\s+$"
+    # "within 30 days of 15 March": a window around the date, either side of it.
+    r"|\bwithin\s+(?:a|an|\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+    r"(?:day|week|fortnight|month|quarter|year)s?\s+of\s+(?:the\s+)?$"
     # The same clock time, on the other side: "at 3pm on Tuesday", "between 2pm and 4pm
     # yesterday".
     rf"|\b(?:at|by|around)\s+{_CLOCK}(?:\s+(?:on|of))?\s*\W*$"
@@ -424,6 +553,8 @@ def _passes_strictness(
     A name beats every cue. "sales by June Patel" has a perfectly good cue in "by", and is
     still a person, so :func:`_looks_like_a_person` is checked first and vetoes outright.
     """
+    if raw.rule == "numeric" and _VERSION_LEAD.search(text[max(0, raw.start - 16) : raw.start]):
+        return False
     if cfg.strictness == "greedy" or raw.rule not in _WEAK_RULES:
         return True
     if cfg.strictness == "strict":
@@ -432,11 +563,130 @@ def _passes_strictness(
         return False
     if chain_start == 0 and chain_end >= len(text.rstrip()):
         return True  # the whole input is the date
-    if _CUE.search(text[max(0, chain_start - 32) : chain_start]):
+    before = text[max(0, chain_start - 32) : chain_start]
+    if _CUE.search(before):
         return True
-    # "the March figures" -- no cue in front, but the noun behind settles it. Capitalised
-    # only, so "it may report a loss" stays a modal verb.
-    return bool(text[chain_start].isupper() and _TRAILING_CUE.match(text[chain_end:]))
+    # A word that bounds the period is a cue too: "prior to 2012", "2012 onwards".
+    # REGRESSION: both were read, then dropped, because a bare year needs a cue.
+    if any(p.search(before) for p, _ in _MOD_PREFIXES) or any(
+        mod is not None and p.match(text[chain_end : chain_end + 24]) for p, mod in _MOD_SUFFIXES
+    ):
+        return True
+    # "the March figures", "the 1998's figures" -- no cue in front, but the noun behind
+    # settles it. Capitalised only, so "it may report a loss" stays a modal verb.
+    first = text[chain_start]
+    return bool((first.isupper() or first.isdigit()) and _TRAILING_CUE.match(text[chain_end:]))
+
+
+# ---------------------------------------------------------------------------
+# Fragments that are one date
+# ---------------------------------------------------------------------------
+
+#: Between a period and the year that is its own: "June, 2013", "Q1, 2024".
+_COMMA_GAP = re.compile(r"^\s*,\s*$")
+#: Between a weekday and the date it names: "Friday, 15 March", "Friday 15 March".
+_WEEKDAY_GAP = re.compile(r"^\s*,?\s*$")
+#: Before "till date", "to present": "01/06/2018 to till date", "10th June 2018-to till date".
+_TILL_GAP = re.compile(r"^\s*(?:-\s*)?(?:to\s*)?$", re.IGNORECASE)
+#: Between a count and the date it counts from: "3 days before 15 March", "prior to".
+_FROM_DATE_GAP = re.compile(r"^\s*(?:to\s+)?$", re.IGNORECASE)
+#: A count that points at a date after it: "3 days before", "a year after".
+_COUNTS_FROM = re.compile(r"\b(?:before|after|prior|earlier|later)\s*$", re.IGNORECASE)
+_OF_GAP = re.compile(r"^\s+of\s+(?:the\s+)?$", re.IGNORECASE)
+_TILL_RULES = frozenset({"till_now", "to_now"})
+
+
+def _join_one_date(raws: list[_Raw], text: str) -> list[_Raw]:
+    """Join fragments the scanner found apart that name one date between them.
+
+    - A year after a comma is the year of the period before it: "June, 2013", "Q1, 2024".
+      REGRESSION: the year came back as a second period, so "in June, 2013" was June 2013
+      *and* all of 2013, and a question about one month became a comparison of two.
+    - A weekday belongs to the date it introduces: "Friday, 15 March 2024". It was read as
+      this week's Friday, a second and wrong date.
+    - "till date", "to present" end the date before them: "01/06/2018 to till date".
+    - A count before a date counts from it: "3 days before 15 March", not from today.
+    """
+    out: list[_Raw] = []
+    for raw in raws:
+        joined = _joined(out[-1], raw, text) if out else None
+        if joined is not None:
+            out[-1] = joined
+        else:
+            out.append(raw)
+    kept: list[_Raw] = []
+    for raw in out:
+        if raw.rule in _ENDS_ONLY:
+            continue  # "to present" with no date before it: "we want to present the results"
+        if raw.rule == "quoted_year":
+            raw = _Raw(raw.rule, raw.spec, raw.start - 1, raw.end)  # take the apostrophe
+        kept.append(raw)
+    return kept
+
+
+def _joined(prev: _Raw, raw: _Raw, text: str) -> _Raw | None:
+    """``prev`` and ``raw`` as one fragment, or None if they are two."""
+    a, b = prev.spec, raw.spec
+    gap = text[prev.end : raw.start]
+    if _COMMA_GAP.match(gap) and _takes_a_year(a) and _is_a_year(b):
+        basis = a.basis if a.basis is not None else b.basis
+        return _Raw("comma_year", a.with_(year=b.year, basis=basis), prev.start, raw.end)
+    if (
+        a.kind is Kind.WEEKDAY
+        and a.weekday_span is None
+        and _WEEKDAY_GAP.match(gap)
+        and _names_a_day(b)
+        and not b.is_relative
+    ):
+        return _Raw(raw.rule, b.with_(weekday=a.index), prev.start, raw.end)
+    if raw.rule in _TILL_RULES and prev.rule not in _TILL_RULES and _TILL_GAP.match(gap):
+        return _Raw(prev.rule, a.with_(through_today=True), prev.start, raw.end)
+    if (
+        prev.rule == "in_future"
+        and text[prev.start : prev.end].lower().startswith("within")
+        and _OF_GAP.match(gap)
+        and not b.is_relative
+    ):
+        # "within 30 days of 15 March": either side of the date, or only after it? Kept as
+        # the date, flagged -- and not as thirty days from today.
+        return _Raw("within_of", b, prev.start, raw.end)
+    if (
+        a.kind is Kind.AGO
+        and not a.business
+        and a.unit is not None
+        and _FROM_DATE_GAP.match(gap)
+        and _COUNTS_FROM.search(text[prev.start : prev.end])
+        and not b.is_relative
+    ):
+        rule = "shift_the" if prev.rule == "unit_before" else "shift"
+        shift = (a.direction * (a.count or 1), a.unit)
+        return _Raw(rule, b.with_(shift=shift), prev.start, raw.end)
+    return None
+
+
+def _takes_a_year(spec: Spec) -> bool:
+    """A period that names no year and could have one: "June", "Q1", "the end of March"."""
+    return (
+        spec.year is None
+        and spec.year_offset is None
+        and not spec.is_relative
+        and spec.kind
+        in (Kind.ABS_DAY, Kind.ABS_MONTH, Kind.ABS_QUARTER, Kind.ABS_HALF, Kind.PERIOD_ENDING)
+    )
+
+
+def _is_a_year(spec: Spec) -> bool:
+    """A year and nothing more: "2013", "FY25", "CY2024"."""
+    return (
+        spec.kind is Kind.ABS_YEAR
+        and spec.year is not None
+        and spec.part is None
+        and spec.sub_period is None
+        and spec.day_of_period is None
+        and spec.nth_weekday is None
+        and spec.within is None
+        and not spec.through_today
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -449,8 +699,13 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
     links: list[str | None] = []
     for a, b in zip(raws, raws[1:], strict=False):
         gap = text[a.end : b.start]
-        if _COMPARISON_GAP.match(gap):
+        if a.rule == b.rule == "split_year" and gap.strip() in ("-", "/"):
+            links.append("range")  # "2024-25" on a calendar basis: 2024 to 2025
+        elif _COMPARISON_GAP.match(gap):
             links.append("compare")
+        elif _SLASH_LINK.match(gap):
+            # Two dated days either side of a slash are an ISO 8601 interval.
+            links.append("range" if _is_dated_day(a.spec) and _is_dated_day(b.spec) else "list")
         elif _LIST_LINK.match(gap):
             links.append("list")
         elif _STRONG_LINK.match(gap) or _WEAK_LINK.match(gap):
@@ -462,7 +717,7 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
                 lead = lead[opened + 1 :]
             if _COMPARISON_LEAD.search(lead):
                 links.append("compare")
-            elif _WEAK_LINK.match(gap) and not _BETWEEN_LEAD.search(lead[-12:]):
+            elif _WEAK_LINK.match(gap) and not _BETWEEN_LEAD.search(lead[-24:]):
                 # "and" lists periods; only "between ... and" makes a span. "Q1 and Q3" is
                 # two quarters -- one range for both would hold Q2, which nobody named.
                 links.append("and")
@@ -474,9 +729,11 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
 
 
 def _demote_lists(links: list[str | None]) -> list[str | None]:
-    """A comma anywhere in a run makes the whole run a list.
+    """A comma anywhere in a run makes every "and" in it a list too.
 
-    "Q1, Q2 and Q3" is three quarters, not Q1 plus a Q2-to-Q3 span.
+    "Q1, Q2 and Q3" is three quarters. A span stays a span: "2015 to 2016, 2016 to 2017"
+    is two spans. REGRESSION: the comma turned each "to" into a list as well, and the
+    answer was six separate years.
     """
     out = list(links)
     i = 0
@@ -490,7 +747,7 @@ def _demote_lists(links: list[str | None]) -> list[str | None]:
         run = out[i:j]
         if "list" in run:
             for k in range(i, j):
-                if out[k] != "compare":
+                if out[k] == "and":
                     out[k] = "list"
         i = j
     return out
@@ -503,31 +760,35 @@ def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
     Q2 2024" across two different years defeats the point. The year's basis travels with
     it: in "Q1, Q2 and Q3 of FY25" all three are fiscal quarters, not just the last.
 
-    A list joined by "and" may hold spans of its own -- "Jan to Mar and Jul to Sep 2024"
-    -- so there the year reaches every period in the run, spans included.
-    """
-    i = 0
-    while i < len(links):
-        if links[i] is None:
-            i += 1
-            continue
-        j = i
-        while j < len(links) and links[j] is not None:
-            j += 1
-        if "and" in links[i:j]:
-            _share_year(raws[i : j + 1])
-        i = j
+    A list may hold spans of its own -- "Jan to Mar and Jul to Sep 2024" -- so the year
+    reaches every period in it, spans included.
 
-    shared = ("list", "compare")
+    Each side of a comparison shares its own year first, and only a side with none left
+    takes one from across it. REGRESSION: "Q1 and Q3 2024 vs 2023" gave Q1 the 2023 on the
+    far side of the "vs", when 2024 was written beside it.
+    """
+    for lo, hi in _runs(links, lambda k: k is not None and k != "compare"):
+        if any(k in ("and", "list") for k in links[lo:hi]):
+            _share_year(raws[lo : hi + 1])
+    for lo, hi in _runs(links, lambda k: k is not None):
+        if "compare" in links[lo:hi]:
+            _share_year(raws[lo : hi + 1])
+
+
+def _runs(
+    links: list[str | None], linked: Callable[[str | None], bool]
+) -> Iterator[tuple[int, int]]:
+    """Each maximal run of links passing ``linked``, as ``(first, past_last)`` link indices;
+    the run joins the matches ``first`` to ``past_last`` inclusive."""
     i = 0
     while i < len(links):
-        if links[i] not in shared:
+        if not linked(links[i]):
             i += 1
             continue
         j = i
-        while j < len(links) and links[j] in shared:
+        while j < len(links) and linked(links[j]):
             j += 1
-        _share_year(raws[i : j + 1])
+        yield i, j
         i = j
 
 
@@ -570,6 +831,10 @@ def _unify(a: Spec, b: Spec) -> tuple[Spec, Spec]:
 def _is_dated_month(spec: Spec) -> bool:
     """A month or day that names its own year: a calendar fact, whatever it is joined to."""
     return spec.kind in (Kind.ABS_MONTH, Kind.ABS_DAY) and spec.year is not None
+
+
+def _is_dated_day(spec: Spec) -> bool:
+    return spec.kind is Kind.ABS_DAY and spec.year is not None
 
 
 # ---------------------------------------------------------------------------
@@ -678,16 +943,34 @@ def parse(
     body = norm.text
 
     mark = len(diagnostics) if diagnostics is not None else 0
-    raws = _scan(body, config, diagnostics)
+    raws = _join_one_date(_scan(body, config, diagnostics), body)
     if not raws:
         _diagnostics_to_original(diagnostics, mark, norm)
         return []
 
     links = _demote_lists(_link_kinds(raws, body))
     _propagate_year(raws, links)
+    anchors = _anchors(raws, links, body, day, config)
+    raws_ok = []
+    for idx, raw in enumerate(raws):
+        if raw.rule == "unit_before" and idx not in anchors:
+            # "the year before the merger": before what, it does not say.
+            if diagnostics is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        body[raw.start : raw.end], (raw.start, raw.end), raw.rule,
+                        f"{body[raw.start : raw.end]!r} counts from a date, and none is "
+                        "given beside it",
+                    )
+                )
+            raws_ok.append(False)
+        else:
+            raws_ok.append(True)
 
-    # Group linked matches into chains, so strictness judges the chain as a whole.
+    # Group linked matches into chains, so strictness judges the chain as a whole. A chain
+    # is also what the caller sees as a group: the dates named together.
     chain_of: dict[int, tuple[int, int]] = {}
+    run_of: dict[int, int] = {}
     i = 0
     while i < len(raws):
         j = i
@@ -695,16 +978,27 @@ def parse(
             j += 1
         for k in range(i, j + 1):
             chain_of[k] = (raws[i].start, raws[j].end)
+            run_of[k] = i
         i = j + 1
 
     kept = {
         idx
         for idx, raw in enumerate(raws)
-        if _passes_strictness(raw, body, config, *chain_of[idx])
+        if raws_ok[idx] and _passes_strictness(raw, body, config, *chain_of[idx])
     }
 
     matches: list[DateMatch] = []
     floor = 0  # where the previous match ended, so modifiers cannot reach back over it
+    started: set[int] = set()  # groups that have a match already
+    groups: list[tuple[int, str | None]] = []  # each match's group, and its link back
+
+    def placed(m: DateMatch, i: int) -> DateMatch:
+        run = run_of[i]
+        link = links[i - 1] if i else None
+        groups.append((run, _JOINED_BY.get(link) if run in started and link else None))
+        started.add(run)
+        return m
+
     i = 0
     while i < len(raws):
         if i not in kept:
@@ -716,17 +1010,74 @@ def parse(
         if j > i:
             merged = _merge(raws[i : j + 1], day, config, body, norm, diagnostics, floor)
             if merged is not None:
-                matches.append(merged)
+                matches.append(placed(merged, i))
                 floor = raws[j].end
                 i = j + 1
                 continue
-        single = _single(raws[i], day, config, body, norm, diagnostics, floor)
+        single = _single(raws[i], anchors.get(i, day), config, body, norm, diagnostics, floor)
         if single is not None:
-            matches.append(single)
+            matches.append(placed(single, i))
             floor = max(floor, raws[i].end)
         i += 1
     _diagnostics_to_original(diagnostics, mark, norm)
-    return _take_article(_flag_unread_qualifiers(matches, body, norm, diagnostics), norm.original)
+    found = _take_article(_flag_unread_qualifiers(matches, body, norm, diagnostics), norm.original)
+    return _number_groups(found, groups)
+
+
+#: The link before a match, as the caller sees it. "and" and a comma both list.
+_JOINED_BY = {"and": "list", "list": "list", "compare": "compare", "range": "range"}
+
+#: A relative period that counts from whatever was just named: "the previous month", "the
+#: same quarter last year", "prior year", "the year before".
+_COUNTS_FROM_NAMED = re.compile(
+    r"^(?:the\s+)?(?:previous|prior|preceding|same)\b"
+    r"|^(?:the\s+)?(?:day|week|fortnight|month|quarter|half|year)\s+(?:before|after)\b",
+    re.IGNORECASE,
+)
+
+
+def _anchors(
+    raws: list[_Raw], links: list[str | None], text: str, day: date, cfg: WranglerConfig
+) -> dict[int, date]:
+    """The day each relative period counts from, when it is not today.
+
+    "March 2024 compared to the previous month" is February 2024, not the month before
+    today; "2024 vs prior year" is 2023. REGRESSION: both counted from today, so the
+    comparison was against a period nobody named.
+    """
+    out: dict[int, date] = {}
+    for k, link in enumerate(links):
+        if link is None or link == "range":
+            continue
+        a, b = raws[k], raws[k + 1]
+        if a.spec.is_relative or not b.spec.is_relative:
+            continue
+        if not _COUNTS_FROM_NAMED.match(text[b.start : b.end]):
+            continue
+        try:
+            start = resolve(a.spec, day, cfg).start
+        except UnresolvableSpec:
+            continue
+        if start is not None:
+            out[k + 1] = start
+    return out
+
+
+def _number_groups(
+    matches: list[DateMatch], groups: list[tuple[int, str | None]]
+) -> list[DateMatch]:
+    """Give each match its group, numbered 0, 1, 2... in the order they appear.
+
+    Inside :func:`parse` a group is known by the index of its first scanned fragment, which
+    counts fragments that never became a match. The caller should not see that. Most text
+    holds one date, already in group 0, so most matches are returned as they are.
+    """
+    number: dict[int, int] = {}
+    out: list[DateMatch] = []
+    for m, (run, joined) in zip(matches, groups, strict=True):
+        n = number.setdefault(run, len(number))
+        out.append(m if n == 0 and joined is None else replace(m, group=n, joined_by=joined))
+    return out
 
 
 _ARTICLE = re.compile(r"(?<![\w'])the\s+$", re.IGNORECASE)
@@ -805,6 +1156,9 @@ def _flag_unread_qualifiers(
         prev_end = spans[idx - 1][1] if idx else 0
         before = norm.original[max(prev_end, lo - 24) : lo]
         dropped = _QUALIFIER_AFTER.match(after) or _QUALIFIER_BEFORE.search(before)
+        if dropped is None and norm.original[hi - 4 : hi].isdigit():
+            # "Q3 2024-25": the second year of a split year, left behind.
+            dropped = _SPLIT_YEAR_TAIL.match(after)
         if dropped is None and _NTH_LEAD.match(norm.original[lo:hi]):
             dropped = _NTH_TAIL.match(after)
         if dropped is None and _ENDS_IN_WEEKDAY.search(norm.original[lo:hi]):
@@ -836,10 +1190,29 @@ def _flag_unread_qualifiers(
 
 
 def _emit(
-    r: DateRange, start: int, end: int, norm: Normalized, confidence: float
+    r: DateRange,
+    start: int,
+    end: int,
+    norm: Normalized,
+    confidence: float,
+    endpoints: tuple[DateRange, DateRange] | None = None,
 ) -> DateMatch:
     lo, hi = norm.to_original(start, end)
-    return DateMatch(range=r, text=norm.original[lo:hi], span=(lo, hi), confidence=confidence)
+    return DateMatch(
+        range=r, text=norm.original[lo:hi], span=(lo, hi), confidence=confidence,
+        endpoints=endpoints,
+    )
+
+
+def _day_span_ends(spec: Spec, r: DateRange) -> tuple[DateRange, DateRange] | None:
+    """The first and last day of "1-15 March", read as one fragment rather than two."""
+    if spec.day_span is None or spec.mod is not None or r.start is None or r.end is None:
+        return None
+    last = r.end - timedelta(days=1)
+    return (
+        DateRange(r.start, r.start + timedelta(days=1), Grain.DAY, r.basis),
+        DateRange(last, r.end, Grain.DAY, r.basis),
+    )
 
 
 def _usable(r: DateRange) -> bool:
@@ -878,7 +1251,76 @@ def _single(
                 )
             )
         return None
-    return _emit(r, raw.start, raw.end, norm, raw.spec.confidence)
+    confidence = raw.spec.confidence
+    if _year_guessed(raw.spec, day, cfg):
+        confidence = min(confidence, YEAR_GUESSED)
+    doubt = _weekday_clash(raw.spec, r) or _shift_doubt(raw, r) or _part_of_day(raw, body)
+    if doubt is not None:
+        confidence = min(confidence, 0.5)
+        if diags is not None:
+            span = (raw.start, raw.end)
+            diags.append(Diagnostic(body[raw.start : raw.end], span, raw.rule, doubt))
+    return _emit(r, raw.start, raw.end, norm, confidence, _day_span_ends(raw.spec, r))
+
+
+#: The confidence of a period whose year was not written, and was taken from today:
+#: "September", "Q1", "15 March". The period is certain; the year is a guess.
+YEAR_GUESSED = 0.7
+
+
+def _year_guessed(spec: Spec, day: date, cfg: WranglerConfig) -> bool:
+    """Whether resolving ``spec`` takes its year from today because none was written.
+
+    "last March" and "Q1 last year" say which year, relative to today; "Q3 to date" says it
+    is the current one. "September" does not say at all.
+    """
+    return (
+        spec.year is None
+        and spec.year_offset is None
+        and not spec.through_today
+        and default_year_for(spec, day, cfg) is not None
+    )
+
+
+def _weekday_clash(spec: Spec, r: DateRange) -> str | None:
+    """"Monday, 15 March 2024" -- when the weekday written is not the date's."""
+    if spec.weekday is None or r.start is None or r.days != 1:
+        return None
+    actual = r.start.weekday()
+    if actual == spec.weekday:
+        return None
+    return (
+        f"{r.start:%d %B %Y} is a {WEEKDAY_DISPLAY[actual]}, not a "
+        f"{WEEKDAY_DISPLAY[spec.weekday]}, so one of the two is wrong"
+    )
+
+
+def _shift_doubt(raw: _Raw, r: DateRange) -> str | None:
+    """A count from a date that may not mean what it is read as."""
+    if raw.spec.shift is None:
+        return None
+    unit = raw.spec.shift[1]
+    if raw.rule == "shift_the" and grain_rank(unit) > grain_rank(r.grain):
+        # "the week before 15 March": the 8th, or the whole week before it?
+        return (
+            f"read as the {r.grain.value} a {unit.value} away; it may mean the whole "
+            f"{unit.value} before or after instead"
+        )
+    if raw.rule == "shift" and grain_rank(unit) < grain_rank(r.grain):
+        return f"moved a {r.grain.value} by {unit.value}s, which does not land on whole ones"
+    return None
+
+
+def _part_of_day(raw: _Raw, body: str) -> str | None:
+    text = body[raw.start : raw.end]
+    if raw.rule == "within_of":
+        return (
+            f"read {text!r} as the date alone: the window may run either side of it, or "
+            "only after it"
+        )
+    if raw.rule != "part_of_day":
+        return None
+    return f"read {text!r} as today: date-wrangler answers in whole days"
 
 
 def _merge(
@@ -953,6 +1395,31 @@ def _merge(
                 )
             return None
 
+    # "1Q to yesterday to 2000": a middle that falls outside the two ends does not run
+    # forward, so the chain is not one span. REGRESSION: the middle was never looked at,
+    # and the span ran from Q1 to 2000 over a "yesterday" that came before both.
+    for mid in chain[1:-1]:
+        try:
+            rm = resolve(_unify(mid.spec, sb)[0], day, cfg)
+        except UnresolvableSpec:
+            rm = None
+        if rm is None or (
+            ra.start is not None
+            and rb.end is not None
+            and (
+                (rm.start is not None and rm.start < ra.start)
+                or (rm.end is not None and rm.end > rb.end)
+            )
+        ):
+            if diags is not None:
+                diags.append(
+                    Diagnostic(
+                        body[a.start : b.end], (a.start, b.end), "range",
+                        "range does not run forward through its middle",
+                    )
+                )
+            return None
+
     grain = ra.grain if ra.grain == rb.grain else max(ra.grain, rb.grain, key=_grain_rank)
     merged = DateRange(ra.start, rb.end, grain, ra.basis)
     if not _usable(merged):
@@ -966,6 +1433,16 @@ def _merge(
         return None
 
     confidence = min(a.spec.confidence, b.spec.confidence)
+    # A relative end fixes the other's year: "Q1 to last month" is this year's Q1.
+    if (_year_guessed(sa, day, cfg) and not sb.is_relative) or (
+        _year_guessed(sb, day, cfg) and not sa.is_relative
+    ):
+        confidence = min(confidence, YEAR_GUESSED)
+    clash = _weekday_clash(sa, ra) or _weekday_clash(sb, rb)
+    if clash is not None:
+        confidence = min(confidence, 0.5)
+        if diags is not None:
+            diags.append(Diagnostic(body[a.start : b.end], (a.start, b.end), "range", clash))
     # "from the start of A to the end of B" is a sensible thing to ask even when B lies
     # inside A -- "Q1 to 15 March" stops partway through Q1. It stops being sensible when
     # B begins no later than A does: "Q1 to January" is just January, and A has said
@@ -989,7 +1466,7 @@ def _merge(
                     "period it starts with, so the first period adds nothing",
                 )
             )
-    return _emit(merged, start, b.end, norm, confidence)
+    return _emit(merged, start, b.end, norm, confidence, (ra, rb))
 
 
 #: Coarsest grain wins when a range joins two resolutions. The ordering itself lives beside
@@ -1051,8 +1528,8 @@ def substitute(
     ``min_confidence`` leaves anything below it exactly as the writer typed it. This is the
     one function that turns a guess into a confident sentence, so by default it declines
     the guesses: a match flagged at 0.5 -- read only in part, or a span that ends inside
-    its own start -- stays as typed, while 0.8 and up (a bare "2024", an all-numeric date)
-    is rewritten:
+    its own start -- stays as typed, while 0.7 and up (a month with no year, a bare "2024",
+    an all-numeric date) is rewritten:
 
         >>> substitute("calls tomorrow morning", today=today)
         'calls tomorrow morning'                       # flagged: "morning" was not read
@@ -1064,8 +1541,9 @@ def substitute(
 
     :func:`diagnose` returns that phrase at 0.5 with an explanation. Rewriting it discards
     the explanation and leaves prose that reads as settled, which is worse than leaving the
-    original words alone. Pass ``min_confidence=0`` to rewrite everything, as before 1.0,
-    or raise it to 0.9 to keep bare years as typed as well.
+    original words alone. Pass ``min_confidence=0`` to rewrite everything, as before 1.0;
+    0.75 to leave a period with no year as typed -- on historic data today's year is the
+    wrong one -- or 0.9 to keep bare years as typed as well.
     """
     from .format import format_range
 

@@ -101,6 +101,18 @@ class Spec:
     within: Grain | None = None
     #: The seven days from the date: "week commencing 5 October".
     week_from: bool = False
+    #: A weekday written with the date -- "Friday, 15 March 2024" -- checked against it
+    #: rather than used to find it. Numbered as ``date.weekday()``.
+    weekday: int | None = None
+    #: Move the resolved period by whole units: "3 days before 15 March" is the 15th moved
+    #: by ``(-3, DAY)``.
+    shift: tuple[int, Grain] | None = None
+    #: The nearest such month to today: -1 the last one, 0 this year's, +1 the next one.
+    #: "last March", "this March", "next March".
+    nearest: int | None = None
+    #: First and last weekday of a run inside a week: "Monday to Friday last week" is
+    #: ``(0, 4)``, "Friday last week" ``(4, 4)``.
+    weekday_span: tuple[int, int] | None = None
     #: None => take it from configuration. Only relative periods can roll.
     anchor: Anchor | None = None
 
@@ -111,7 +123,7 @@ class Spec:
     @property
     def is_relative(self) -> bool:
         """True when the period floats with ``today`` and so cannot take a year."""
-        return self.kind in (
+        return self.nearest is not None or self.kind in (
             Kind.RELATIVE,
             Kind.AGO,
             Kind.THIS_PERIOD,
