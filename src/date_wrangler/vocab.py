@@ -75,6 +75,18 @@ ORDINALS: dict[str, int] = {
     "tenth": 10, "10th": 10,
     "eleventh": 11, "11th": 11,
     "twelfth": 12, "12th": 12,
+    # Days of a month, written out: "January first", "the twenty-first of March".
+    "thirteenth": 13, "fourteenth": 14, "fifteenth": 15, "sixteenth": 16,
+    "seventeenth": 17, "eighteenth": 18, "nineteenth": 19, "twentieth": 20,
+    "twenty-first": 21, "twenty-second": 22, "twenty-third": 23, "twenty-fourth": 24,
+    "twenty-fifth": 25, "twenty-sixth": 26, "twenty-seventh": 27, "twenty-eighth": 28,
+    "twenty-ninth": 29, "thirtieth": 30, "thirty-first": 31,
+}
+
+#: Decades by name. Not "the twenties" or "the teens": both now mean two different decades.
+DECADE_WORDS: dict[str, int] = {
+    "noughties": 2000, "thirties": 1930, "forties": 1940, "fifties": 1950,
+    "sixties": 1960, "seventies": 1970, "eighties": 1980, "nineties": 1990,
 }
 
 #: Weekday names, mapped to ``date.weekday()`` numbering (Monday is 0).
@@ -106,11 +118,13 @@ UNIT_WORDS: dict[str, str] = {
     "quarter": "QUARTER", "quarters": "QUARTER", "qtr": "QUARTER", "qtrs": "QUARTER",
     "half": "HALF", "halves": "HALF",
     "year": "YEAR", "years": "YEAR", "yr": "YEAR", "yrs": "YEAR",
+    "decade": "YEAR", "decades": "YEAR",
 }
 
 #: Units that are a multiple of the grain they map to, so "a fortnight" is two weeks
-#: without FORTNIGHT having to become a Grain and appear in every period grid.
-UNIT_SCALE: dict[str, int] = {"fortnight": 2, "fortnights": 2}
+#: without FORTNIGHT having to become a Grain and appear in every period grid. "the past
+#: decade" is the last ten years, as "the past 10 years" is.
+UNIT_SCALE: dict[str, int] = {"fortnight": 2, "fortnights": 2, "decade": 10, "decades": 10}
 
 PAST_WORDS: frozenset[str] = frozenset(
     {"last", "past", "previous", "prior", "preceding", "trailing", "rolling"}

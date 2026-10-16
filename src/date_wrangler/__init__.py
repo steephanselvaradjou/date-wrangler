@@ -23,7 +23,7 @@ from .config import (
 from .format import format_iso, format_range, make_formatter
 from .resolve import UnresolvableSpec
 from .types import Anchor, Basis, DateMatch, DateRange, Grain, Mod, SqlDialect
-from .wrangler import Diagnostic, diagnose, parse, parse_one, substitute
+from .wrangler import YEAR_GUESSED, Diagnostic, diagnose, parse, parse_one, substitute
 
 __version__ = "2.0.0"
 
@@ -49,6 +49,7 @@ __all__ = [
     "diagnose",
     "substitute",
     "Diagnostic",
+    "YEAR_GUESSED",
     # Formatting
     "format_range",
     "format_iso",

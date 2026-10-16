@@ -19,7 +19,8 @@ FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)  # slices of the April f
 def bounds(text):
     m = parse_one(text, today=TODAY, config=FISCAL)
     assert m is not None, text
-    assert m.confidence == 1.0, (text, m.confidence)
+    # Not flagged. Most phrases here name no year, and so read at 0.7: the year is today's.
+    assert m.confidence > 0.5, (text, m.confidence)
     return m.range.start, m.range.end
 
 

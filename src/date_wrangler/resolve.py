@@ -159,7 +159,13 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
             # With no year written, "December to date" in October means the December just
             # gone, not the one coming -- the same choice "YTD March" already makes. An
             # explicit year is taken at its word, so "FY28 to date" is still refused.
-            if base.start is not None and base.start > today and not spec.has_explicit_year:
+            # A relative period is never moved: "next month to date" has nothing to date yet.
+            if (
+                base.start is not None
+                and base.start > today
+                and not spec.has_explicit_year
+                and not spec.is_relative
+            ):
                 base = _shift_years(base, -1)
             base = _through_today(base, today)
         if spec.day_span is not None:
@@ -167,9 +173,14 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         if spec.sub_period is not None:
             base = _pick_sub_period(base, *spec.sub_period)
         if spec.part is not None:
-            base = _slice_part(base, spec.part)
+            if spec.kind is Kind.DECADE:
+                base = _slice_decade(base, spec.part)
+            else:
+                base = _slice_part(base, spec.part)
         if spec.nth_weekday is not None:
             base = _pick_weekday(base, *spec.nth_weekday)
+        if spec.weekday_span is not None:
+            base = _pick_weekdays(base, *spec.weekday_span)
         if spec.day_of_period is not None:
             if spec.pick_business_day:
                 base = _pick_business_day(base, spec.day_of_period, cfg)
@@ -184,6 +195,14 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
             # "week commencing 5 October": seven days from it, whatever day it is.
             base = DateRange(
                 base.start, base.start + timedelta(days=7), Grain.WEEK, Basis.CALENDAR
+            )
+        if spec.shift is not None:
+            # "3 days before 15 March", "a year after March 2024": the period, moved.
+            if base.start is None or base.end is None:
+                raise UnresolvableSpec("cannot move an unbounded range")
+            n, unit = spec.shift
+            base = DateRange(
+                _shift(base.start, unit, n), _shift(base.end, unit, n), base.grain, base.basis
             )
     except (ValueError, OverflowError) as exc:
         if isinstance(exc, UnresolvableSpec):
@@ -312,6 +331,39 @@ def _slice_part(r: DateRange, part: Part) -> DateRange:
     return DateRange(cut(r.start, 2 * step), r.end, grain, r.basis)
 
 
+#: Years of a decade in each part. Early, mid and late are read as 0-3, 4-6 and 7-9 -- how
+#: "the early 1990s" is meant -- not as thirds of 3,652 days.
+_DECADE_PARTS = {
+    Part.EARLY: (0, 4), Part.MID: (4, 7), Part.LATE: (7, 10),
+    Part.FIRST_HALF: (0, 5), Part.SECOND_HALF: (5, 10),
+}
+
+
+def _slice_decade(r: DateRange, part: Part) -> DateRange:
+    """"the early 1990s", "mid-1990s", "the late 90s"."""
+    if r.start is None:
+        raise UnresolvableSpec("cannot take part of an unbounded range")
+    first, last = _DECADE_PARTS[part]
+    return DateRange(
+        date(r.start.year + first, 1, 1), date(r.start.year + last, 1, 1), Grain.YEAR, r.basis
+    )
+
+
+def _pick_weekdays(r: DateRange, first: int, last: int) -> DateRange:
+    """From one weekday to another inside a week: "Monday to Friday last week"."""
+    if r.start is None or r.end is None:
+        raise UnresolvableSpec("cannot pick weekdays out of an unbounded range")
+    days = [r.start + timedelta(days=i) for i in range((r.end - r.start).days)]
+    start = next((d for d in days if d.weekday() == first), None)
+    end = next((d for d in reversed(days) if d.weekday() == last), None)
+    if start is None or end is None or end < start:
+        raise UnresolvableSpec(
+            f"{WEEKDAY_DISPLAY[first]} to {WEEKDAY_DISPLAY[last]} does not run forward "
+            f"inside {r.start}..{r.end}"
+        )
+    return DateRange(start, end + timedelta(days=1), Grain.DAY, Basis.CALENDAR)
+
+
 def _pick_day(r: DateRange, day_of_period: int) -> DateRange:
     """One day inside a period. "1st of next month", "the last day of the month".
 
@@ -409,6 +461,15 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         if spec.basis is Basis.FISCAL and spec.year is not None:
             index = (spec.month - cfg.fiscal.start_month) % 12 + 1
             return fiscal_month_range(spec.year, index, cfg.fiscal)
+        if spec.year is None and spec.nearest is not None:
+            # "last March" is the latest March before this month, "next March" the first
+            # after it; "this March" is this year's, either side of today.
+            year = today.year
+            if spec.nearest < 0 and spec.month >= today.month:
+                year -= 1
+            elif spec.nearest > 0 and spec.month <= today.month:
+                year += 1
+            return month_range(year, spec.month)
         return month_range(spec.year if spec.year is not None else today.year, spec.month)
 
     if spec.kind is Kind.ABS_QUARTER:
