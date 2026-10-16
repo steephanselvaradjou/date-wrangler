@@ -40,6 +40,23 @@ def test_the_readme_repeats_no_version_number():
     assert not offenders, "README pins a version that will go stale:\n" + "\n".join(offenders)
 
 
+def test_the_changelog_has_an_entry_for_this_version():
+    """REGRESSION: 2.1.0 went to PyPI with no changelog at all. A release cannot now be cut
+    without saying what is in it."""
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert re.search(
+        rf"^## {re.escape(date_wrangler.__version__)} — \d{{4}}-\d{{2}}-\d{{2}}$",
+        changelog,
+        re.MULTILINE,
+    ), f"CHANGELOG.md has no '## {date_wrangler.__version__} — <date>' entry"
+
+
+def test_pypi_links_the_changelog():
+    """PyPI shows the project URLs beside the description; "Changelog" gets its own link."""
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.search(r'^Changelog = "https://\S+/CHANGELOG\.md"$', pyproject, re.MULTILINE)
+
+
 def test_the_status_matches_the_version():
     """The same trap from the other side: from 1.0 the README must stop saying the API may
     still change, and PyPI must stop calling the package alpha."""

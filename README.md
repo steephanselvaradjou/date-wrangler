@@ -12,7 +12,8 @@ straight to a query.
      it is one more thing to remember at release time, and it went stale once already.
      tests/test_packaging.py enforces this. -->
 > **Status: stable.** The public API follows semantic versioning: a change that breaks
-> existing callers comes only with a new major version.
+> existing callers comes only with a new major version. What changed in each release is in
+> the [changelog](https://github.com/steephanselvaradjou/date-wrangler/blob/main/CHANGELOG.md).
 
 ## Why another date library
 
