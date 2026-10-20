@@ -29,6 +29,8 @@ The full notes for each release, with examples, are on the
 - `March 15 to 03/04/2024` was April 2024, and `Jun FY25 - 15 March` was nothing.
 - `1H FY-24` was the first half of this fiscal year.
 - `1Q and since 1Q` gave two overlapping matches.
+- A bare month in the middle of a span — `Q1 to March to Q3` — was dropped in strict
+  mode, and in balanced mode without a cue, which cut the span in two.
 - `the 2015–2016 season`, `season 2015/16`, `academic year 2015-16` and `the 2015-16
   school year` were read as the two calendar years they span. A season is a name, with
   months of its own, so it is now kept as a label: no match, and `diagnose` says why.

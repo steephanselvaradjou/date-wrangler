@@ -144,6 +144,24 @@ def test_a_chain_that_runs_backwards_through_its_middle_is_not_one_span():
 
 
 @pytest.mark.parametrize(
+    "text", ["1Q TO MARCH TO 1Q", ":1Q TO MARCH TO 1Q", "Q1 2024 to March to Q3 2024"]
+)
+@pytest.mark.parametrize("strictness", ["strict", "balanced"])
+def test_a_weak_date_inside_a_span_is_kept(text, strictness):
+    """REGRESSION (found by Hypothesis): a bare month needs a cue, and strict mode drops it
+    outright; dropping the one in the middle of a span cut the span in two -- two dates
+    where greedy found one."""
+    base = WranglerConfig(fiscal=FiscalCalendar.calendar())
+    found, greedy = (
+        [(m.text, m.range.start, m.range.end) for m in parse(text, today=date(2000, 1, 1),
+                                                              config=base.with_(strictness=s))]
+        for s in (strictness, "greedy")
+    )
+    assert found == greedy
+    assert len(found) == 1
+
+
+@pytest.mark.parametrize(
     "text", ["Q1 to Q3", "Nov to Feb", "from March to June", "between March and June"]
 )
 def test_ordinary_spans_are_unchanged(text):

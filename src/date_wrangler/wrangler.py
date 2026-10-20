@@ -1109,6 +1109,26 @@ def parse(
         for idx, raw in enumerate(raws)
         if raws_ok[idx] and _passes_strictness(raw, body, config, *chain_of[idx])
     }
+    # A weak date inside a span, between two dates that stand -- the March of "Q1 to March
+    # to Q3" -- is no more on its own than the span is. REGRESSION (found by Hypothesis):
+    # dropped for want of a cue, or by strict mode, it cut the span in two, and strictness
+    # found more dates than greedy did. A name stays dropped: it is not a date at all.
+    for lo in sorted(kept):
+        hi = lo + 1
+        while (
+            hi < len(raws)
+            and hi not in kept
+            and links[hi - 1] == "range"
+            and raws_ok[hi]
+            and raws[hi].rule in _WEAK_RULES
+            and not (
+                raws[hi].rule == "month"
+                and _looks_like_a_person(body, raws[hi].start, raws[hi].end)
+            )
+        ):
+            hi += 1
+        if hi > lo + 1 and hi in kept and links[hi - 1] == "range":
+            kept.update(range(lo + 1, hi))
 
     matches: list[DateMatch] = []
     floor = 0  # where the previous match ended, so modifiers cannot reach back over it
