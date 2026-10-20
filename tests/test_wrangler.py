@@ -729,6 +729,73 @@ def test_the_factored_scanner_finds_exactly_what_the_rules_do():
             assert [(m.span(), m.lastgroup) for m in _SCANNER_CS.finditer(low)] == want, text
 
 
+def test_stopping_at_a_month_name_date_changes_no_match():
+    """_scan's last branch, _hop, only lets the scanner stop at a date the token reader
+    takes instead of working through it. Held to the plain scanner taking turns with the
+    reader -- what _scan did without it -- over every phrase the catalogue, the snapshot,
+    the join sweep and the real requests hold, on both bases."""
+    import sys
+    from pathlib import Path
+
+    from date_wrangler.tokens import Reader
+    from date_wrangler.wrangler import (
+        _ORDER,
+        _SCANNER,
+        _SCANNER_CS,
+        Diagnostic,
+        _Raw,
+        _read_match,
+        _scan,
+    )
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    import test_formats
+    import test_join_sweep
+    import test_snapshot
+
+    def plain(text: str, cfg: WranglerConfig, diags: list[Diagnostic]) -> list[_Raw]:
+        target, scanner = (text.lower(), _SCANNER_CS) if text.isascii() else (text, _SCANNER)
+        reader = Reader(text, cfg)
+        out: list[_Raw] = []
+        pos = 0
+        m, d = scanner.search(target, pos), reader.next_date(pos)
+        while m is not None or d is not None:
+            if d is not None and (
+                m is None
+                or d[2] < m.start()
+                or (d[2] == m.start() and _ORDER[d[0]] < _ORDER[m.lastgroup or ""])
+            ):
+                name, spec, lo, hi, reason = d
+                if spec is not None:
+                    out.append(_Raw(name, spec, lo, hi))
+                else:
+                    diags.append(Diagnostic(text[lo:hi], (lo, hi), name, reason or ""))
+                pos = hi
+            else:
+                assert m is not None
+                pos = m.end()
+                _read_match(m, text, cfg, out, diags)
+            if m is not None and m.start() < pos:
+                m = scanner.search(target, pos)
+            if d is not None and d[2] < pos:
+                d = reader.next_date(pos)
+        return out
+
+    texts = [p for _, _, _, cases in test_formats.SECTIONS for p, _ in cases]
+    texts += test_formats._bank_lines() + test_snapshot.PHRASES
+    texts += [c[0] for c in test_join_sweep._cases()]
+    texts += ["15 March 2024 and Q3", "March 15 to 20", "last March", "Mar-24 since 2020",
+              "the 15th of MARCH, 2024", "2024 March", "15 mars 2024", "May I ask", "Ü 15 März"]
+    for cfg in (WranglerConfig(), WranglerConfig(year_basis=Basis.FISCAL)):
+        for text in texts:
+            want_diags: list[Diagnostic] = []
+            got_diags: list[Diagnostic] = []
+            want = [(r.rule, r.start, r.end, r.spec) for r in plain(text, cfg, want_diags)]
+            got = [(r.rule, r.start, r.end, r.spec) for r in _scan(text, cfg, got_diags)]
+            assert got == want, text
+            assert got_diags == want_diags, text
+
+
 def test_both_scanners_accept_the_same_fragments():
     """_scan lowers ASCII text and uses the case-sensitive pattern, which is only valid
     while every rule pattern is written in lower case. A new rule with a literal capital

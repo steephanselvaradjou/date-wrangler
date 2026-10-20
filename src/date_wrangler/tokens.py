@@ -515,7 +515,9 @@ class Reader:
     """
 
     def __init__(self, text: str, cfg: WranglerConfig) -> None:
-        self.p = _Pieces(tokenize(text) if _MAY_HOLD.search(text) else [])
+        #: Whether the text names a month at all; with none, there is nothing here to read.
+        self.names_a_month = _MAY_HOLD.search(text) is not None
+        self.p = _Pieces(tokenize(text) if self.names_a_month else [])
         self.cfg = cfg
         self.starts = [t.start for t in self.p.toks]
         self._opens: dict[int, Found | None] = {}

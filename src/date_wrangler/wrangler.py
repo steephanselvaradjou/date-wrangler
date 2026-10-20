@@ -172,6 +172,16 @@ _SCANNER = re.compile(rf"\b(?:{_SCAN_PATTERN})", re.IGNORECASE)
 #: The same rules, case-sensitive, for the lowered-ASCII fast path in :func:`_scan`. Every
 #: rule pattern is written in lower case, so the two accept exactly the same fragments.
 _SCANNER_CS = re.compile(rf"\b(?:{_SCAN_PATTERN})")
+#: One more branch, last, for text that names a month: where a date read from tokens opens
+#: -- "March", "15 March", "15mar" -- and no rule matches. Without it the scanner, finding
+#: nothing at "15 March 2024", works on through "March" and on to "2024", a year by itself,
+#: which the token reader's date then swallows: searched for, found and thrown away. With
+#: it the scanner stops there, and starts again after the date. Being last, it matches
+#: only where no rule does, so it changes where scanning stops, never what it finds; a
+#: test holds _scan to the plain scanner over every phrase the tests hold.
+_HOP = rf"(?P<_hop>(?=[a-z\d])(?:\d{{1,4}}(?:st|nd|rd|th)?[ \-/.]?)?{alt(MONTH_NAMES)}(?![a-z]))"
+_HOP_SCANNER = re.compile(rf"\b(?:{_SCAN_PATTERN}|{_HOP})", re.IGNORECASE)
+_HOP_SCANNER_CS = re.compile(rf"\b(?:{_SCAN_PATTERN}|{_HOP})")
 _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 
 
@@ -527,21 +537,35 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
     a string's length; anything else falls back to the case-insensitive pattern, where that
     guarantee does not hold. Either way the *fragment* is sliced from the original, so the
     rules still see the writer's capitals.
+
+    Where the text names a month, the scanner has one more branch, ``_hop``: it stops where
+    a date read from tokens opens and no rule matches, rather than working on through it.
+    A hop at or after the start of the reader's next date means no rule matches before the
+    hop, so that date comes first: it is taken, and scanning resumes after it. A hop with
+    no reader's date at or before it means only that no rule matches there, and scanning
+    goes on from the next character.
     """
-    if text.isascii():
-        target, scanner = text.lower(), _SCANNER_CS
-    else:
-        target, scanner = text, _SCANNER
     reader = Reader(text, cfg)
+    if text.isascii():
+        target = text.lower()
+        scanner = _HOP_SCANNER_CS if reader.names_a_month else _SCANNER_CS
+    else:
+        target, scanner = text, _HOP_SCANNER if reader.names_a_month else _SCANNER
     out: list[_Raw] = []
     pos = 0
     m = scanner.search(target, pos)
     d = reader.next_date(pos)
     while m is not None or d is not None:
+        if m is not None and m.lastgroup == "_hop" and (d is None or d[2] > m.start()):
+            m = scanner.search(target, m.start() + 1)
+            continue
         if d is not None and (
             m is None
             or d[2] < m.start()
-            or (d[2] == m.start() and _ORDER[d[0]] < _ORDER[m.lastgroup or ""])
+            or (
+                d[2] == m.start()
+                and (m.lastgroup == "_hop" or _ORDER[d[0]] < _ORDER[m.lastgroup or ""])
+            )
         ):
             name, spec, lo, hi, reason = d
             if spec is not None:
