@@ -129,6 +129,24 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("Sept., 2013", "2013-09"),
         ("Jan. 2024", "2024-01"),
         ("of month FEB.2018", "2018-02"),
+        # A month and its year beside it are one period.
+        ("June in 2024", "2024-06"),
+        ("Mar/2024", "2024-03"),
+        ("June/FY24", "2023-06"),
+        ("Mar. FY24", "2024-03"),
+        ("Mar., FY24", "2024-03"),
+        ("2024 March", "2024-03"),
+        ("2024-Mar", "2024-03"),  # was January to March 2024
+        ("2024/March", "2024-03"),
+        ("2024 - March", "2024-03"),  # the year first is a heading, as in "FY24 - Q3"
+        ("FY24 - June", "2023-06"),
+        ("15th of March/2024", "2024-03-15"),
+        # Still apart: a spaced dash after the month is a span, and a full stop after a
+        # month's full name ends a sentence. REGRESSION: "in March. 15 people came" was 15
+        # March, in the token reader before release.
+        ("June - 2024", "2024-06..2024-12"),
+        ("in March. 2024 was good", "2026-03"),
+        ("in March. 15 people came", "2026-03"),
     ]),
     ("years", TODAY, CAL, [
         ("in 2024", "2024"),
@@ -217,13 +235,11 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the quarter ended 31 March 2024", "2024-01..2024-03"),
         ("quarter ended 31/03/2024", "2024-01..2024-03"),
         ("the first 3 quarters of 2024", "2024-01..2024-09"),
-        # However a label and its year are joined, one period -- not a span from this
-        # year's quarter to the whole year, nor two periods.
+        # A label and its year beside it are one period -- not two periods, nor a span from
+        # this year's quarter to the whole year.
         ("Q3 in 2024", "2024-07..2024-09"),
-        ("Q3 - 2024", "2024-07..2024-09"),
-        ("Q3 - FY24", "2023-10..2023-12"),
         ("Q3/FY24", "2023-10..2023-12"),
-        ("Qtr 3 - 2024", "2024-07..2024-09"),
+        ("Qtr 3-2024", "2024-07..2024-09"),
         ("third quarter in FY 2024-25", "2024-10..2024-12"),
         ("FY 2024 Qtr 3", "2023-10..2023-12"),
         ("FY 2024-25 - Qtr 3", "2024-10..2024-12"),
@@ -237,8 +253,11 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("1H fiscal 2024", "2023-04..2023-09"),
         ("1H calendar year 2024", "2024-01..2024-06"),
         ("Q1 and Q3 in 2024", "2024-01..2024-03 ; 2024-07..2024-09"),
-        # Still spans: "to" says so, and so does a quarter with a year of its own.
+        # Still spans: "to" says so, so does a spaced dash after the label -- the way "June
+        # - FY25" is written -- and so does a quarter with a year of its own.
         ("Q3 to 2024", "2024-07..2024-12"),
+        ("Q3 - 2024", "2024-07..2024-12"),
+        ("Q3 - FY24", "2023-10..2024-03"),
         ("2023 - H2 2024", "2023-01..2024-12"),
     ]),
     ("parts of a period", TODAY, CAL, [

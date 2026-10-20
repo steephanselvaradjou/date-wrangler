@@ -21,7 +21,7 @@ from .config import MonthNumber, WranglerConfig
 from .rules import _fy_label_of_span, _not_one_fiscal_year, parse_year_token
 from .spec import Kind, Spec
 from .types import Basis
-from .vocab import MONTHS, ORDINALS
+from .vocab import MONTH_DISPLAY, MONTHS, ORDINALS
 
 __all__ = ["Declined", "Reader", "Token", "read", "tokenize"]
 
@@ -93,6 +93,9 @@ def _two_digits(t: Token) -> int | None:
 
 def _pivot(two: int, cfg: WranglerConfig) -> int:
     return 2000 + two if two <= cfg.two_digit_pivot else 1900 + two
+
+
+_FULL_MONTH_NAMES = frozenset(name.lower() for name in MONTH_DISPLAY)
 
 
 class Declined(ValueError):
@@ -299,6 +302,16 @@ class _Pieces:
         t = self.at(i)
         return t is not None and t.low[:1].isdigit()
 
+    def dot_after_month(self, i: int) -> bool:
+        """A full stop after the month at token ``i`` that is the month's: after a short
+        name -- "Mar. 15", "Sept. 2013" -- or touching the number after it: "FEB.2018".
+        After a full name and a space it ends a sentence. REGRESSION: "in March. 15 people
+        came" was 15 March, and "in March. 2024 was good" March 2024."""
+        if not self.is_(i + 1, "."):
+            return False
+        after = self.at(i + 2)
+        return self.toks[i].low not in _FULL_MONTH_NAMES or (after is not None and after.tight)
+
 
 #: A date read: the rule it stands in for, the spec, and the token it ends before.
 _Read = tuple[str, Spec, int]
@@ -381,7 +394,7 @@ def _month_day_year(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     if month is None:
         return None
     j = i + 1
-    if p.is_(j, "."):  # "Mar. 15"
+    if p.dot_after_month(i):  # "Mar. 15"
         j += 1
     if p.is_(j, "the"):
         t = p.at(j + 1)
@@ -458,7 +471,7 @@ def _month_year(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
         if label is not None and t is not None and t.tight:  # "Jun-FY25"
             fy, fy_basis, end = label
             return "month_year", Spec(Kind.ABS_MONTH, year=fy, month=month, basis=fy_basis), end
-    if p.is_(i + 1, ".") and p.number_follows(i + 2):  # "FEB.2018"
+    if p.dot_after_month(i) and p.number_follows(i + 2):  # "FEB.2018"
         i += 1
     after = p.year_after(i + 1, cfg)
     if after is None:

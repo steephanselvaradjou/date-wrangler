@@ -12,16 +12,17 @@ The full notes for each release, with examples, are on the
 **Changes answers.**
 
 ### Added
-- Read for the first time: a quarter or half and its year, however they are joined —
-  `Q3 in 2024`, `Q3/FY24`, `FY 2024 Qtr 3`, `2024 - third quarter`, `1HFY24`,
-  `1HCY 2024`, `1H fiscal 2024` — and a month that touches its numbers: `15 March2024`,
-  `2024Mar15`, `MAR15, 2024`, `15th/March/24`.
-- `tests/test_label_years.py`: every quarter and half label, each way of joining it to its
-  year, every way of writing the year, in both orders.
+- Read for the first time: a quarter, half or month and the year beside it — `Q3 in 2024`,
+  `Q3/FY24`, `FY 2024 Qtr 3`, `2024 - third quarter`, `1HFY24`, `1HCY 2024`,
+  `1H fiscal 2024`, `June in 2024`, `Mar/2024`, `Mar. FY24`, `2024 March` — and a month
+  that touches its numbers: `15 March2024`, `2024Mar15`, `MAR15, 2024`, `15th/March/24`.
+  A spaced dash after the label is still a span, as before: `June - FY25`, `Q3 - 2024`.
+- `tests/test_label_years.py`: every quarter, half and month label, each way of joining
+  it to its year, every way of writing the year, in both orders.
 
 ### Fixed
-- `Q3 - 2024` and `H1 - FY25` were spans from the label to the end of the year; they are
-  the quarter and the half. `Q3 to 2024` is still a span.
+- `2024-Mar` and `2024 - March` were January to March 2024, and `FY24 - June` the start
+  of FY24 to June; they are the month, as `FY24 - Q3` is the quarter.
 - `2024-3Q` was March 2024, and `2024-1H` January 2024.
 - `15th-Mar-2024` was 15 October of this year and March 2024; `15 March2024` was
   15 March of this year.
