@@ -800,6 +800,8 @@ def _p_quarter(text: str, cfg: WranglerConfig) -> Spec | None:
 
 #: A quarter or half as a label: Q3, 3Q, H1, 1H.
 _QH = r"(?:q\s*[1-4]|[1-4]\s*q|h\s*[12]|[12]\s*h)"
+#: An FY or CY touching the H of "1HFY24", "1HCY 2024", where no word boundary falls.
+_H_FY = r"(?=[fc]\.?y\.?[\s-]*'?\d)"
 #: A basis written beside one: "fiscal Q3", "Q3 FY", "calendar H1".
 _BASIS_TAG = r"(?:fiscal|financial|calendar|fy|cy)"
 
@@ -878,7 +880,7 @@ def _p_half(text: str, cfg: WranglerConfig) -> Spec | None:
     if m:
         index = int(m.group(1))
     else:
-        m2 = re.search(r"\b([12])\s*h\b", low)
+        m2 = re.search(rf"\b([12])\s*h(?:\b|{_H_FY})", low)
         if m2:
             index = int(m2.group(1))
         else:
@@ -1871,11 +1873,12 @@ RULES: tuple[Rule, ...] = (
         r"\b\d{2,4}\s*[-/]\s*'?\d{2,4}\s+(?:financial|fiscal)\s+year\b",
         _p_fy_range,
     ),
-    # A month in numbers -- "2024-03", "03/2024" -- and not the start of a longer date.
+    # A month in numbers -- "2024-03", "03/2024" -- and not the start of a longer date, nor
+    # a quarter or half: REGRESSION -- "2024-3Q" was March 2024 and "2024-1H" January.
     Rule(
         "numeric_month",
         r"\b(?:(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])|(?:0?[1-9]|1[0-2])/(?:19|20)\d{2})"
-        r"(?![\d/.-])",
+        r"(?![\d/.-]|[qh](?![a-z]))",
         _p_numeric_month,
     ),
     # "2024-25" with nothing to say whether it is one fiscal year or two years: declined.
@@ -1912,7 +1915,7 @@ RULES: tuple[Rule, ...] = (
         "labelled_period",
         rf"\b(?:{_BASIS_TAG}\s+{_QH}{_YEAR_SUFFIX}"
         rf"|{_QH}\s+(?:fiscal|financial|calendar)\b"
-        rf"|{_QH}\s+(?:fy|cy)\b(?!\s*'?\d)"
+        rf"|{_QH}\s+(?:fy|cy)\b(?!\s*-?\s*'?\d)"  # not "1H FY-24", whose FY has its year
         rf"|{_QH}['/-]\d{{2}}(?:\d{{2}})?(?!\d)"
         # Not when the quarter has a year of its own: "FY24 - Q3" is a label, "2023 - H2
         # 2024" a range from 2023 to H2 2024.
@@ -2183,7 +2186,9 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "half",
-        rf"\b(?:h\s*[12](?!\d)|half\s*[12](?!\d)|[12]\s*h\b|{_ORD}\s+{_HWORD}){_YEAR_SUFFIX}\b",
+        # "1HFY24": the FY may touch the H, as it may the Q of "3QFY24".
+        rf"\b(?:h\s*[12](?!\d)|half\s*[12](?!\d)|[12]\s*h(?:\b|{_H_FY})|{_ORD}\s+{_HWORD})"
+        rf"{_YEAR_SUFFIX}\b",
         _p_half,
     ),
     _from_tokens("dashed_month_day"),  # "Mar-15-2024"

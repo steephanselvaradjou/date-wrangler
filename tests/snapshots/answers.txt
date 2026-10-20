@@ -251,6 +251,18 @@ default 2026-10-08 | FY24 - Q3 | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fisc
 default 2026-10-08 | FY24 - Q3 results | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fiscal c=1
 default 2026-10-08 | 2023 - H2 2024 | '2023 - H2 2024' 2023-01-01..2024-12-31 year calendar c=0.8 ends 2023-01-01..2023-12-31|2024-07-01..2024-12-31
 default 2026-10-08 | FY24, March | 'FY24' 2023-04-01..2024-03-31 year fiscal c=1 +list+ 'March' 2024-03-01..2024-03-31 month fiscal c=1
+default 2026-10-08 | Q3 in 2024 | 'Q3 in 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-10-08 | Q3 - 2024 | 'Q3 - 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-10-08 | Q3/FY24 | 'Q3/FY24' 2023-10-01..2023-12-31 quarter fiscal c=1
+default 2026-10-08 | FY 2024 Qtr 3 | 'FY 2024 Qtr 3' 2023-10-01..2023-12-31 quarter fiscal c=1
+default 2026-10-08 | 2024 - third quarter | '2024 - third quarter' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-10-08 | 2024-3Q | '2024-3Q' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-10-08 | 2024-1H | '2024-1H' 2024-01-01..2024-06-30 half calendar c=1
+default 2026-10-08 | 1HFY24 | '1HFY24' 2023-04-01..2023-09-30 half fiscal c=1
+default 2026-10-08 | 1H FY-24 | '1H FY-24' 2023-04-01..2023-09-30 half fiscal c=1
+default 2026-10-08 | 1H fiscal 2024 | '1H fiscal 2024' 2023-04-01..2023-09-30 half fiscal c=1
+default 2026-10-08 | Q1 and Q3 in 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +list+ 'Q3 in 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-10-08 | Q3 to 2024 | 'Q3 to 2024' 2024-07-01..2024-12-31 year calendar c=0.8 ends 2024-07-01..2024-09-30|2024-01-01..2024-12-31
 default 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 default 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
@@ -550,6 +562,18 @@ default 2026-03-31 | FY24 - Q3 | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fisc
 default 2026-03-31 | FY24 - Q3 results | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fiscal c=1
 default 2026-03-31 | 2023 - H2 2024 | '2023 - H2 2024' 2023-01-01..2024-12-31 year calendar c=0.8 ends 2023-01-01..2023-12-31|2024-07-01..2024-12-31
 default 2026-03-31 | FY24, March | 'FY24' 2023-04-01..2024-03-31 year fiscal c=1 +list+ 'March' 2024-03-01..2024-03-31 month fiscal c=1
+default 2026-03-31 | Q3 in 2024 | 'Q3 in 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-03-31 | Q3 - 2024 | 'Q3 - 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-03-31 | Q3/FY24 | 'Q3/FY24' 2023-10-01..2023-12-31 quarter fiscal c=1
+default 2026-03-31 | FY 2024 Qtr 3 | 'FY 2024 Qtr 3' 2023-10-01..2023-12-31 quarter fiscal c=1
+default 2026-03-31 | 2024 - third quarter | '2024 - third quarter' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-03-31 | 2024-3Q | '2024-3Q' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-03-31 | 2024-1H | '2024-1H' 2024-01-01..2024-06-30 half calendar c=1
+default 2026-03-31 | 1HFY24 | '1HFY24' 2023-04-01..2023-09-30 half fiscal c=1
+default 2026-03-31 | 1H FY-24 | '1H FY-24' 2023-04-01..2023-09-30 half fiscal c=1
+default 2026-03-31 | 1H fiscal 2024 | '1H fiscal 2024' 2023-04-01..2023-09-30 half fiscal c=1
+default 2026-03-31 | Q1 and Q3 in 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +list+ 'Q3 in 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-03-31 | Q3 to 2024 | 'Q3 to 2024' 2024-07-01..2024-12-31 year calendar c=0.8 ends 2024-07-01..2024-09-30|2024-01-01..2024-12-31
 default 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 default 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1
@@ -849,6 +873,18 @@ fiscal 2026-10-08 | FY24 - Q3 | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fisca
 fiscal 2026-10-08 | FY24 - Q3 results | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fiscal c=1
 fiscal 2026-10-08 | 2023 - H2 2024 | '2023 - H2 2024' 2022-04-01..2024-03-31 year fiscal c=0.8 ends 2022-04-01..2023-03-31|2023-10-01..2024-03-31
 fiscal 2026-10-08 | FY24, March | 'FY24' 2023-04-01..2024-03-31 year fiscal c=1 +list+ 'March' 2024-03-01..2024-03-31 month fiscal c=1
+fiscal 2026-10-08 | Q3 in 2024 | 'Q3 in 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-10-08 | Q3 - 2024 | 'Q3 - 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-10-08 | Q3/FY24 | 'Q3/FY24' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-10-08 | FY 2024 Qtr 3 | 'FY 2024 Qtr 3' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-10-08 | 2024 - third quarter | '2024 - third quarter' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-10-08 | 2024-3Q | '2024-3Q' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-10-08 | 2024-1H | '2024-1H' 2023-04-01..2023-09-30 half fiscal c=1
+fiscal 2026-10-08 | 1HFY24 | '1HFY24' 2023-04-01..2023-09-30 half fiscal c=1
+fiscal 2026-10-08 | 1H FY-24 | '1H FY-24' 2023-04-01..2023-09-30 half fiscal c=1
+fiscal 2026-10-08 | 1H fiscal 2024 | '1H fiscal 2024' 2023-04-01..2023-09-30 half fiscal c=1
+fiscal 2026-10-08 | Q1 and Q3 in 2024 | 'Q1' 2023-04-01..2023-06-30 quarter fiscal c=1 +list+ 'Q3 in 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-10-08 | Q3 to 2024 | 'Q3 to 2024' 2023-10-01..2024-03-31 year fiscal c=0.8 ends 2023-10-01..2023-12-31|2023-04-01..2024-03-31
 fiscal 2026-10-08 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
 fiscal 2026-10-08 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter fiscal c=1
@@ -1148,6 +1184,18 @@ fiscal 2026-03-31 | FY24 - Q3 | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fisca
 fiscal 2026-03-31 | FY24 - Q3 results | 'FY24 - Q3' 2023-10-01..2023-12-31 quarter fiscal c=1
 fiscal 2026-03-31 | 2023 - H2 2024 | '2023 - H2 2024' 2022-04-01..2024-03-31 year fiscal c=0.8 ends 2022-04-01..2023-03-31|2023-10-01..2024-03-31
 fiscal 2026-03-31 | FY24, March | 'FY24' 2023-04-01..2024-03-31 year fiscal c=1 +list+ 'March' 2024-03-01..2024-03-31 month fiscal c=1
+fiscal 2026-03-31 | Q3 in 2024 | 'Q3 in 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | Q3 - 2024 | 'Q3 - 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | Q3/FY24 | 'Q3/FY24' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | FY 2024 Qtr 3 | 'FY 2024 Qtr 3' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | 2024 - third quarter | '2024 - third quarter' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | 2024-3Q | '2024-3Q' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | 2024-1H | '2024-1H' 2023-04-01..2023-09-30 half fiscal c=1
+fiscal 2026-03-31 | 1HFY24 | '1HFY24' 2023-04-01..2023-09-30 half fiscal c=1
+fiscal 2026-03-31 | 1H FY-24 | '1H FY-24' 2023-04-01..2023-09-30 half fiscal c=1
+fiscal 2026-03-31 | 1H fiscal 2024 | '1H fiscal 2024' 2023-04-01..2023-09-30 half fiscal c=1
+fiscal 2026-03-31 | Q1 and Q3 in 2024 | 'Q1' 2023-04-01..2023-06-30 quarter fiscal c=1 +list+ 'Q3 in 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | Q3 to 2024 | 'Q3 to 2024' 2023-10-01..2024-03-31 year fiscal c=0.8 ends 2023-10-01..2023-12-31|2023-04-01..2024-03-31
 fiscal 2026-03-31 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
 fiscal 2026-03-31 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter fiscal c=1
@@ -1447,6 +1495,18 @@ us 2026-10-08 | FY24 - Q3 | 'FY24 - Q3' 2025-04-01..2025-06-30 quarter fiscal c=
 us 2026-10-08 | FY24 - Q3 results | 'FY24 - Q3' 2025-04-01..2025-06-30 quarter fiscal c=1
 us 2026-10-08 | 2023 - H2 2024 | '2023 - H2 2024' 2023-01-01..2024-12-31 year calendar c=0.8 ends 2023-01-01..2023-12-31|2024-07-01..2024-12-31
 us 2026-10-08 | FY24, March | 'FY24' 2024-10-01..2025-09-30 year fiscal c=1 +list+ 'March' 2025-03-01..2025-03-31 month fiscal c=1
+us 2026-10-08 | Q3 in 2024 | 'Q3 in 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-10-08 | Q3 - 2024 | 'Q3 - 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-10-08 | Q3/FY24 | 'Q3/FY24' 2025-04-01..2025-06-30 quarter fiscal c=1
+us 2026-10-08 | FY 2024 Qtr 3 | 'FY 2024 Qtr 3' 2025-04-01..2025-06-30 quarter fiscal c=1
+us 2026-10-08 | 2024 - third quarter | '2024 - third quarter' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-10-08 | 2024-3Q | '2024-3Q' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-10-08 | 2024-1H | '2024-1H' 2024-01-01..2024-06-30 half calendar c=1
+us 2026-10-08 | 1HFY24 | '1HFY24' 2024-10-01..2025-03-31 half fiscal c=1
+us 2026-10-08 | 1H FY-24 | '1H FY-24' 2024-10-01..2025-03-31 half fiscal c=1
+us 2026-10-08 | 1H fiscal 2024 | '1H fiscal 2024' 2024-10-01..2025-03-31 half fiscal c=1
+us 2026-10-08 | Q1 and Q3 in 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +list+ 'Q3 in 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-10-08 | Q3 to 2024 | 'Q3 to 2024' 2024-07-01..2024-12-31 year calendar c=0.8 ends 2024-07-01..2024-09-30|2024-01-01..2024-12-31
 us 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 us 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
@@ -1746,6 +1806,18 @@ us 2026-03-31 | FY24 - Q3 | 'FY24 - Q3' 2025-04-01..2025-06-30 quarter fiscal c=
 us 2026-03-31 | FY24 - Q3 results | 'FY24 - Q3' 2025-04-01..2025-06-30 quarter fiscal c=1
 us 2026-03-31 | 2023 - H2 2024 | '2023 - H2 2024' 2023-01-01..2024-12-31 year calendar c=0.8 ends 2023-01-01..2023-12-31|2024-07-01..2024-12-31
 us 2026-03-31 | FY24, March | 'FY24' 2024-10-01..2025-09-30 year fiscal c=1 +list+ 'March' 2025-03-01..2025-03-31 month fiscal c=1
+us 2026-03-31 | Q3 in 2024 | 'Q3 in 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-03-31 | Q3 - 2024 | 'Q3 - 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-03-31 | Q3/FY24 | 'Q3/FY24' 2025-04-01..2025-06-30 quarter fiscal c=1
+us 2026-03-31 | FY 2024 Qtr 3 | 'FY 2024 Qtr 3' 2025-04-01..2025-06-30 quarter fiscal c=1
+us 2026-03-31 | 2024 - third quarter | '2024 - third quarter' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-03-31 | 2024-3Q | '2024-3Q' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-03-31 | 2024-1H | '2024-1H' 2024-01-01..2024-06-30 half calendar c=1
+us 2026-03-31 | 1HFY24 | '1HFY24' 2024-10-01..2025-03-31 half fiscal c=1
+us 2026-03-31 | 1H FY-24 | '1H FY-24' 2024-10-01..2025-03-31 half fiscal c=1
+us 2026-03-31 | 1H fiscal 2024 | '1H fiscal 2024' 2024-10-01..2025-03-31 half fiscal c=1
+us 2026-03-31 | Q1 and Q3 in 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +list+ 'Q3 in 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-03-31 | Q3 to 2024 | 'Q3 to 2024' 2024-07-01..2024-12-31 year calendar c=0.8 ends 2024-07-01..2024-09-30|2024-01-01..2024-12-31
 us 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 us 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1
@@ -1814,7 +1886,7 @@ join 2026-10-08 | Q1 and FY24 | 'Q1' 2023-04-01..2023-06-30 quarter fiscal c=1 +
 join 2026-10-08 | Q1 & FY24 | 'Q1' 2023-04-01..2023-06-30 quarter fiscal c=1 +list+ 'FY24' 2023-04-01..2024-03-31 year fiscal c=1
 join 2026-10-08 | Q1, FY24 | 'Q1, FY24' 2023-04-01..2023-06-30 quarter fiscal c=1
 join 2026-10-08 | Q1 to FY24 | 'Q1 to FY24' 2023-04-01..2024-03-31 year fiscal c=1 ends 2023-04-01..2023-06-30|2023-04-01..2024-03-31
-join 2026-10-08 | Q1 - FY24 | 'Q1 - FY24' 2023-04-01..2024-03-31 year fiscal c=1 ends 2023-04-01..2023-06-30|2023-04-01..2024-03-31
+join 2026-10-08 | Q1 - FY24 | 'Q1 - FY24' 2023-04-01..2023-06-30 quarter fiscal c=1
 join 2026-10-08 | Q1 through FY24 | 'Q1 through FY24' 2023-04-01..2024-03-31 year fiscal c=1 ends 2023-04-01..2023-06-30|2023-04-01..2024-03-31
 join 2026-10-08 | Q1 until FY24 | 'Q1 until FY24' 2023-04-01..2024-03-31 year fiscal c=1 ends 2023-04-01..2023-06-30|2023-04-01..2024-03-31
 join 2026-10-08 | Q1 vs FY24 | 'Q1' 2023-04-01..2023-06-30 quarter fiscal c=1 +compare+ 'FY24' 2023-04-01..2024-03-31 year fiscal c=1
@@ -1823,7 +1895,7 @@ join 2026-10-08 | Q1 and FY25 | 'Q1' 2024-04-01..2024-06-30 quarter fiscal c=1 +
 join 2026-10-08 | Q1 & FY25 | 'Q1' 2024-04-01..2024-06-30 quarter fiscal c=1 +list+ 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
 join 2026-10-08 | Q1, FY25 | 'Q1, FY25' 2024-04-01..2024-06-30 quarter fiscal c=1
 join 2026-10-08 | Q1 to FY25 | 'Q1 to FY25' 2024-04-01..2025-03-31 year fiscal c=1 ends 2024-04-01..2024-06-30|2024-04-01..2025-03-31
-join 2026-10-08 | Q1 - FY25 | 'Q1 - FY25' 2024-04-01..2025-03-31 year fiscal c=1 ends 2024-04-01..2024-06-30|2024-04-01..2025-03-31
+join 2026-10-08 | Q1 - FY25 | 'Q1 - FY25' 2024-04-01..2024-06-30 quarter fiscal c=1
 join 2026-10-08 | Q1 through FY25 | 'Q1 through FY25' 2024-04-01..2025-03-31 year fiscal c=1 ends 2024-04-01..2024-06-30|2024-04-01..2025-03-31
 join 2026-10-08 | Q1 until FY25 | 'Q1 until FY25' 2024-04-01..2025-03-31 year fiscal c=1 ends 2024-04-01..2024-06-30|2024-04-01..2025-03-31
 join 2026-10-08 | Q1 vs FY25 | 'Q1' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
@@ -1877,7 +1949,7 @@ join 2026-10-08 | Q1 and 2023 | 'Q1' 2023-01-01..2023-03-31 quarter calendar c=1
 join 2026-10-08 | Q1 & 2023 | 'Q1' 2023-01-01..2023-03-31 quarter calendar c=1 +list+ '2023' 2023-01-01..2023-12-31 year calendar c=0.8
 join 2026-10-08 | Q1, 2023 | 'Q1, 2023' 2023-01-01..2023-03-31 quarter calendar c=1
 join 2026-10-08 | Q1 to 2023 | 'Q1 to 2023' 2023-01-01..2023-12-31 year calendar c=0.8 ends 2023-01-01..2023-03-31|2023-01-01..2023-12-31
-join 2026-10-08 | Q1 - 2023 | 'Q1 - 2023' 2023-01-01..2023-12-31 year calendar c=0.8 ends 2023-01-01..2023-03-31|2023-01-01..2023-12-31
+join 2026-10-08 | Q1 - 2023 | 'Q1 - 2023' 2023-01-01..2023-03-31 quarter calendar c=1
 join 2026-10-08 | Q1 through 2023 | 'Q1 through 2023' 2023-01-01..2023-12-31 year calendar c=0.8 ends 2023-01-01..2023-03-31|2023-01-01..2023-12-31
 join 2026-10-08 | Q1 until 2023 | 'Q1 until 2023' 2023-01-01..2023-12-31 year calendar c=0.8 ends 2023-01-01..2023-03-31|2023-01-01..2023-12-31
 join 2026-10-08 | Q1 vs 2023 | 'Q1' 2023-01-01..2023-03-31 quarter calendar c=1 +compare+ '2023' 2023-01-01..2023-12-31 year calendar c=0.8
@@ -1886,7 +1958,7 @@ join 2026-10-08 | Q1 and 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1
 join 2026-10-08 | Q1 & 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +list+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8
 join 2026-10-08 | Q1, 2024 | 'Q1, 2024' 2024-01-01..2024-03-31 quarter calendar c=1
 join 2026-10-08 | Q1 to 2024 | 'Q1 to 2024' 2024-01-01..2024-12-31 year calendar c=0.8 ends 2024-01-01..2024-03-31|2024-01-01..2024-12-31
-join 2026-10-08 | Q1 - 2024 | 'Q1 - 2024' 2024-01-01..2024-12-31 year calendar c=0.8 ends 2024-01-01..2024-03-31|2024-01-01..2024-12-31
+join 2026-10-08 | Q1 - 2024 | 'Q1 - 2024' 2024-01-01..2024-03-31 quarter calendar c=1
 join 2026-10-08 | Q1 through 2024 | 'Q1 through 2024' 2024-01-01..2024-12-31 year calendar c=0.8 ends 2024-01-01..2024-03-31|2024-01-01..2024-12-31
 join 2026-10-08 | Q1 until 2024 | 'Q1 until 2024' 2024-01-01..2024-12-31 year calendar c=0.8 ends 2024-01-01..2024-03-31|2024-01-01..2024-12-31
 join 2026-10-08 | Q1 vs 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8
@@ -1985,7 +2057,7 @@ join 2026-10-08 | Q3 and FY24 | 'Q3' 2023-10-01..2023-12-31 quarter fiscal c=1 +
 join 2026-10-08 | Q3 & FY24 | 'Q3' 2023-10-01..2023-12-31 quarter fiscal c=1 +list+ 'FY24' 2023-04-01..2024-03-31 year fiscal c=1
 join 2026-10-08 | Q3, FY24 | 'Q3, FY24' 2023-10-01..2023-12-31 quarter fiscal c=1
 join 2026-10-08 | Q3 to FY24 | 'Q3 to FY24' 2023-10-01..2024-03-31 year fiscal c=1 ends 2023-10-01..2023-12-31|2023-04-01..2024-03-31
-join 2026-10-08 | Q3 - FY24 | 'Q3 - FY24' 2023-10-01..2024-03-31 year fiscal c=1 ends 2023-10-01..2023-12-31|2023-04-01..2024-03-31
+join 2026-10-08 | Q3 - FY24 | 'Q3 - FY24' 2023-10-01..2023-12-31 quarter fiscal c=1
 join 2026-10-08 | Q3 through FY24 | 'Q3 through FY24' 2023-10-01..2024-03-31 year fiscal c=1 ends 2023-10-01..2023-12-31|2023-04-01..2024-03-31
 join 2026-10-08 | Q3 until FY24 | 'Q3 until FY24' 2023-10-01..2024-03-31 year fiscal c=1 ends 2023-10-01..2023-12-31|2023-04-01..2024-03-31
 join 2026-10-08 | Q3 vs FY24 | 'Q3' 2023-10-01..2023-12-31 quarter fiscal c=1 +compare+ 'FY24' 2023-04-01..2024-03-31 year fiscal c=1
@@ -1994,7 +2066,7 @@ join 2026-10-08 | Q3 and FY25 | 'Q3' 2024-10-01..2024-12-31 quarter fiscal c=1 +
 join 2026-10-08 | Q3 & FY25 | 'Q3' 2024-10-01..2024-12-31 quarter fiscal c=1 +list+ 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
 join 2026-10-08 | Q3, FY25 | 'Q3, FY25' 2024-10-01..2024-12-31 quarter fiscal c=1
 join 2026-10-08 | Q3 to FY25 | 'Q3 to FY25' 2024-10-01..2025-03-31 year fiscal c=1 ends 2024-10-01..2024-12-31|2024-04-01..2025-03-31
-join 2026-10-08 | Q3 - FY25 | 'Q3 - FY25' 2024-10-01..2025-03-31 year fiscal c=1 ends 2024-10-01..2024-12-31|2024-04-01..2025-03-31
+join 2026-10-08 | Q3 - FY25 | 'Q3 - FY25' 2024-10-01..2024-12-31 quarter fiscal c=1
 join 2026-10-08 | Q3 through FY25 | 'Q3 through FY25' 2024-10-01..2025-03-31 year fiscal c=1 ends 2024-10-01..2024-12-31|2024-04-01..2025-03-31
 join 2026-10-08 | Q3 until FY25 | 'Q3 until FY25' 2024-10-01..2025-03-31 year fiscal c=1 ends 2024-10-01..2024-12-31|2024-04-01..2025-03-31
 join 2026-10-08 | Q3 vs FY25 | 'Q3' 2024-10-01..2024-12-31 quarter fiscal c=1 +compare+ 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
@@ -2048,7 +2120,7 @@ join 2026-10-08 | Q3 and 2023 | 'Q3' 2023-07-01..2023-09-30 quarter calendar c=1
 join 2026-10-08 | Q3 & 2023 | 'Q3' 2023-07-01..2023-09-30 quarter calendar c=1 +list+ '2023' 2023-01-01..2023-12-31 year calendar c=0.8
 join 2026-10-08 | Q3, 2023 | 'Q3, 2023' 2023-07-01..2023-09-30 quarter calendar c=1
 join 2026-10-08 | Q3 to 2023 | 'Q3 to 2023' 2023-07-01..2023-12-31 year calendar c=0.8 ends 2023-07-01..2023-09-30|2023-01-01..2023-12-31
-join 2026-10-08 | Q3 - 2023 | 'Q3 - 2023' 2023-07-01..2023-12-31 year calendar c=0.8 ends 2023-07-01..2023-09-30|2023-01-01..2023-12-31
+join 2026-10-08 | Q3 - 2023 | 'Q3 - 2023' 2023-07-01..2023-09-30 quarter calendar c=1
 join 2026-10-08 | Q3 through 2023 | 'Q3 through 2023' 2023-07-01..2023-12-31 year calendar c=0.8 ends 2023-07-01..2023-09-30|2023-01-01..2023-12-31
 join 2026-10-08 | Q3 until 2023 | 'Q3 until 2023' 2023-07-01..2023-12-31 year calendar c=0.8 ends 2023-07-01..2023-09-30|2023-01-01..2023-12-31
 join 2026-10-08 | Q3 vs 2023 | 'Q3' 2023-07-01..2023-09-30 quarter calendar c=1 +compare+ '2023' 2023-01-01..2023-12-31 year calendar c=0.8
@@ -2057,7 +2129,7 @@ join 2026-10-08 | Q3 and 2024 | 'Q3' 2024-07-01..2024-09-30 quarter calendar c=1
 join 2026-10-08 | Q3 & 2024 | 'Q3' 2024-07-01..2024-09-30 quarter calendar c=1 +list+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8
 join 2026-10-08 | Q3, 2024 | 'Q3, 2024' 2024-07-01..2024-09-30 quarter calendar c=1
 join 2026-10-08 | Q3 to 2024 | 'Q3 to 2024' 2024-07-01..2024-12-31 year calendar c=0.8 ends 2024-07-01..2024-09-30|2024-01-01..2024-12-31
-join 2026-10-08 | Q3 - 2024 | 'Q3 - 2024' 2024-07-01..2024-12-31 year calendar c=0.8 ends 2024-07-01..2024-09-30|2024-01-01..2024-12-31
+join 2026-10-08 | Q3 - 2024 | 'Q3 - 2024' 2024-07-01..2024-09-30 quarter calendar c=1
 join 2026-10-08 | Q3 through 2024 | 'Q3 through 2024' 2024-07-01..2024-12-31 year calendar c=0.8 ends 2024-07-01..2024-09-30|2024-01-01..2024-12-31
 join 2026-10-08 | Q3 until 2024 | 'Q3 until 2024' 2024-07-01..2024-12-31 year calendar c=0.8 ends 2024-07-01..2024-09-30|2024-01-01..2024-12-31
 join 2026-10-08 | Q3 vs 2024 | 'Q3' 2024-07-01..2024-09-30 quarter calendar c=1 +compare+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8
@@ -2156,7 +2228,7 @@ join 2026-10-08 | H1 and FY24 | 'H1' 2023-04-01..2023-09-30 half fiscal c=1 +lis
 join 2026-10-08 | H1 & FY24 | 'H1' 2023-04-01..2023-09-30 half fiscal c=1 +list+ 'FY24' 2023-04-01..2024-03-31 year fiscal c=1
 join 2026-10-08 | H1, FY24 | 'H1, FY24' 2023-04-01..2023-09-30 half fiscal c=1
 join 2026-10-08 | H1 to FY24 | 'H1 to FY24' 2023-04-01..2024-03-31 year fiscal c=1 ends 2023-04-01..2023-09-30|2023-04-01..2024-03-31
-join 2026-10-08 | H1 - FY24 | 'H1 - FY24' 2023-04-01..2024-03-31 year fiscal c=1 ends 2023-04-01..2023-09-30|2023-04-01..2024-03-31
+join 2026-10-08 | H1 - FY24 | 'H1 - FY24' 2023-04-01..2023-09-30 half fiscal c=1
 join 2026-10-08 | H1 through FY24 | 'H1 through FY24' 2023-04-01..2024-03-31 year fiscal c=1 ends 2023-04-01..2023-09-30|2023-04-01..2024-03-31
 join 2026-10-08 | H1 until FY24 | 'H1 until FY24' 2023-04-01..2024-03-31 year fiscal c=1 ends 2023-04-01..2023-09-30|2023-04-01..2024-03-31
 join 2026-10-08 | H1 vs FY24 | 'H1' 2023-04-01..2023-09-30 half fiscal c=1 +compare+ 'FY24' 2023-04-01..2024-03-31 year fiscal c=1
@@ -2165,7 +2237,7 @@ join 2026-10-08 | H1 and FY25 | 'H1' 2024-04-01..2024-09-30 half fiscal c=1 +lis
 join 2026-10-08 | H1 & FY25 | 'H1' 2024-04-01..2024-09-30 half fiscal c=1 +list+ 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
 join 2026-10-08 | H1, FY25 | 'H1, FY25' 2024-04-01..2024-09-30 half fiscal c=1
 join 2026-10-08 | H1 to FY25 | 'H1 to FY25' 2024-04-01..2025-03-31 year fiscal c=1 ends 2024-04-01..2024-09-30|2024-04-01..2025-03-31
-join 2026-10-08 | H1 - FY25 | 'H1 - FY25' 2024-04-01..2025-03-31 year fiscal c=1 ends 2024-04-01..2024-09-30|2024-04-01..2025-03-31
+join 2026-10-08 | H1 - FY25 | 'H1 - FY25' 2024-04-01..2024-09-30 half fiscal c=1
 join 2026-10-08 | H1 through FY25 | 'H1 through FY25' 2024-04-01..2025-03-31 year fiscal c=1 ends 2024-04-01..2024-09-30|2024-04-01..2025-03-31
 join 2026-10-08 | H1 until FY25 | 'H1 until FY25' 2024-04-01..2025-03-31 year fiscal c=1 ends 2024-04-01..2024-09-30|2024-04-01..2025-03-31
 join 2026-10-08 | H1 vs FY25 | 'H1' 2024-04-01..2024-09-30 half fiscal c=1 +compare+ 'FY25' 2024-04-01..2025-03-31 year fiscal c=1
@@ -2219,7 +2291,7 @@ join 2026-10-08 | H1 and 2023 | 'H1' 2023-01-01..2023-06-30 half calendar c=1 +l
 join 2026-10-08 | H1 & 2023 | 'H1' 2023-01-01..2023-06-30 half calendar c=1 +list+ '2023' 2023-01-01..2023-12-31 year calendar c=0.8
 join 2026-10-08 | H1, 2023 | 'H1, 2023' 2023-01-01..2023-06-30 half calendar c=1
 join 2026-10-08 | H1 to 2023 | 'H1 to 2023' 2023-01-01..2023-12-31 year calendar c=0.8 ends 2023-01-01..2023-06-30|2023-01-01..2023-12-31
-join 2026-10-08 | H1 - 2023 | 'H1 - 2023' 2023-01-01..2023-12-31 year calendar c=0.8 ends 2023-01-01..2023-06-30|2023-01-01..2023-12-31
+join 2026-10-08 | H1 - 2023 | 'H1 - 2023' 2023-01-01..2023-06-30 half calendar c=1
 join 2026-10-08 | H1 through 2023 | 'H1 through 2023' 2023-01-01..2023-12-31 year calendar c=0.8 ends 2023-01-01..2023-06-30|2023-01-01..2023-12-31
 join 2026-10-08 | H1 until 2023 | 'H1 until 2023' 2023-01-01..2023-12-31 year calendar c=0.8 ends 2023-01-01..2023-06-30|2023-01-01..2023-12-31
 join 2026-10-08 | H1 vs 2023 | 'H1' 2023-01-01..2023-06-30 half calendar c=1 +compare+ '2023' 2023-01-01..2023-12-31 year calendar c=0.8
@@ -2228,7 +2300,7 @@ join 2026-10-08 | H1 and 2024 | 'H1' 2024-01-01..2024-06-30 half calendar c=1 +l
 join 2026-10-08 | H1 & 2024 | 'H1' 2024-01-01..2024-06-30 half calendar c=1 +list+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8
 join 2026-10-08 | H1, 2024 | 'H1, 2024' 2024-01-01..2024-06-30 half calendar c=1
 join 2026-10-08 | H1 to 2024 | 'H1 to 2024' 2024-01-01..2024-12-31 year calendar c=0.8 ends 2024-01-01..2024-06-30|2024-01-01..2024-12-31
-join 2026-10-08 | H1 - 2024 | 'H1 - 2024' 2024-01-01..2024-12-31 year calendar c=0.8 ends 2024-01-01..2024-06-30|2024-01-01..2024-12-31
+join 2026-10-08 | H1 - 2024 | 'H1 - 2024' 2024-01-01..2024-06-30 half calendar c=1
 join 2026-10-08 | H1 through 2024 | 'H1 through 2024' 2024-01-01..2024-12-31 year calendar c=0.8 ends 2024-01-01..2024-06-30|2024-01-01..2024-12-31
 join 2026-10-08 | H1 until 2024 | 'H1 until 2024' 2024-01-01..2024-12-31 year calendar c=0.8 ends 2024-01-01..2024-06-30|2024-01-01..2024-12-31
 join 2026-10-08 | H1 vs 2024 | 'H1' 2024-01-01..2024-06-30 half calendar c=1 +compare+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8

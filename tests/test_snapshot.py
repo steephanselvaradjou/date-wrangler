@@ -115,6 +115,9 @@ PHRASES = [
     "March 1 and 15, 2024", "1st vs 15th March", "between 1 and 15 March",
     "Q1 and Q3", "Q1 and Q3 2024", "Jan to Mar and Jul to Sep 2024", "the figures from Q1 and Q3",
     "FY24 - Q3", "FY24 - Q3 results", "2023 - H2 2024", "FY24, March",
+    # a quarter or half and its year, however joined: one period
+    "Q3 in 2024", "Q3 - 2024", "Q3/FY24", "FY 2024 Qtr 3", "2024 - third quarter", "2024-3Q",
+    "2024-1H", "1HFY24", "1H FY-24", "1H fiscal 2024", "Q1 and Q3 in 2024", "Q3 to 2024",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

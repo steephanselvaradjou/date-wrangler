@@ -9,11 +9,35 @@ The full notes for each release, with examples, are on the
 
 ## Unreleased
 
+**Changes answers.**
+
+### Added
+- Read for the first time: a quarter or half and its year, however they are joined —
+  `Q3 in 2024`, `Q3/FY24`, `FY 2024 Qtr 3`, `2024 - third quarter`, `1HFY24`,
+  `1HCY 2024`, `1H fiscal 2024` — and a month that touches its numbers: `15 March2024`,
+  `2024Mar15`, `MAR15, 2024`, `15th/March/24`.
+- `tests/test_label_years.py`: every quarter and half label, each way of joining it to its
+  year, every way of writing the year, in both orders.
+
 ### Fixed
+- `Q3 - 2024` and `H1 - FY25` were spans from the label to the end of the year; they are
+  the quarter and the half. `Q3 to 2024` is still a span.
+- `2024-3Q` was March 2024, and `2024-1H` January 2024.
+- `15th-Mar-2024` was 15 October of this year and March 2024; `15 March2024` was
+  15 March of this year.
+- `March 15 to 03/04/2024` was April 2024, and `Jun FY25 - 15 March` was nothing.
+- `1H FY-24` was the first half of this fiscal year.
+- `1Q and since 1Q` gave two overlapping matches.
 - `the 2015–2016 season`, `season 2015/16`, `academic year 2015-16` and `the 2015-16
   school year` were read as the two calendar years they span. A season is a name, with
   months of its own, so it is now kept as a label: no match, and `diagnose` says why.
   `2015–2016` on its own still reads as the years.
+
+### Changed
+- Dates written with month names are read by splitting the text into words and numbers
+  and naming each piece once (`tokens.py`), in place of eleven regular expressions that
+  each listed their own spellings. Text that names a month parses about 10% slower than
+  in 2.1.0; text that names none is unchanged, and prose with no date about 9% faster.
 
 ## 2.1.0 — 2026-10-16
 

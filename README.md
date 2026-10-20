@@ -457,7 +457,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 |---|---|
 | Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `Q1 FY2024-25`, `FY2024-25 Q3`, `fiscal 2024`, `2023-24 financial year`, `fy-24`, `F.Y. 2024`, `FY ending June 30, 2024` |
 | Split years | `2024-25`, `2012/13` with no FY follow `year_basis`, as any year does: on a fiscal basis the fiscal year 2024-25 (and `Q3 2024-25` its third quarter); on a calendar basis the years 2024 to 2025, of which `Q3 2024-25` is not one period, so `diagnose` says to write `FY2024-25`. `2011-12` is a fiscal year on a fiscal basis and December 2011 on a calendar one |
-| Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `fiscal Q3`, `Q3 FY` |
+| Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `1HFY24`, `fiscal Q3`, `Q3 FY` — and a quarter or half joined to its year any way: `Q3 in 2024`, `Q3 - 2024`, `Q3/FY24`, `FY 2024 Qtr 3`, `2024 - third quarter`. `Q3 to 2024` stays a span |
 | Years and labelled periods | `2024`, `the year 2024`, `Q1 of 2024`, `January 2024`, `CY2024` — see [which calendar](#configuration) for how a year is read |
 | Fiscal month index | `third month of FY24`, `twelfth month` |
 | Month of a fiscal year | `June FY25`, `Jun-FY25`, `FY25 June`, `June FY 2024-25`, `Oct to Mar FY25` — the June *inside* FY25, so June 2024 with an April year; `June 2025` stays June 2025 |

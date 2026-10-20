@@ -672,14 +672,24 @@ _FROM_DATE_GAP = re.compile(r"^\s*(?:to\s+)?$", re.IGNORECASE)
 _COUNTS_FROM = re.compile(r"\b(?:before|after|prior|earlier|later)\s*$", re.IGNORECASE)
 _OF_GAP = re.compile(r"^\s+of\s+(?:the\s+)?$", re.IGNORECASE)
 _TILL_RULES = frozenset({"till_now", "to_now"})
+#: Between a quarter or half and the year after it: "Q3 in 2024", "H1 - FY25", "Q3/FY24",
+#: "1H fiscal 2024". A span from this year's Q3 to the whole of 2024 is nobody's meaning.
+_LABEL_YEAR_GAP = re.compile(r"^\s*(?:[-/]\s*|(?:in|of)\s+(?:the\s+)?)?$", re.IGNORECASE)
+#: Between a year and the quarter or half after it: "FY 2024 Qtr 3", "2024 - third quarter".
+#: Not a comma, which may list them: "2023, Q3 and Q4".
+_YEAR_LABEL_GAP = re.compile(r"^\s*(?:[-/]\s*)?$")
 
 
-def _join_one_date(raws: list[_Raw], text: str) -> list[_Raw]:
+def _join_one_date(raws: list[_Raw], text: str, cfg: WranglerConfig) -> list[_Raw]:
     """Join fragments the scanner found apart that name one date between them.
 
     - A year after a comma is the year of the period before it: "June, 2013", "Q1, 2024".
       REGRESSION: the year came back as a second period, so "in June, 2013" was June 2013
       *and* all of 2013, and a question about one month became a comparison of two.
+    - A quarter or half and a year beside it are one period, however they are joined: "Q3
+      in 2024", "1H - FY24", "Q3/FY24", "FY 2024 Qtr 3", "2024 - third quarter". The
+      scanner finds both; they came back as a span from this year's quarter to the whole
+      year, or as two periods.
     - A weekday belongs to the date it introduces: "Friday, 15 March 2024". It was read as
       this week's Friday, a second and wrong date.
     - "till date", "to present" end the date before them: "01/06/2018 to till date".
@@ -687,7 +697,7 @@ def _join_one_date(raws: list[_Raw], text: str) -> list[_Raw]:
     """
     out: list[_Raw] = []
     for raw in raws:
-        joined = _joined(out[-1], raw, text) if out else None
+        joined = _joined(out[-1], raw, text, cfg) if out else None
         if joined is not None:
             out[-1] = joined
         else:
@@ -702,13 +712,23 @@ def _join_one_date(raws: list[_Raw], text: str) -> list[_Raw]:
     return kept
 
 
-def _joined(prev: _Raw, raw: _Raw, text: str) -> _Raw | None:
+def _joined(prev: _Raw, raw: _Raw, text: str, cfg: WranglerConfig) -> _Raw | None:
     """``prev`` and ``raw`` as one fragment, or None if they are two."""
     a, b = prev.spec, raw.spec
     gap = text[prev.end : raw.start]
     if _COMMA_GAP.match(gap) and _takes_a_year(a) and _is_a_year(b):
         basis = a.basis if a.basis is not None else b.basis
         return _Raw("comma_year", a.with_(year=b.year, basis=basis), prev.start, raw.end)
+    # A year cut in two on a calendar basis -- "2024-25" as 2024 to 2025 -- is not one year.
+    if prev.rule != "split_year" and raw.rule != "split_year":
+        if _is_a_label(a) and _is_a_year(b) and _LABEL_YEAR_GAP.match(gap):
+            basis = a.basis if a.basis is not None else b.basis
+            if basis is None and gap.strip()[:2].lower() in ("in", "of"):
+                basis = cfg.effective_of_year_basis  # "Q1 in 2024" reads as "Q1 of 2024"
+            return _Raw("label_year", a.with_(year=b.year, basis=basis), prev.start, raw.end)
+        if _is_a_year(a) and _is_a_label(b) and _YEAR_LABEL_GAP.match(gap):
+            basis = b.basis if b.basis is not None else a.basis
+            return _Raw("label_year", b.with_(year=a.year, basis=basis), prev.start, raw.end)
     if (
         a.kind is Kind.WEEKDAY
         and a.weekday_span is None
@@ -751,6 +771,11 @@ def _takes_a_year(spec: Spec) -> bool:
         and spec.kind
         in (Kind.ABS_DAY, Kind.ABS_MONTH, Kind.ABS_QUARTER, Kind.ABS_HALF, Kind.PERIOD_ENDING)
     )
+
+
+def _is_a_label(spec: Spec) -> bool:
+    """A quarter or half that names no year: "Q3", "1H", "Qtr 3", "fiscal Q3"."""
+    return spec.kind in (Kind.ABS_QUARTER, Kind.ABS_HALF) and _takes_a_year(spec)
 
 
 def _is_a_year(spec: Spec) -> bool:
@@ -1021,7 +1046,7 @@ def parse(
     body = norm.text
 
     mark = len(diagnostics) if diagnostics is not None else 0
-    raws = _join_one_date(_scan(body, config, diagnostics), body)
+    raws = _join_one_date(_scan(body, config, diagnostics), body, config)
     if not raws:
         _diagnostics_to_original(diagnostics, mark, norm)
         return []

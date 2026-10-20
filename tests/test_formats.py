@@ -217,6 +217,29 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the quarter ended 31 March 2024", "2024-01..2024-03"),
         ("quarter ended 31/03/2024", "2024-01..2024-03"),
         ("the first 3 quarters of 2024", "2024-01..2024-09"),
+        # However a label and its year are joined, one period -- not a span from this
+        # year's quarter to the whole year, nor two periods.
+        ("Q3 in 2024", "2024-07..2024-09"),
+        ("Q3 - 2024", "2024-07..2024-09"),
+        ("Q3 - FY24", "2023-10..2023-12"),
+        ("Q3/FY24", "2023-10..2023-12"),
+        ("Qtr 3 - 2024", "2024-07..2024-09"),
+        ("third quarter in FY 2024-25", "2024-10..2024-12"),
+        ("FY 2024 Qtr 3", "2023-10..2023-12"),
+        ("FY 2024-25 - Qtr 3", "2024-10..2024-12"),
+        ("2024 third quarter", "2024-07..2024-09"),
+        ("2024-3Q", "2024-07..2024-09"),  # REGRESSION: March 2024
+        ("2024-1H", "2024-01..2024-06"),  # REGRESSION: January 2024
+        ("2024/1H", "2024-01..2024-06"),
+        ("1HFY24", "2023-04..2023-09"),
+        ("1HCY 2024", "2024-01..2024-06"),
+        ("1H FY-24", "2023-04..2023-09"),
+        ("1H fiscal 2024", "2023-04..2023-09"),
+        ("1H calendar year 2024", "2024-01..2024-06"),
+        ("Q1 and Q3 in 2024", "2024-01..2024-03 ; 2024-07..2024-09"),
+        # Still spans: "to" says so, and so does a quarter with a year of its own.
+        ("Q3 to 2024", "2024-07..2024-12"),
+        ("2023 - H2 2024", "2023-01..2024-12"),
     ]),
     ("parts of a period", TODAY, CAL, [
         ("early 2024", "2024-01..2024-04"),
