@@ -7,7 +7,7 @@ before either is resolved.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields
 from enum import Enum, auto
 
 from .types import Anchor, Basis, Grain, Mod
@@ -134,4 +134,17 @@ class Spec:
         )
 
     def with_(self, **changes: object) -> Spec:
-        return replace(self, **changes)  # type: ignore[arg-type]
+        """A copy with ``changes`` made. Field by field rather than dataclasses.replace,
+        which goes through ``__init__`` and costs nearly twice as much; most matches make
+        one or two."""
+        if not _FIELD_NAMES.issuperset(changes):
+            raise TypeError(f"Spec has no field {sorted(set(changes) - _FIELD_NAMES)}")
+        new = object.__new__(Spec)
+        for name in _FIELDS:
+            _set(new, name, changes[name] if name in changes else getattr(self, name))
+        return new
+
+
+_FIELDS = tuple(f.name for f in fields(Spec))
+_FIELD_NAMES = frozenset(_FIELDS)
+_set = object.__setattr__

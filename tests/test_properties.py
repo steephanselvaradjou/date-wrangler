@@ -8,6 +8,7 @@ wrap-around check tested for "ends before it starts" and adjacency slipped throu
 
 from __future__ import annotations
 
+import os
 from datetime import date, timedelta
 
 import pytest
@@ -35,8 +36,11 @@ from date_wrangler.calendars import (
     year_range,
 )
 
+#: 300 examples a property on every run. For a thorough pass after a change to scanning,
+#: joining or resolution, set PROPERTY_EXAMPLES -- one process with 9000 examples covers
+#: as much as thirty runs on thirty seeds, without paying for thirty start-ups.
 SETTINGS = settings(
-    max_examples=300,
+    max_examples=int(os.environ.get("PROPERTY_EXAMPLES", "300")),
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
 )

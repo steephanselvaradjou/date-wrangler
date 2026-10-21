@@ -97,9 +97,6 @@ def _shift(start: date, unit: Grain, n: int) -> date:
 # ---------------------------------------------------------------------------
 
 
-#: Kinds that count a period from today rather than naming one.
-_FROM_TODAY = frozenset({Kind.RELATIVE, Kind.THIS_PERIOD, Kind.TO_DATE, Kind.AGO})
-
 
 def _basis_for(spec: Spec, cfg: WranglerConfig) -> Basis:
     """The calendar a period is measured on: what the phrase says, else ``year_basis``.
@@ -678,9 +675,11 @@ def _resolve_ago(spec: Spec, today: date, cfg: WranglerConfig, basis: Basis) -> 
 
 
 def _resolve_to_date(spec: Spec, today: date, cfg: WranglerConfig, basis: Basis) -> DateRange:
-    """YTD / MTD / QTD: the current period so far, ``today`` included.
+    """YTD / MTD / QTD / WTD: the current period so far, ``today`` included.
 
-    "Last YTD" shifts the whole window back a year, so both are the same length.
+    "Last YTD" shifts the whole window back a year, so both are the same length; "last
+    MTD" back a month, as LMTD means -- the same days of the month before -- and "last
+    QTD" back a quarter. REGRESSION: every one went back a year.
     """
     unit = spec.unit or Grain.YEAR
 
@@ -703,7 +702,7 @@ def _resolve_to_date(spec: Spec, today: date, cfg: WranglerConfig, basis: Basis)
     start = _period_start(today, cfg, unit, basis)
     end = today + timedelta(days=1)
     if spec.direction < 0:
-        start, end = _shift(start, Grain.YEAR, -1), _shift(end, Grain.YEAR, -1)
+        start, end = _shift(start, unit, -1), _shift(end, unit, -1)
     return DateRange(start, end, unit, basis)
 
 

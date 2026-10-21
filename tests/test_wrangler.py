@@ -675,7 +675,23 @@ def test_every_rule_opens_with_a_word_boundary():
     from date_wrangler.rules import RULES
 
     for rule in RULES:
-        assert rule.pattern.startswith(r"\b"), f"rule {rule.name!r} must open with \\b"
+        if rule.pattern is not None:  # the rest are read from tokens
+            assert rule.pattern.startswith(r"\b"), f"rule {rule.name!r} must open with \\b"
+
+
+def test_rules_without_a_pattern_are_exactly_the_ones_the_token_reader_returns():
+    """A rule with no pattern holds a place in the order for a date the token reader finds.
+    One the reader never returns would be a rule nothing reads, and a name the reader
+    returns that is not in RULES would have no place in the order at all."""
+    import re
+    from pathlib import Path
+
+    from date_wrangler import tokens
+    from date_wrangler.rules import RULES
+
+    source = Path(tokens.__file__).read_text("utf-8")
+    returned = set(re.findall(r'"(\w+)", (?:Spec\(|spec, )', source))
+    assert {r.name for r in RULES if r.pattern is None} == returned
 
 
 def test_the_factored_scanner_finds_exactly_what_the_rules_do():
@@ -693,7 +709,10 @@ def test_the_factored_scanner_finds_exactly_what_the_rules_do():
     import test_formats
     import test_snapshot
 
-    plain = re.compile("|".join(f"(?P<{r.name}>{r.pattern})" for r in RULES), re.IGNORECASE)
+    plain = re.compile(
+        "|".join(f"(?P<{r.name}>{r.pattern})" for r in RULES if r.pattern is not None),
+        re.IGNORECASE,
+    )
     texts = [
         "sales for Q1 FY25 compared with last year", "since March 2024", "2024-03-15T14:30Z",
         "the first week of April", "1-15 March", "six months to June 2024", "Q3'24 and 2024-Q3",
@@ -710,6 +729,142 @@ def test_the_factored_scanner_finds_exactly_what_the_rules_do():
             assert [(m.span(), m.lastgroup) for m in _SCANNER_CS.finditer(low)] == want, text
 
 
+def test_stopping_at_a_month_name_date_changes_no_match():
+    """_scan's last branch, _hop, only lets the scanner stop at a date the token reader
+    takes instead of working through it. Held to the plain scanner taking turns with the
+    reader -- what _scan did without it -- over every phrase the catalogue, the snapshot,
+    the join sweep and the real requests hold, on both bases."""
+    import sys
+    from pathlib import Path
+
+    from date_wrangler.tokens import Reader
+    from date_wrangler.wrangler import (
+        _ORDER,
+        _SCANNER,
+        _SCANNER_CS,
+        Diagnostic,
+        _Raw,
+        _read_match,
+        _scan,
+    )
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    import test_formats
+    import test_join_sweep
+    import test_snapshot
+
+    def plain(text: str, cfg: WranglerConfig, diags: list[Diagnostic]) -> list[_Raw]:
+        target, scanner = (text.lower(), _SCANNER_CS) if text.isascii() else (text, _SCANNER)
+        reader = Reader(text, cfg)
+        out: list[_Raw] = []
+        pos = 0
+        m, d = scanner.search(target, pos), reader.next_date(pos)
+        while m is not None or d is not None:
+            if d is not None and (
+                m is None
+                or d[2] < m.start()
+                or (d[2] == m.start() and _ORDER[d[0]] < _ORDER[m.lastgroup or ""])
+            ):
+                name, spec, lo, hi, reason = d
+                if spec is not None:
+                    out.append(_Raw(name, spec, lo, hi))
+                else:
+                    diags.append(Diagnostic(text[lo:hi], (lo, hi), name, reason or ""))
+                pos = hi
+            else:
+                assert m is not None
+                pos = m.end()
+                _read_match(m, text, cfg, out, diags)
+            if m is not None and m.start() < pos:
+                m = scanner.search(target, pos)
+            if d is not None and d[2] < pos:
+                d = reader.next_date(pos)
+        return out
+
+    texts = [p for _, _, _, cases in test_formats.SECTIONS for p, _ in cases]
+    texts += test_formats._bank_lines() + test_snapshot.PHRASES
+    texts += [c[0] for c in test_join_sweep._cases()]
+    texts += ["15 March 2024 and Q3", "March 15 to 20", "last March", "Mar-24 since 2020",
+              "the 15th of MARCH, 2024", "2024 March", "15 mars 2024", "May I ask", "Ü 15 März"]
+    for cfg in (WranglerConfig(), WranglerConfig(year_basis=Basis.FISCAL)):
+        for text in texts:
+            want_diags: list[Diagnostic] = []
+            got_diags: list[Diagnostic] = []
+            want = [(r.rule, r.start, r.end, r.spec) for r in plain(text, cfg, want_diags)]
+            got = [(r.rule, r.start, r.end, r.spec) for r in _scan(text, cfg, got_diags)]
+            assert got == want, text
+            assert got_diags == want_diags, text
+
+
+def test_spec_copies_are_what_dataclasses_replace_makes():
+    """Spec.with_ copies field by field, for speed. That is only the same as
+    dataclasses.replace while Spec checks nothing on construction; a __post_init__ added
+    later would be skipped by every copy."""
+    from dataclasses import fields, replace
+
+    from date_wrangler.spec import Kind, Spec
+
+    assert not hasattr(Spec, "__post_init__")
+    spec = Spec(Kind.ABS_QUARTER, year=2024, index=3)
+    for field in fields(Spec):
+        value = getattr(Spec(Kind.ABS_DAY, year=1, month=1, day=1), field.name)
+        assert spec.with_(**{field.name: value}) == replace(spec, **{field.name: value})
+    with pytest.raises(TypeError):
+        spec.with_(no_such_field=1)
+
+
+def test_a_remembered_reading_is_the_configurations_own():
+    """Rules read a fragment once per configuration. "Q3 2024-25" is a quarter on a fiscal
+    basis and refused on a calendar one; remembering either must not hand it to the other."""
+    from date_wrangler.wrangler import _READINGS
+
+    _READINGS.clear()
+    calendar, fiscal = WranglerConfig(), WranglerConfig(year_basis=Basis.FISCAL)
+    for _ in range(2):
+        found, diags = diagnose("Q3 2024-25", today=TODAY, config=calendar)
+        assert found == [] and diags
+        assert rng("Q3 2024-25", fiscal) == (date(2024, 10, 1), date(2025, 1, 1))
+
+
+def test_remembered_readings_are_bounded():
+    """A caller may make a configuration per request, and text is unbounded: neither may
+    grow the memory without limit."""
+    from date_wrangler.wrangler import _MAX_CONFIGS, _MAX_READINGS, _READINGS
+
+    _READINGS.clear()
+    cfg = WranglerConfig()
+    for year in range(1000, 1000 + _MAX_READINGS + 200):
+        parse(f"Q1 {year}", today=TODAY, config=cfg)
+    assert all(len(readings) <= _MAX_READINGS for _, readings in _READINGS.values())
+    for k in range(_MAX_CONFIGS * 3):
+        parse("Q1 2024", today=TODAY, config=WranglerConfig(two_digit_pivot=k))
+    assert len(_READINGS) <= _MAX_CONFIGS
+
+
+def test_a_warm_memory_gives_the_same_answers_as_a_cold_one():
+    import sys
+    from pathlib import Path
+
+    from date_wrangler.wrangler import _READINGS
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    import test_formats
+
+    texts = [p for _, _, _, cases in test_formats.SECTIONS for p, _ in cases]
+    texts += test_formats._bank_lines()
+
+    def answers():
+        out = []
+        for text in texts:
+            found, diags = diagnose(text, today=TODAY, config=CFG)
+            out.append(([m.to_dict() for m in found], [(d.span, d.rule, d.reason) for d in diags]))
+        return out
+
+    _READINGS.clear()
+    cold = answers()
+    assert answers() == cold
+
+
 def test_both_scanners_accept_the_same_fragments():
     """_scan lowers ASCII text and uses the case-sensitive pattern, which is only valid
     while every rule pattern is written in lower case. A new rule with a literal capital
@@ -720,6 +875,8 @@ def test_both_scanners_accept_the_same_fragments():
     from date_wrangler.wrangler import _SCANNER, _SCANNER_CS
 
     for rule in RULES:
+        if rule.pattern is None:
+            continue  # read from tokens, which lower each word themselves
         # Capitals inside an escape (\b, \d, \W...) are the escape, not a literal.
         literal = re.sub(r"\\.", "", rule.pattern)
         assert not re.search(r"[A-Z]", literal), (

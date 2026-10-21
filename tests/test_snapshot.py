@@ -115,6 +115,27 @@ PHRASES = [
     "March 1 and 15, 2024", "1st vs 15th March", "between 1 and 15 March",
     "Q1 and Q3", "Q1 and Q3 2024", "Jan to Mar and Jul to Sep 2024", "the figures from Q1 and Q3",
     "FY24 - Q3", "FY24 - Q3 results", "2023 - H2 2024", "FY24, March",
+    # a quarter or half and its year, however joined: one period
+    "Q3 in 2024", "Q3 - 2024", "Q3/FY24", "FY 2024 Qtr 3", "2024 - third quarter", "2024-3Q",
+    "2024-1H", "1HFY24", "1H FY-24", "1H fiscal 2024", "Q1 and Q3 in 2024", "Q3 to 2024",
+    "June in 2024", "Mar/2024", "2024 March", "2024-Mar", "FY24 - June", "Mar. FY24",
+    "June - FY25", "in March. 2024 was good", "in March. 15 people came",
+    # a day whose marks change: one day
+    "15-Mar 2024", "15 Mar-2024", "2024-Mar-15", "Mar-15 2024", "15-Mar", "Mar-15",
+    # relative phrases, spelt short
+    "last 3months", "3qtrs ago", "yday", "last week Fri", "Fri. last week", "last 5 biz days",
+    "same quarter LY", "a couple of weeks ago", "trailing 12-month", "prev quarter",
+    # to date, spelt every way
+    "fiscal YTD", "FYTD", "last MTD", "last QTD", "from 01/06/2018 till date", "so far this year",
+    "WTD", "LYTD", "2024-YTD", "YTD through March 2024", "as of now",
+    # parts and edges of a period, written short
+    "last day of month", "first-half of March 2024", "2024 year end", "QE June 2024",
+    "YE March 2024", "end-of-month", "wc 5 Oct 2026", "last Friday of month",
+    "15th of the month", "start of Mar-24",
+    # numbers, and what is declined on purpose
+    "03-2024", "2024 week 11", "W11-2024", "week number 11 of 2024", "weeks 11-12 2024",
+    "yr 2024", "throughout 2024", "every first Monday of the month", "the past few weeks",
+    "a while back", "the summer months of 2024", "the 2015-16 NBA season",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

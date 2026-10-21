@@ -7,13 +7,110 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
-## Unreleased
+## 2.2.0 — 2026-10-21
+
+Dates with month names read from their words and numbers, not one pattern per spelling,
+and each family of phrase measured against its plain form -- thousands of spellings that
+were read wrongly or not at all. The API is unchanged. **Changes answers.**
+
+### Added
+- Read for the first time: a quarter, half or month and the year beside it — `Q3 in 2024`,
+  `Q3/FY24`, `FY 2024 Qtr 3`, `2024 - third quarter`, `1HFY24`, `1HCY 2024`,
+  `1H fiscal 2024`, `June in 2024`, `Mar/2024`, `Mar. FY24`, `2024 March` — and a month
+  that touches its numbers: `15 March2024`, `2024Mar15`, `MAR15, 2024`, `15th/March/24`.
+  A spaced dash after the label is still a span, as before: `June - FY25`, `Q3 - 2024`.
+- `tests/test_label_years.py`: every quarter, half and month label, each way of joining
+  it to its year, every way of writing the year, in both orders.
+- Relative phrases spelt short, as in chat and reports: a count against its unit (`last
+  3months`, `3mos ago`, `trailing 12-month`), short units (`mth`, `mths`, `mnths`),
+  `prev`, `Weds`, `yday`, `y'day`, `tmrw`, `tmr`, `day before yday`, `wknd`, `biz days`,
+  `workdays`, `business-days`, `a couple of weeks ago`, `same month of last year`,
+  `same quarter LY`, and the week before its weekday: `last week Fri`, `last week's
+  Friday`, `Fri. last week`. A single letter for a unit (`3m`, `3d`, `last q`) stays
+  unread: it is minutes or millions as often as months.
+- `tests/test_relative_spellings.py`: 927 spellings of relative phrases, each held to its
+  plain form.
+- To-date phrases however they are written: `year-to-date`, `Y-T-D`, `so far this year`,
+  `this quarter so far`, `WTD` and `week to date`, `FYTD`, `fiscal YTD`, `FY to date`,
+  `CYTD`, `LYTD`, `PYTD`, `LMTD`, `YTD last year`, `MTD last month`, `last year's MTD`,
+  `YTD for 2024`, `2024-YTD`, `YTD through March 2024`, `March 2024 YTD`, `YTD Mar-24`;
+  and the ends people write after a start date: `till present`, `up till now`, `to-date`,
+  `uptill date`, `till dt`, `onwards till date`, `through to today`, `as of now`.
+  `tests/test_to_date_spellings.py` holds 382 of them.
+- Parts and edges of a period written other ways: `end-of-month`, `E.O.M.`, `end of 1Q
+  2024`, `end of the first quarter of 2024`, `the back half of 2024`, `the early part of
+  2024`, `last workday of the month`, `the 3rd Thurs. of Nov.`, `first wk of April`,
+  `last 3 mths of 2024`, `15th of the month`, `the 1st of the next month`, `1st to the
+  15th of March`, `wc 5 Oct`, `week commencing Monday 5 October`, and reporting shorthand
+  `QE June 2024`, `YE March 2024`, `FYE March 2024`, `12M to March 2024`, `6M to June
+  2024`, `the 12-month period ended March 2024`. `tests/test_part_spellings.py` holds 165.
+- Numbers written other ways: `03-2024`, `2024wk11`, `week no. 11 2024`, `W11/2024`,
+  `yr 2024`, `throughout 2024`, and runs of weeks — `weeks 11-12 2024`, `week 11 to 12`.
+  Left alone on purpose: a run of digits (`20240315`, as likely an order number), parts
+  joined by underscores (`sales_2024` is a table), a month with a dot (`2024.03` is as
+  likely an amount) and `2024M03` (as likely square metres). `tests/test_number_spellings.py`
+  holds 104 spellings, and 16 numbers that must stay numbers.
+- Declined with a reason, where before there was nothing: `the past few weeks`, `in recent
+  months`, `in the next few days`, `a few weeks from now`, `not long ago`, `a while back`,
+  `some time back`, `summer-2024`, `the 2015-16 flu season`. `tests/test_declined_spellings.py`
+  holds 77 phrases that must stay unanswered.
 
 ### Fixed
+- `2024 week 11` was week 11 of this year; `week number 11 of 2024` was 11 January;
+  `W11-2024` and `week 11-2024` ran from the week to the end of 2024, and `2024-wk11` from
+  the start of 2024 to the week; `week 11-12` was week 11 alone. Each is its week, or its
+  run of weeks, in 2024.
+- `every first Monday of the month` was this month's first Monday, and `the summer months
+  of 2024` the whole of 2024; both are declined, as `every Monday` and `summer 2024` are.
+  `every Monday in March` is still March.
+- `AY 2015-16`, `SY 2015-16`, `the 2015-16 NBA season`, `the 2015-16 Premier League
+  season`, `the 2015-16 campaign` and `the 2015-16 term` were two calendar years; they are
+  labels, as `the 2015-16 season` is. `2015-16 sales by season` is still the years.
+- `2024-Mar` and `2024 - March` were January to March 2024, and `FY24 - June` the start
+  of FY24 to June; they are the month, as `FY24 - Q3` is the quarter.
+- `2024-3Q` was March 2024, and `2024-1H` January 2024.
+- `3qtrs ago` was the third quarter of this year; `last week Fri` was all of last week;
+  `same month of last year` was the whole of last year.
+- `fiscal year to date`, `fiscal YTD` and `FY YTD` were the *calendar* year to date: the
+  fiscal year was dropped. They start at the fiscal year's first day.
+- `from 01/06/2018 till date`, and any `from` or `since` a day with an end written after
+  it, was open-ended -- the end dropped -- where `from 2012 to date` ended today. It ends
+  today.
+- **Changes answers:** `last MTD` and `last QTD` went back a year; they are the same days
+  of the previous month and quarter, as LMTD means. `last YTD` is unchanged, and `last
+  year's MTD` is the month so far a year back.
+- `2024-YTD` ran from 2024 to today; it is 2024's year to date, as `2024 YTD` is.
+  `this year so far` was the whole year, future included.
+- `last day of month`, `last business day of month` and `last Friday of month` -- no
+  "the" -- were yesterday and last week's Friday; `first-half of March 2024` was January
+  to June 2024; `2024 year end` was the end of this year; `start of Mar-24` was this
+  year's March; `Q1-end 2024` was the whole of 2024 (it is Q1 2024, as `year-end 2024`
+  is the year).
+- `15th-Mar-2024` was 15 October of this year and March 2024; `15 March2024` was
+  15 March of this year.
+- A day whose marks change between its parts: `15-Mar 2024`, `15/Mar 2024` and
+  `15.Mar.2024` were March 2024, the day lost; `Mar-15 2024` was March 2015, and
+  `2024-Mar-15` 2024 and March 2015; `15 Mar-2024` and `Mar 15-2024` ran to the end of
+  2024; `2024/Mar/15` was nothing. Each is 15 March 2024, and `15-Mar` alone is 15 March.
+  `Mar-15` alone is still March 2015, and `15 Mar - 2024`, spaced, still a span.
+- `March 15 to 03/04/2024` was April 2024, and `Jun FY25 - 15 March` was nothing.
+- `1H FY-24` was the first half of this fiscal year.
+- `1Q and since 1Q` gave two overlapping matches.
+- A bare month in the middle of a span — `Q1 to March to Q3` — was dropped in strict
+  mode, and in balanced mode without a cue, which cut the span in two.
 - `the 2015–2016 season`, `season 2015/16`, `academic year 2015-16` and `the 2015-16
   school year` were read as the two calendar years they span. A season is a name, with
   months of its own, so it is now kept as a label: no match, and `diagnose` says why.
   `2015–2016` on its own still reads as the years.
+
+### Changed
+- Dates written with month names are read by splitting the text into words and numbers
+  and naming each piece once (`tokens.py`), in place of eleven regular expressions that
+  each listed their own spellings.
+- Each rule's reading of a fragment is remembered, per configuration and within a fixed
+  bound, so "Q1" or "FY24" is read once rather than in every text. Against 2.1.0, text
+  that names a month parses 3–9% slower, text naming none 10–13% faster, and prose with
+  no date at all about as fast.
 
 ## 2.1.0 — 2026-10-16
 

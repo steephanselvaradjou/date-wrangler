@@ -58,6 +58,20 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("DATE '2024-03-15'", "2024-03-15"),
         ("'2024-03-15'", "2024-03-15"),
         ("ticket 2024-03-15-001", "2024-03-15"),
+        # Each was nothing, or read wrong, in 2.1.0.
+        ("03-2024", "2024-03"),
+        ("2024 week 11", "2024-03-11..2024-03-17"),  # was week 11 of this year
+        ("2024-wk11", "2024-03-11..2024-03-17"),
+        ("W11-2024", "2024-03-11..2024-03-17"),  # was the week to the end of 2024
+        ("week 11-2024", "2024-03-11..2024-03-17"),
+        ("week number 11 of 2024", "2024-03-11..2024-03-17"),  # was 11 January
+        ("week no. 11 2024", "2024-03-11..2024-03-17"),
+        ("weeks 11-12 2024", "2024-03-11..2024-03-24"),  # was week 11 alone
+        ("week 11 to week 12 2024", "2024-03-11..2024-03-24"),
+        # Left alone: digits with nothing round them, an identifier, an amount.
+        ("20240315", "-"),
+        ("sales_2024", "-"),
+        ("total 2024.03", "-"),
     ]),
     ("written days", TODAY, CAL, [
         ("15 March 2024", "2024-03-15"),
@@ -95,6 +109,33 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("01may 2018", "2018-05-01"),
         ("18th may'18", "2018-05-18"),
         ("13th June' 2018", "2018-06-13"),
+        # Read since the token reader: each was nothing, or wrong, before it.
+        ("15th-Mar-2024", "2024-03-15"),
+        ("15th/March/24", "2024-03-15"),
+        ("15 March2024", "2024-03-15"),
+        ("2024Mar15", "2024-03-15"),
+        ("MAR15, 2024", "2024-03-15"),
+        # Marks that change between the day, the month and the year. REGRESSION, each in
+        # 2.1.0: the day was lost, or the 15 read as the year 2015, or a span came out.
+        ("15-Mar 2024", "2024-03-15"),  # March 2024
+        ("15/Mar 2024", "2024-03-15"),  # March 2024
+        ("15.Mar.2024", "2024-03-15"),  # March 2024
+        ("15-Mar, 2024", "2024-03-15"),  # March 2024
+        ("15 Mar-2024", "2024-03-15"),  # 15 March to the end of 2024
+        ("15 Mar/2024", "2024-03-15"),  # 15 March, and 2024
+        ("Mar 15-2024", "2024-03-15"),  # 15 March to the end of 2024
+        ("Mar 15/2024", "2024-03-15"),
+        ("Mar-15 2024", "2024-03-15"),  # March 2015
+        ("Mar-15, 2024", "2024-03-15"),  # March 2015, and 2024
+        ("2024-Mar-15", "2024-03-15"),  # 2024, and March 2015
+        ("2024/Mar/15", "2024-03-15"),  # nothing
+        ("2024.Mar.15", "2024-03-15"),  # 15 March this year
+        ("15-Mar", "2026-03-15"),  # March
+        ("1-Mar to 15-Mar", "2026-03-01..2026-03-15"),
+        # Still what they were: a dash alone settles "Mar-15" as a month, and a spaced dash
+        # after the day is a span, as after any label.
+        ("Mar-15", "2015-03"),
+        ("15 Mar - 2024", "2024-03-15..2024-12-31"),
     ]),
     ("a weekday with its date", TODAY, CAL, [
         ("Friday, 15 March 2024", "2024-03-15"),
@@ -123,6 +164,24 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("Sept., 2013", "2013-09"),
         ("Jan. 2024", "2024-01"),
         ("of month FEB.2018", "2018-02"),
+        # A month and its year beside it are one period.
+        ("June in 2024", "2024-06"),
+        ("Mar/2024", "2024-03"),
+        ("June/FY24", "2023-06"),
+        ("Mar. FY24", "2024-03"),
+        ("Mar., FY24", "2024-03"),
+        ("2024 March", "2024-03"),
+        ("2024-Mar", "2024-03"),  # was January to March 2024
+        ("2024/March", "2024-03"),
+        ("2024 - March", "2024-03"),  # the year first is a heading, as in "FY24 - Q3"
+        ("FY24 - June", "2023-06"),
+        ("15th of March/2024", "2024-03-15"),
+        # Still apart: a spaced dash after the month is a span, and a full stop after a
+        # month's full name ends a sentence. REGRESSION: "in March. 15 people came" was 15
+        # March, in the token reader before release.
+        ("June - 2024", "2024-06..2024-12"),
+        ("in March. 2024 was good", "2026-03"),
+        ("in March. 15 people came", "2026-03"),
     ]),
     ("years", TODAY, CAL, [
         ("in 2024", "2024"),
@@ -137,6 +196,8 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the 1998's figures", "1998"),
         ("in '24", "2024"),
         ("the year '24", "2024"),
+        ("yr 2024", "2024"),
+        ("throughout 2024", "2024"),
     ]),
     ("fiscal years", TODAY, CAL, [
         ("FY24", "2023-04..2024-03"),
@@ -211,6 +272,30 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the quarter ended 31 March 2024", "2024-01..2024-03"),
         ("quarter ended 31/03/2024", "2024-01..2024-03"),
         ("the first 3 quarters of 2024", "2024-01..2024-09"),
+        # A label and its year beside it are one period -- not two periods, nor a span from
+        # this year's quarter to the whole year.
+        ("Q3 in 2024", "2024-07..2024-09"),
+        ("Q3/FY24", "2023-10..2023-12"),
+        ("Qtr 3-2024", "2024-07..2024-09"),
+        ("third quarter in FY 2024-25", "2024-10..2024-12"),
+        ("FY 2024 Qtr 3", "2023-10..2023-12"),
+        ("FY 2024-25 - Qtr 3", "2024-10..2024-12"),
+        ("2024 third quarter", "2024-07..2024-09"),
+        ("2024-3Q", "2024-07..2024-09"),  # REGRESSION: March 2024
+        ("2024-1H", "2024-01..2024-06"),  # REGRESSION: January 2024
+        ("2024/1H", "2024-01..2024-06"),
+        ("1HFY24", "2023-04..2023-09"),
+        ("1HCY 2024", "2024-01..2024-06"),
+        ("1H FY-24", "2023-04..2023-09"),
+        ("1H fiscal 2024", "2023-04..2023-09"),
+        ("1H calendar year 2024", "2024-01..2024-06"),
+        ("Q1 and Q3 in 2024", "2024-01..2024-03 ; 2024-07..2024-09"),
+        # Still spans: "to" says so, so does a spaced dash after the label -- the way "June
+        # - FY25" is written -- and so does a quarter with a year of its own.
+        ("Q3 to 2024", "2024-07..2024-12"),
+        ("Q3 - 2024", "2024-07..2024-12"),
+        ("Q3 - FY24", "2023-10..2024-03"),
+        ("2023 - H2 2024", "2023-01..2024-12"),
     ]),
     ("parts of a period", TODAY, CAL, [
         ("early 2024", "2024-01..2024-04"),
@@ -230,6 +315,39 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("year end 2024", "2024"),
         ("year-end 2024", "2024"),
         ("the second half of the match", "~"),
+        # Each was nothing, part of itself, or a different period, in 2.1.0.
+        ("first-half of March 2024", "2024-03-01..2024-03-15"),  # H1 2024: January to June
+        ("the back half of 2024", "2024-07..2024-12"),
+        ("the early part of 2024", "2024-01..2024-04"),
+        ("the latter part of 2024", "2024-09..2024-12"),
+        ("end of 1Q 2024", "2024-03"),
+        ("end of the first quarter of 2024", "2024-03"),
+        ("start of Mar-24", "2024-03-01..2024-03-10"),  # March 2026
+        ("end-of-month", "2026-10-21..2026-10-31"),
+        ("E.O.M.", "2026-10-21..2026-10-31"),
+        ("2024 year end", "2024"),  # the end of 2026
+        ("Q1-end 2024", "2024-01..2024-03"),  # 2024, the whole year
+        ("last day of month", "2026-10-31"),  # yesterday
+        ("last business day of month", "2026-10-30"),  # yesterday
+        ("last workday of the month", "2026-10-30"),
+        ("last Friday of month", "2026-10-30"),  # last week's Friday
+        ("the 3rd Thurs. of Nov.", "2026-11-19"),
+        ("first wk of April 2024", "2024-04-01..2024-04-07"),
+        ("last 3 mths of 2024", "2024-10..2024-12"),
+        ("15th of the month", "2026-10-15"),
+        ("the 1st of the next month", "2026-11-01"),
+        ("1st to the 15th of March 2024", "2024-03-01..2024-03-15"),
+        ("wc 5 Oct 2026", "2026-10-05..2026-10-11"),
+        ("week commencing Monday 5 October 2026", "2026-10-05..2026-10-11"),
+        ("QE June 2024", "2024-04..2024-06"),
+        ("YE March 2024", "2023-04..2024-03"),
+        ("FYE March 2024", "2023-04..2024-03"),
+        ("12M to March 2024", "2023-04..2024-03"),
+        ("6M to June 2024", "2024-01..2024-06"),
+        ("the 12-month period ended March 2024", "2023-04..2024-03"),
+        # Unchanged: "starting" without "of" is since; a plural unit is not a period.
+        ("starting March 2024", "2024-03.."),
+        ("the first Monday in months", "-"),
     ]),
     ("spans of years", TODAY, CAL, [
         ("from 2012 to 2013", "2012..2013"),
@@ -288,6 +406,11 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("between March 1st and March 15th, 2024", "2024-03-01..2024-03-15"),
         ("from start of 2012 to end of 2013", "2012..2013"),
         ("June, 2013 to August, 2013", "2013-06..2013-08"),
+        ("Jun FY25 - 15 March", "2024-06-01..2025-03-15"),
+        ("Jun FY25 - 03/04/2024", "2024-06 ; 2024-04-03"),  # runs backwards: two, and why
+        ("Jun FY25 - 2023", "2024-06 ; 2023"),
+        ("March 15 to 03/04/2024", "2024-03-15..2024-04-03"),
+        ("March 15, 2024-03-15", "2024-03-15 ; 2024-03-15"),
     ]),
     ("spans up to now", TODAY, CAL, [
         ("2012 to date", "2012-01-01..2026-10-16"),
@@ -302,6 +425,40 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("2024 YTD", "2024"),
         ("the report is up to date", "-"),
         ("we want to present the results", "-"),
+        # Each was nothing, two dates, or a different period, in 2.1.0.
+        ("from 01/06/2018 till date", "2018-06-01..2026-10-16"),  # open-ended: its end lost
+        ("since 1 June 2018 till date", "2018-06-01..2026-10-16"),
+        ("1 June 2018 up till now", "2018-06-01..2026-10-16"),
+        ("1 June 2018 till present", "2018-06-01..2026-10-16"),
+        ("1 June 2018 to-date", "2018-06-01..2026-10-16"),
+        ("1 June 2018 onwards till date", "2018-06-01..2026-10-16"),
+        ("1 June 2018 through to today", "2018-06-01..2026-10-16"),
+        ("till present", "..2026-10-16"),
+        ("as of now", "2026-10-16"),
+        ("YTD", "2026-01-01..2026-10-16"),
+        ("year-to-date", "2026-01-01..2026-10-16"),
+        ("Y-T-D", "2026-01-01..2026-10-16"),
+        ("so far this year", "2026-01-01..2026-10-16"),
+        ("this quarter so far", "2026-10-01..2026-10-16"),  # was the whole quarter
+        ("WTD", "2026-10-12..2026-10-16"),
+        ("fiscal YTD", "2026-04-01..2026-10-16"),  # was the calendar year to date
+        ("fiscal year to date", "2026-04-01..2026-10-16"),
+        ("FYTD", "2026-04-01..2026-10-16"),
+        ("FY to date", "2026-04-01..2026-10-16"),
+        ("CYTD", "2026-01-01..2026-10-16"),
+        ("LYTD", "2025-01-01..2025-10-16"),
+        ("YTD last year", "2025-01-01..2025-10-16"),
+        ("last MTD", "2026-09-01..2026-09-16"),  # the same days last month: was a year back
+        ("MTD last month", "2026-09-01..2026-09-16"),
+        ("last QTD", "2026-07-01..2026-07-16"),
+        ("last year's MTD", "2025-10-01..2025-10-16"),
+        ("2024-YTD", "2024"),  # was 2024 to today
+        ("YTD for 2024", "2024"),
+        ("YTD through March 2024", "2024-01..2024-03"),
+        ("March 2024 YTD", "2024-01..2024-03"),
+        ("YTD Mar-24", "2024-01..2024-03"),
+        # Still two: a comma lists, and "to" spans.
+        ("YTD, 2024", "2026-01-01..2026-10-16 ; 2024"),
     ]),
     ("open-ended", TODAY, CAL, [
         ("since 2012", "2012.."),
@@ -411,6 +568,41 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the other day", "!"),
         ("some time ago", "!"),
         ("every Monday", "!"),  # a recurrence, not a period
+        ("every first Monday of the month", "!"),  # was this month's first Monday
+        ("the past few weeks", "!"),
+        ("in recent months", "!"),
+        ("a while back", "!"),
+        ("every Monday in March 2024", "2024-03"),  # the Mondays fall inside it
+        # Each was nothing, or read in part, in 2.1.0.
+        ("last 3months", "2026-07..2026-09"),  # a count against its unit
+        ("3mos ago", "2026-07"),
+        ("in 3days", "2026-10-19"),
+        ("trailing 12-month revenue", "2025-10..2026-09"),
+        ("3qtrs ago", "2026-01..2026-03"),  # REGRESSION: the third quarter of this year
+        ("last 3 mths", "2026-07..2026-09"),
+        ("last mth", "2026-09"),
+        ("prev month", "2026-09"),
+        ("last Weds", "2026-10-14"),
+        ("yday", "2026-10-15"),
+        ("y'day", "2026-10-15"),
+        ("tmrw", "2026-10-17"),
+        ("day before yday", "2026-10-14"),
+        ("last week Fri", "2026-10-09"),  # the week came back, the day lost
+        ("last week's Friday", "2026-10-09"),
+        ("Fri. last week", "2026-10-09"),
+        ("this week on Monday", "2026-10-12"),
+        ("last 5 biz days", "2026-10-09..2026-10-15"),
+        ("5 workdays ago", "2026-10-09"),
+        ("next workday", "2026-10-19"),
+        ("same month of last year", "2025-10"),  # last year, whole
+        ("same month a year ago", "2025-10"),
+        ("same quarter LY", "2025-10..2025-12"),
+        ("this wknd", "2026-10-17..2026-10-18"),
+        ("a couple of weeks ago", "2026-09-28..2026-10-04"),
+        ("last couple of months", "2026-08..2026-09"),
+        # Single letters stay unread: "3m" is minutes or millions as often as months.
+        ("3m ago", "-"),
+        ("last 3 m", "-"),
     ]),
     ("counted from another date", TODAY, CAL, [
         ("3 days before 15 March 2024", "2024-03-12"),
@@ -446,6 +638,12 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("academic year 2015-16", "!"),
         ("the 2015-16 school year", "!"),
         ("2015–2016", "2015..2016"),  # with no such word, still the years
+        # Each was two calendar years, or the whole of 2024, in 2.1.0.
+        ("the summer months of 2024", "!"),
+        ("AY 2015-16", "!"),
+        ("the 2015-16 NBA season", "!"),
+        ("the 2015-16 campaign", "!"),
+        ("2015-16 sales by season", "2015..2016"),  # the years, by season
     ]),
     ("not dates", TODAY, CAL, [
         ("3/4 cup of flour", "-"),
