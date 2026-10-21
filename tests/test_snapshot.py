@@ -132,6 +132,10 @@ PHRASES = [
     "last day of month", "first-half of March 2024", "2024 year end", "QE June 2024",
     "YE March 2024", "end-of-month", "wc 5 Oct 2026", "last Friday of month",
     "15th of the month", "start of Mar-24",
+    # numbers, and what is declined on purpose
+    "03-2024", "2024 week 11", "W11-2024", "week number 11 of 2024", "weeks 11-12 2024",
+    "yr 2024", "throughout 2024", "every first Monday of the month", "the past few weeks",
+    "a while back", "the summer months of 2024", "the 2015-16 NBA season",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

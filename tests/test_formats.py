@@ -58,6 +58,20 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("DATE '2024-03-15'", "2024-03-15"),
         ("'2024-03-15'", "2024-03-15"),
         ("ticket 2024-03-15-001", "2024-03-15"),
+        # Each was nothing, or read wrong, in 2.1.0.
+        ("03-2024", "2024-03"),
+        ("2024 week 11", "2024-03-11..2024-03-17"),  # was week 11 of this year
+        ("2024-wk11", "2024-03-11..2024-03-17"),
+        ("W11-2024", "2024-03-11..2024-03-17"),  # was the week to the end of 2024
+        ("week 11-2024", "2024-03-11..2024-03-17"),
+        ("week number 11 of 2024", "2024-03-11..2024-03-17"),  # was 11 January
+        ("week no. 11 2024", "2024-03-11..2024-03-17"),
+        ("weeks 11-12 2024", "2024-03-11..2024-03-24"),  # was week 11 alone
+        ("week 11 to week 12 2024", "2024-03-11..2024-03-24"),
+        # Left alone: digits with nothing round them, an identifier, an amount.
+        ("20240315", "-"),
+        ("sales_2024", "-"),
+        ("total 2024.03", "-"),
     ]),
     ("written days", TODAY, CAL, [
         ("15 March 2024", "2024-03-15"),
@@ -182,6 +196,8 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the 1998's figures", "1998"),
         ("in '24", "2024"),
         ("the year '24", "2024"),
+        ("yr 2024", "2024"),
+        ("throughout 2024", "2024"),
     ]),
     ("fiscal years", TODAY, CAL, [
         ("FY24", "2023-04..2024-03"),
@@ -552,6 +568,11 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the other day", "!"),
         ("some time ago", "!"),
         ("every Monday", "!"),  # a recurrence, not a period
+        ("every first Monday of the month", "!"),  # was this month's first Monday
+        ("the past few weeks", "!"),
+        ("in recent months", "!"),
+        ("a while back", "!"),
+        ("every Monday in March 2024", "2024-03"),  # the Mondays fall inside it
         # Each was nothing, or read in part, in 2.1.0.
         ("last 3months", "2026-07..2026-09"),  # a count against its unit
         ("3mos ago", "2026-07"),
@@ -617,6 +638,12 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("academic year 2015-16", "!"),
         ("the 2015-16 school year", "!"),
         ("2015–2016", "2015..2016"),  # with no such word, still the years
+        # Each was two calendar years, or the whole of 2024, in 2.1.0.
+        ("the summer months of 2024", "!"),
+        ("AY 2015-16", "!"),
+        ("the 2015-16 NBA season", "!"),
+        ("the 2015-16 campaign", "!"),
+        ("2015-16 sales by season", "2015..2016"),  # the years, by season
     ]),
     ("not dates", TODAY, CAL, [
         ("3/4 cup of flour", "-"),

@@ -82,10 +82,12 @@ _DIGIT = re.compile(r"\d")
 
 
 #: Dates no trigger word finds: "Y-T-D", "M.T.D.", split into words, are single letters,
-#: which would let every "don't" through; and "as of now" has only "now", in every text.
-#: Looked for whole instead.
-_SPELT_TO_DATE = re.compile(
-    r"\b[ymqw][.-]t[.-]?d\b|\bas\s+(?:of|at)\s+now\b|\bup\s+to\s+now\b|\be\.o\.[mqyw]\b",
+#: which would let every "don't" through; "as of now" has only "now", in every text; and
+#: "a while back" only words as common. Looked for whole instead. REGRESSION: "a while
+#: back" and "some time back" never reached the rule that says why they are not answered.
+_UNTRIGGERED = re.compile(
+    r"\b[ymqw][.-]t[.-]?d\b|\bas\s+(?:of|at)\s+now\b|\bup\s+to\s+now\b|\be\.o\.[mqyw]\b"
+    r"|\b(?:a\s+(?:little\s+)?while|some\s*time)\s+back\b",
     re.IGNORECASE,
 )
 
@@ -96,7 +98,7 @@ def _might_hold_a_date(text: str) -> bool:
         return True
     if not _TRIGGERS.isdisjoint(_WORDS.findall(text.lower())):
         return True
-    return _SPELT_TO_DATE.search(text) is not None
+    return _UNTRIGGERED.search(text) is not None
 
 
 try:  # Python 3.11 moved the regex parser; it is the same module either way.
@@ -341,7 +343,7 @@ _BETWEEN_LEAD = re.compile(
 
 #: Words that make a bare month or year read as a date rather than a noun.
 _CUE = re.compile(
-    r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|between|before|after|"
+    r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|throughout|between|before|after|"
     r"no\s+(?:later|earlier)\s+than|"
     r"vs|versus|compared\s+(?:to|with)|"
     r"sales|revenue|profit|data|report|numbers|figures|results|performance|growth|"

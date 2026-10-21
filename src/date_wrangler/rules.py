@@ -60,7 +60,7 @@ _FY_WORD = r"(?:f\.?y\.?|financial\s+year|fiscal\s+year)"
 #: "fiscal 2024", as US filings write it: the word alone, straight before its year.
 _FY_BARE = r"(?:fiscal|financial)(?=\s+'?\d)"
 _CY_WORD = r"(?:c\.?y\.?|calendar\s+year)"
-_YEAR_WORD = rf"(?:{_FY_WORD}|{_FY_BARE}|{_CY_WORD}|year)"
+_YEAR_WORD = rf"(?:{_FY_WORD}|{_FY_BARE}|{_CY_WORD}|year|yr)"
 #: A basis said outright in front of a unit: "this fiscal year", "last calendar quarter".
 _BASIS_WORD = r"(?:fiscal|financial|calendar)"
 
@@ -102,6 +102,14 @@ _YEAR = (
 _YEAR_RUN = r"(?:19|20)\d{2}(?:\s*[-/]\s*(?:19|20)?\d{2})?"
 #: Words that make the years before or after them a name: "the 2015-16 season".
 _SEASON_WORD = r"(?:season|academic\s+year|school\s+year|session)"
+#: Up to two words naming whose season it is -- "the 2015-16 NBA season", "the 2015-16 flu
+#: season" -- but not a word that ties the years to something else: "2015-16 sales by
+#: season" is two years of sales. REGRESSION: the league's season was two calendar years.
+_SEASON_OWNER = (
+    r"(?:(?!(?:by|per|and|or|of|in|for|the|a|an|to|vs|versus|with|each|every|this|that"
+    r"|than|from|over|across|on|at|since|until|till|through|between|last|next)\b)[a-z]+\s+)"
+    r"{0,2}"
+)
 
 #: A year standing alone. Here the century is all that separates a date from a
 #: quantity, so "5000" stays a number.
@@ -503,7 +511,7 @@ def _p_split_year(text: str, cfg: WranglerConfig) -> Spec | Parts | None:
 
 
 def _p_numeric_month(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"2024-03", "2024/03", "03/2024" -- a month written as numbers.
+    """"2024-03", "2024/03", "03/2024", "03-2024" -- a month written as numbers.
 
     "2011-12" is also how a fiscal year is written. year_basis decides, as it does for
     "2024-25": on a fiscal basis it is the fiscal year 2011-12, on a calendar one December
@@ -511,7 +519,7 @@ def _p_numeric_month(text: str, cfg: WranglerConfig) -> Spec | None:
     """
     t = text.strip()
     m = re.fullmatch(r"((?:19|20)\d{2})[-/](\d{1,2})", t) or re.fullmatch(
-        r"(\d{1,2})/((?:19|20)\d{2})", t
+        r"(\d{1,2})[-/]((?:19|20)\d{2})", t
     )
     if not m:
         return None
@@ -1301,13 +1309,22 @@ def _p_edge_day(text: str, cfg: WranglerConfig) -> Spec | None:
 #: abbreviations, which turn up in any supply chain that touches Europe.
 _WEEK_WORD = r"(?:calendar\s+week|cal\s+week|week|wk|cw|kw)"
 #: "week 42, 2026" is how a spreadsheet heading reads; the comma is not the
-#: period's, so it is allowed here and stripped before the year is read.
-_WEEK_YEAR_SUFFIX = rf"(?:\s*,)?{_YEAR_SUFFIX}"
+#: period's, so it is allowed here and stripped before the year is read. A tight dash or
+#: slash joins the year as it does a quarter's: REGRESSION -- "W11-2024" and "week 11-2024"
+#: ran from the week to the end of 2024.
+_WEEK_YEAR_SUFFIX = rf"(?:[-/](?:19|20)\d{{2}}(?!\d)|(?:\s*,)?{_YEAR_SUFFIX})"
+#: "week 11", "week #11", "week no. 11", "week number 11". REGRESSION: "week number 11 of
+#: 2024" was the 11th of January.
+_WEEK_NO = r"\s*\.?\s*(?:#|no\.?|num(?:ber)?\.?)?\s*"
+#: "2024-W11", and the year in front of a week written out: "2024wk11", "2024 week 11".
+#: REGRESSION: "2024 week 11" was week 11 of this year, and "2024-wk11" ran from the
+#: start of 2024 to the week.
+_YEAR_WEEK = r"((?:19|20)\d{2})\s*-?\s*(?:w|wk|week)\s*(\d{1,2})\b"
 
 
 def _p_iso_week_compact(text: str, cfg: WranglerConfig) -> Spec | None:
     """"2026-W42", "2026W42" -- the ISO 8601 form, which carries its own year."""
-    m = re.match(r"\s*((?:19|20)\d{2})\s*-?\s*w\s*(\d{1,2})\b", text, re.IGNORECASE)
+    m = re.match(rf"\s*{_YEAR_WEEK}", text, re.IGNORECASE)
     if not m:
         return None
     week = int(m.group(2))
@@ -1318,14 +1335,41 @@ def _p_iso_week_compact(text: str, cfg: WranglerConfig) -> Spec | None:
 
 def _p_week_number(text: str, cfg: WranglerConfig) -> Spec | None:
     """"week 42", "wk 42", "CW42", "week 42 of 2026"."""
-    m = re.match(rf"\s*{_WEEK_WORD}\s*\.?\s*#?\s*(\d{{1,2}})\b(.*)$", text, re.IGNORECASE)
+    m = re.match(rf"\s*{_WEEK_WORD}{_WEEK_NO}(\d{{1,2}})\b(.*)$", text, re.IGNORECASE)
     if not m:
         return None
     week = int(m.group(1))
     if not 1 <= week <= 53:
         return None
-    year, _ = _year_from_suffix(m.group(2).lstrip(" ,"), cfg)
+    year, _ = _year_from_suffix(m.group(2).lstrip(" ,-/"), cfg)
     return Spec(Kind.ISO_WEEK, year=year, index=week)
+
+
+#: Between the two numbers of a run of weeks: "week 11-12", "weeks 11 to 12". Not "week
+#: 11 to week 12", which is two weeks already, joined as any two dates are.
+_WEEK_JOIN = r"\s*(?:-|to|through|thru|till|until)\s*"
+
+
+def _p_week_span(text: str, cfg: WranglerConfig) -> Parts | None:
+    """"week 11-12", "weeks 11 to 12 2024": both ends, each its own, joined as a span.
+
+    REGRESSION: "week 11-12" was week 11 alone, and "weeks 11-12" nothing.
+    """
+    m = re.match(
+        rf"\s*{_WEEK_WORD}s?{_WEEK_NO}(\d{{1,2}}){_WEEK_JOIN}(\d{{1,2}})\b(.*)$",
+        text,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    first, last = int(m.group(1)), int(m.group(2))
+    if not 1 <= first < last <= 53:
+        return None
+    year, _ = _year_from_suffix(m.group(3).lstrip(" ,-/"), cfg)
+    return [
+        (Spec(Kind.ISO_WEEK, year=year, index=first), 0, m.end(1)),
+        (Spec(Kind.ISO_WEEK, year=year, index=last), m.start(2), len(text.rstrip())),
+    ]
 
 
 def _p_week_bare(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -1345,7 +1389,7 @@ def _p_week_bare(text: str, cfg: WranglerConfig) -> Spec | None:
     week = int(m.group(1))
     if not 1 <= week <= 53:
         return None
-    year, _ = _year_from_suffix(m.group(2).lstrip(" ,"), cfg)
+    year, _ = _year_from_suffix(m.group(2).lstrip(" ,-/"), cfg)
     return Spec(Kind.ISO_WEEK, year=year, index=week)
 
 
@@ -1895,9 +1939,12 @@ RULES: tuple[Rule, ...] = (
     # dates. A season runs over months of its own, so 2015 to 2016 overstates it by a year
     # and the calendar cannot say which months. REGRESSION: read as Jan 2015 to Dec 2016,
     # where the data held it as a label. Ahead of every rule that would take the years.
+    # "the 2015-16 campaign" and "the 2015-16 term" as well, and "AY 2015-16", "SY 2015-16"
+    # for an academic or school year. REGRESSION: each was two calendar years.
     Rule(
         "season_label",
-        rf"\b(?:the\s+)?{_YEAR_RUN}\s+{_SEASON_WORD}s?\b|\b{_SEASON_WORD}\s+(?:of\s+)?{_YEAR_RUN}\b",
+        rf"\b(?:the\s+)?{_YEAR_RUN}\s+{_SEASON_OWNER}(?:{_SEASON_WORD}|campaign|term)s?\b"
+        rf"|\b(?:{_SEASON_WORD}|ay|sy)\s+(?:of\s+)?{_YEAR_RUN}\b",
         _p_decline(
             "{text!r} names a season, which runs over months of its own -- a sport's, a "
             "school's -- so it is read as a label, not as dates"
@@ -1909,11 +1956,12 @@ RULES: tuple[Rule, ...] = (
         r"\b\d{2,4}\s*[-/]\s*'?\d{2,4}\s+(?:financial|fiscal)\s+year\b",
         _p_fy_range,
     ),
-    # A month in numbers -- "2024-03", "03/2024" -- and not the start of a longer date, nor
-    # a quarter or half: REGRESSION -- "2024-3Q" was March 2024 and "2024-1H" January.
+    # A month in numbers -- "2024-03", "03/2024", "03-2024" -- and not the start of a longer
+    # date, nor a quarter or half: REGRESSION -- "2024-3Q" was March 2024 and "2024-1H"
+    # January. Not with a dot: "2024.03" and "3.2024" are amounts as often as months.
     Rule(
         "numeric_month",
-        r"\b(?:(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])|(?:0?[1-9]|1[0-2])/(?:19|20)\d{2})"
+        r"\b(?:(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])|(?:0?[1-9]|1[0-2])[-/](?:19|20)\d{2})"
         r"(?![\d/.-]|[qh](?![a-z]))",
         _p_numeric_month,
     ),
@@ -2055,10 +2103,16 @@ RULES: tuple[Rule, ...] = (
     # Before "iso", whose \d{4}-\d{1,2} opening would otherwise claim "2026-W42" as far
     # as the dash and leave "W42" behind. The week date first, or "2024-W11-5" is the week.
     Rule("iso_week_day", r"\b(?:19|20)\d{2}-?w\d{2}-?[1-7]\b", _p_iso_week_day),
-    Rule("iso_week_compact", r"\b(?:19|20)\d{2}\s*-?\s*w\s*\d{1,2}\b", _p_iso_week_compact),
+    Rule("iso_week_compact", rf"\b{_YEAR_WEEK}", _p_iso_week_compact),
+    # Ahead of week_number, which would take "week 11" and leave "-12".
+    Rule(
+        "week_span",
+        rf"\b{_WEEK_WORD}s?{_WEEK_NO}\d{{1,2}}{_WEEK_JOIN}\d{{1,2}}\b{_WEEK_YEAR_SUFFIX}",
+        _p_week_span,
+    ),
     Rule(
         "week_number",
-        rf"\b{_WEEK_WORD}\s*\.?\s*#?\s*\d{{1,2}}\b{_WEEK_YEAR_SUFFIX}",
+        rf"\b{_WEEK_WORD}{_WEEK_NO}\d{{1,2}}\b{_WEEK_YEAR_SUFFIX}",
         _p_week_number,
     ),
     # Ahead of month_day_year, which takes "March 1" out of "March 1-15" from the same
@@ -2190,23 +2244,35 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule("part_of_day", r"\b(?:this\s+(?:morning|afternoon|evening)|tonight)\b", _p_part_of_day),
     # Read only to say why there is no answer.
+    # "the past few weeks", "in recent months", "a few weeks from now" as well: no answer
+    # either way, but now a reason.
     Rule(
         "vague",
-        r"\b(?:recently|lately|the\s+other\s+day|some\s+time\s+(?:ago|back)"
-        r"|a\s+while\s+(?:ago|back)"
-        r"|(?:a\s+)?(?:few|several|some|many)\s+(?:days?|weeks?|months?|years?)\s+(?:ago|back))\b",
+        r"\b(?:recently|lately|the\s+other\s+day|some\s*time\s+(?:ago|back)"
+        r"|a\s+(?:little\s+)?while\s+(?:ago|back)|(?:not\s+)?long\s+ago|ages\s+ago"
+        r"|a\s+long\s+time\s+ago"
+        r"|(?:a\s+)?(?:few|several|some|many|number\s+of)\s+(?:days?|weeks?|months?|years?)"
+        r"\s+(?:ago|back|from\s+now)"
+        r"|(?:in\s+)?recent\s+(?:days|weeks|months|years)"
+        r"|(?:(?:over|in|during)\s+)?(?:the\s+)?(?:past|last|previous|next|coming)"
+        r"\s+(?:few|several|many)\s+(?:days|weeks|months|quarters|years)"
+        r"|in\s+(?:a\s+)?(?:few|several)\s+(?:days|weeks|months|years))\b",
         _p_decline("{text!r} is too vague to answer: it names no period"),
     ),
+    # "every first Monday of the month" as well. REGRESSION: it was this month's first
+    # Monday.
     Rule(
         "recurrence",
-        rf"\bevery\s+(?:other\s+)?(?:{_WEEKDAY_ALT}|day|week|fortnight|month|quarter|year"
-        rf"|weekday|weekend|{_NUM}\s+{_UNIT})\b",
+        rf"\bevery\s+(?:other\s+)?(?:(?:{_NTH}\s+)?{_WEEKDAY_ALT}|day|week|fortnight|month"
+        rf"|quarter|year|weekday|weekend|{_NUM}\s+{_UNIT})\b",
         _p_decline("{text!r} recurs; it is not one period, so it is not resolved"),
     ),
+    # "the summer months of 2024" and "summer-2024" as well. REGRESSION: the first was the
+    # whole of 2024.
     Rule(
         "season",
         r"\b(?:(?:last|this|next|past|coming|the)\s+)?(?:spring|summer|autumn|fall|winter)"
-        r"\s+(?:of\s+)?(?:(?:19|20)\d{2}(?:\s*/\s*\d{2,4})?|'\d{2})\b"
+        r"(?:\s+months)?(?:\s+(?:of\s+)?|-)(?:(?:19|20)\d{2}(?:\s*/\s*\d{2,4})?|'\d{2})\b"
         r"|\b(?:last|this|next|past|coming)\s+(?:spring|summer|autumn|fall|winter)\b",
         _p_decline(
             "{text!r}: seasons fall in different months north and south of the equator, so "

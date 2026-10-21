@@ -42,8 +42,28 @@ The full notes for each release, with examples, are on the
   15th of March`, `wc 5 Oct`, `week commencing Monday 5 October`, and reporting shorthand
   `QE June 2024`, `YE March 2024`, `FYE March 2024`, `12M to March 2024`, `6M to June
   2024`, `the 12-month period ended March 2024`. `tests/test_part_spellings.py` holds 165.
+- Numbers written other ways: `03-2024`, `2024wk11`, `week no. 11 2024`, `W11/2024`,
+  `yr 2024`, `throughout 2024`, and runs of weeks — `weeks 11-12 2024`, `week 11 to 12`.
+  Left alone on purpose: a run of digits (`20240315`, as likely an order number), parts
+  joined by underscores (`sales_2024` is a table), a month with a dot (`2024.03` is as
+  likely an amount) and `2024M03` (as likely square metres). `tests/test_number_spellings.py`
+  holds 104 spellings, and 16 numbers that must stay numbers.
+- Declined with a reason, where before there was nothing: `the past few weeks`, `in recent
+  months`, `in the next few days`, `a few weeks from now`, `not long ago`, `a while back`,
+  `some time back`, `summer-2024`, `the 2015-16 flu season`. `tests/test_declined_spellings.py`
+  holds 77 phrases that must stay unanswered.
 
 ### Fixed
+- `2024 week 11` was week 11 of this year; `week number 11 of 2024` was 11 January;
+  `W11-2024` and `week 11-2024` ran from the week to the end of 2024, and `2024-wk11` from
+  the start of 2024 to the week; `week 11-12` was week 11 alone. Each is its week, or its
+  run of weeks, in 2024.
+- `every first Monday of the month` was this month's first Monday, and `the summer months
+  of 2024` the whole of 2024; both are declined, as `every Monday` and `summer 2024` are.
+  `every Monday in March` is still March.
+- `AY 2015-16`, `SY 2015-16`, `the 2015-16 NBA season`, `the 2015-16 Premier League
+  season`, `the 2015-16 campaign` and `the 2015-16 term` were two calendar years; they are
+  labels, as `the 2015-16 season` is. `2015-16 sales by season` is still the years.
 - `2024-Mar` and `2024 - March` were January to March 2024, and `FY24 - June` the start
   of FY24 to June; they are the month, as `FY24 - Q3` is the quarter.
 - `2024-3Q` was March 2024, and `2024-1H` January 2024.

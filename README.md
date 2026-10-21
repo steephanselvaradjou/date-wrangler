@@ -470,7 +470,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024`, and as reports abbreviate them: `QE June 2024`, `YE March 2024`, `FYE March 2024`, `12M to March 2024`, `6M to June 2024` |
 | Absolute | `2024-03-15`, `15 January 2024`, `January 15, 2024`, `March 15 2024`, `2024 March 15`, `03/04/2024`, `01-04-2018`, `13.06.18` |
 | A comma or weekday inside the date | `June, 2013`, `12 March, 2014`, `Q1, 2024`, `Friday, 15 March 2024` — one date, and a weekday that does not match it is flagged |
-| Months as numbers | `2024-03`, `2024/03`, `03/2024` |
+| Months as numbers | `2024-03`, `2024/03`, `03/2024`, `03-2024` |
 | Abbreviations and run-together forms | `Sept. 2013`, `Mar. 15, 2024`, `FEB.2018`, `15MAR2024`, `13june2018`, `01may 2018`, `may'18`, `June' 2018`, `Mar-15-2024` |
 | Ranges | `Q1 to Q2`, `Jan–Mar`, `from April to September 2024`, `Nov to Feb` (wraps), `2024-03-15/2024-03-20`, `1-4-2018-31-5-2018`, `the years 2012 through 2014` |
 | Up to today | `01/06/2018 to till date`, `from 01/06/2018 till date`, `April 2015 to till date`, `1st march 2018 to as on date`, `from 2012 to present`, `2012-present`, `1 June 2018 up till now`, `June 2018 till present`, `1 June 2018 to-date`, `as on date`, `as of now`. A `from` or `since` day with an end written after it ends there, not open-ended |
@@ -489,7 +489,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Unit of a period | `the first week of April`, `first wk of April`, `the last week of March`, `the last 3 months of the year`, `last 3 mths of 2024`, `the last quarter of 2024` |
 | Deadlines | `by 31 March`, `on or before 31 March`, `no later than Friday`, `not before 1 April` |
 | Nth weekday | `first Monday of March`, `last Friday of the month`, `last Friday of month`, `3rd Thursday of November`, `the 3rd Thurs. of Nov.` |
-| Week numbers | `week 42`, `2026-W42`, `CW42`, `KW 42`, `week 42 of 2026` |
+| Week numbers | `week 42`, `2026-W42`, `CW42`, `KW 42`, `week 42 of 2026`, `2026 week 42`, `W42-2026`, `week no. 42`, `weeks 42-43 2026` |
 | Business days | `5 business days ago`, `next business day`, `last business day of the month`, `last 5 biz days`, `next workday` |
 | Same period back | `same quarter last year`, `same month of last year`, `same quarter LY`, `this time last year` |
 | Weekend | `this weekend`, `next weekend`, `last weekend` |
@@ -531,16 +531,18 @@ date, so these are left alone on purpose:
 | not read | why |
 |---|---|
 | `20240315` | indistinguishable from `invoice 20240315` |
+| `sales_2024`, `2024_03_15` | joined by underscores, it is an identifier — a table or a file — not a date |
+| `2024.03`, `3.2024` | a month with a dot is an amount as often as a month; a whole day, `15.03.2024`, is read |
 | `the 3rd floor`, `2nd round` | an ordinal followed by a noun is a position, not a day |
 | `cob` in lower case | corn, not close of business — `COB` is read |
 | `19th century` | centuries are unsupported, and guessing a day would be worse |
 | `Christmas`, `Diwali` | holidays need a locale and a calendar of their own |
-| `every Monday` | recurrence is a different shape from a range — `diagnose` says so |
+| `every Monday`, `every first Monday of the month` | recurrence is a different shape from a range — `diagnose` says so. `every Monday in March` is still March |
 | `within 30 days of the Effective Date` | a duration with no anchor to measure from |
 | `bake for 30 minutes` | durations and times of day are out of scope |
 | `summer 2024`, `last winter` | seasons fall in different months either side of the equator |
-| `the 2015–2016 season`, `academic year 2015-16` | a name with months of its own, not the two years it spans — kept as a label. `2015–2016` on its own is still the years |
-| `recently`, `a few days ago`, `the other day` | too vague to name a period |
+| `the 2015–2016 season`, `academic year 2015-16`, `the 2015-16 NBA season`, `AY 2015-16` | a name with months of its own, not the two years it spans — kept as a label. `2015–2016` on its own is still the years, and so is `2015-16 sales by season` |
+| `recently`, `a few days ago`, `the other day`, `the past few weeks`, `in recent months`, `a while back` | too vague to name a period |
 | `the year before`, on its own | before what? With a date beside it — `2024 vs the year before` — it is read |
 
 Version numbers, prices, phone numbers, invoice IDs, scores and measurements are all left
