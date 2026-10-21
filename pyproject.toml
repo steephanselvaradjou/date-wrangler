@@ -52,6 +52,7 @@ date-wrangler = "date_wrangler.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/steephanselvaradjou/date-wrangler"
+Changelog = "https://github.com/steephanselvaradjou/date-wrangler/blob/main/CHANGELOG.md"
 Issues = "https://github.com/steephanselvaradjou/date-wrangler/issues"
 Source = "https://github.com/steephanselvaradjou/date-wrangler"
 
@@ -66,7 +67,7 @@ packages = ["src/date_wrangler"]
 # Ship the source and the tests, nothing else. Without an explicit list hatchling sweeps
 # in whatever is lying around -- the Hypothesis example database alone added ~600 files.
 [tool.hatch.build.targets.sdist]
-only-include = ["src", "tests", "README.md", "LICENSE", "pyproject.toml"]
+only-include = ["src", "tests", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
 exclude = ["**/.hypothesis", "**/__pycache__", "**/*.pyc"]
 
 [tool.pytest.ini_options]

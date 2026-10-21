@@ -176,6 +176,7 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("Q1 2024-25 vs Q1 2023-24", "2024-04..2024-06 ; 2023-04..2023-06"),
         ("2024-03", "2024-03"),  # not the year after, so a month on any basis
         ("FY2024-25", "2024-04..2025-03"),
+        ("the 2015-16 season", "!"),  # a season is not a fiscal year either
     ]),
     ("quarters and halves", TODAY, CAL, [
         ("Q1 2024", "2024-01..2024-03"),
@@ -436,6 +437,15 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("summer 2024", "!"),  # which months depends on the hemisphere
         ("winter 2023/24", "!"),
         ("last summer", "!"),
+        # A season, a school year: a name with months of its own, not the years it spans.
+        ("the 2015–2016 season", "!"),
+        ("in the 2015/16 season", "!"),
+        ("goals scored in the 2015-16 season", "!"),
+        ("season 2015/2016", "!"),
+        ("the 2020 season", "!"),
+        ("academic year 2015-16", "!"),
+        ("the 2015-16 school year", "!"),
+        ("2015–2016", "2015..2016"),  # with no such word, still the years
     ]),
     ("not dates", TODAY, CAL, [
         ("3/4 cup of flour", "-"),

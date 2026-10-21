@@ -51,6 +51,8 @@ PHRASES = [
     "Jun FY25", "FY25 June", "Jun-FY25", "June FY 2024-25",
     # a split year with no FY: year_basis decides
     "2024-25", "sales 2024-25", "2012/13", "Q3 2024-25", "June 2024-25", "2011-12", "2024-03",
+    # a season names itself: a label, not the years it spans
+    "the 2015–2016 season", "season 2015/16", "academic year 2015-16", "2015–2016",
     # relative
     "today", "yesterday", "tomorrow", "this week", "last week", "next week", "this month",
     "last month", "next month", "this quarter", "last quarter", "next quarter", "this year",

@@ -12,7 +12,8 @@ straight to a query.
      it is one more thing to remember at release time, and it went stale once already.
      tests/test_packaging.py enforces this. -->
 > **Status: stable.** The public API follows semantic versioning: a change that breaks
-> existing callers comes only with a new major version.
+> existing callers comes only with a new major version. What changed in each release is in
+> the [changelog](https://github.com/steephanselvaradjou/date-wrangler/blob/main/CHANGELOG.md).
 
 ## Why another date library
 
@@ -538,6 +539,7 @@ date, so these are left alone on purpose:
 | `within 30 days of the Effective Date` | a duration with no anchor to measure from |
 | `bake for 30 minutes` | durations and times of day are out of scope |
 | `summer 2024`, `last winter` | seasons fall in different months either side of the equator |
+| `the 2015–2016 season`, `academic year 2015-16` | a name with months of its own, not the two years it spans — kept as a label. `2015–2016` on its own is still the years |
 | `recently`, `a few days ago`, `the other day` | too vague to name a period |
 | `the year before`, on its own | before what? With a date beside it — `2024 vs the year before` — it is read |
 
