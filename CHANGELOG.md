@@ -35,6 +35,13 @@ The full notes for each release, with examples, are on the
   and the ends people write after a start date: `till present`, `up till now`, `to-date`,
   `uptill date`, `till dt`, `onwards till date`, `through to today`, `as of now`.
   `tests/test_to_date_spellings.py` holds 382 of them.
+- Parts and edges of a period written other ways: `end-of-month`, `E.O.M.`, `end of 1Q
+  2024`, `end of the first quarter of 2024`, `the back half of 2024`, `the early part of
+  2024`, `last workday of the month`, `the 3rd Thurs. of Nov.`, `first wk of April`,
+  `last 3 mths of 2024`, `15th of the month`, `the 1st of the next month`, `1st to the
+  15th of March`, `wc 5 Oct`, `week commencing Monday 5 October`, and reporting shorthand
+  `QE June 2024`, `YE March 2024`, `FYE March 2024`, `12M to March 2024`, `6M to June
+  2024`, `the 12-month period ended March 2024`. `tests/test_part_spellings.py` holds 165.
 
 ### Fixed
 - `2024-Mar` and `2024 - March` were January to March 2024, and `FY24 - June` the start
@@ -52,6 +59,11 @@ The full notes for each release, with examples, are on the
   year's MTD` is the month so far a year back.
 - `2024-YTD` ran from 2024 to today; it is 2024's year to date, as `2024 YTD` is.
   `this year so far` was the whole year, future included.
+- `last day of month`, `last business day of month` and `last Friday of month` -- no
+  "the" -- were yesterday and last week's Friday; `first-half of March 2024` was January
+  to June 2024; `2024 year end` was the end of this year; `start of Mar-24` was this
+  year's March; `Q1-end 2024` was the whole of 2024 (it is Q1 2024, as `year-end 2024`
+  is the year).
 - `15th-Mar-2024` was 15 October of this year and March 2024; `15 March2024` was
   15 March of this year.
 - A day whose marks change between its parts: `15-Mar 2024`, `15/Mar 2024` and

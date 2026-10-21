@@ -684,9 +684,24 @@ def _p_period_ending(text: str, cfg: WranglerConfig) -> Spec | None:
     and "to" was not read at all, so "six months to June 2024" and "the year to March
     2024" came back as the month alone.
     """
+    # Reporting shorthand, read as its words: "QE June 2024" is the quarter ended June
+    # 2024, "YE"/"FYE" the year ended, "12M to March 2024" twelve months to it; "2024 year
+    # end" is "year end 2024", the year 2024. REGRESSION: that last one was the end of this
+    # year, and the rest read only their month.
+    short = re.match(r"\s*(?:the\s+)?(q/?e|y/?e|fye)\s+(.+)$", text, re.IGNORECASE)
+    if short:
+        unit_word = "quarter" if short.group(1).lower().startswith("q") else "year"
+        return _p_period_ending(f"{unit_word} ended {short.group(2)}", cfg)
+    months = re.match(r"\s*(?:the\s+)?(\d{1,2})\s*m\s+(to|ended|ending)\s+(.+)$", text, re.I)
+    if months:
+        n, word, rest = months.groups()
+        return _p_period_ending(f"{n} months {word} {rest}", cfg)
+    year_first = re.fullmatch(r"\s*((?:19|20)\d{2})\s+year[\s-]+end(?:ing|ed)?\s*", text, re.I)
+    if year_first:
+        return _p_period_ending(f"year end {year_first.group(1)}", cfg)
     m = re.match(
-        rf"\s*(?:the\s+)?(?:({_NUM})\s+)?(half[\s-]?years?|{_FY_WORD}|{_UNIT})(?:\s+|-)"
-        rf"(end(?:ing|ed|s)?|to)\s+(.+)$",
+        rf"\s*(?:the\s+)?(?:({_NUM})\s+)?(half[\s-]?years?|{_FY_WORD}|{_UNIT})(?:\s+period)?"
+        rf"(?:\s+|-)(end(?:ing|ed|s)?|to)\s+(.+)$",
         text,
         re.IGNORECASE,
     )
@@ -1085,22 +1100,37 @@ def _p_this(text: str, cfg: WranglerConfig) -> Spec | None:
 #: Words naming a slice of a period. "middle" before "mid" would never match, so the
 #: longer spelling of each pair comes first.
 _PART_WORDS: tuple[tuple[str, Part], ...] = (
-    (r"first\s+half|1st\s+half", Part.FIRST_HALF),
+    # REGRESSION: "first-half of March 2024" was H1 2024, January to June.
+    (r"first[\s-]+half|1st[\s-]+half|front[\s-]+half", Part.FIRST_HALF),
     # "last half of 2024" was read as "last half" -- the previous half-year, counted back
-    # from today -- plus a stray 2024. It means the second half, as "latter half" does.
-    (r"second\s+half|2nd\s+half|latter\s+half|last\s+half|final\s+half", Part.SECOND_HALF),
-    (r"beginning|start|early", Part.EARLY),
-    (r"middle|mid", Part.MID),
-    (r"end|late|close", Part.LATE),
+    # from today -- plus a stray 2024. It means the second half, as "latter half" does, and
+    # "the back half" in a finance review.
+    (
+        r"second[\s-]+half|2nd[\s-]+half|latter[\s-]+half|last[\s-]+half|final[\s-]+half"
+        r"|back[\s-]+half",
+        Part.SECOND_HALF,
+    ),
+    # "begin", "starting", "begining" only with "of": "starting March" is since March.
+    # The "... part" forms first: the parse takes what follows the word as the period, so
+    # "early" alone would leave "part of 2024" to be read as one.
+    (
+        r"(?:early|earlier|first)\s+part|beginning|start|early"
+        r"|(?:begin|begining|starting)(?=\s+of\b)",
+        Part.EARLY,
+    ),
+    (r"middle\s+part|middle|mid", Part.MID),
+    (r"(?:latter|later|last|final)\s+part|end|late|close", Part.LATE),
 )
 _PART_ALT = "|".join(p for p, _ in _PART_WORDS)
 
 #: The period a part or an ordinal day can be taken from.
 _PART_TARGET = (
-    rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
+    rf"(?:{_MONTH}(?:-\d{{2}}(?:\d{{2}})?(?!\d)|{_YEAR_SUFFIX})"
+    rf"|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}|[1-4]\s*q(?![a-z]){_YEAR_SUFFIX}"
+    rf"|(?:the\s+)?{_ORD}\s+(?:quarter|qtr){_YEAR_SUFFIX}"
     rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_DECADE}|{_YEAR}"
-    rf"|{_DIRWORD}\s+(?:{_BASIS_WORD}\s+)?{_UNIT}"
-    rf"|this\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|{_UNIT})"
+    rf"|(?:the\s+)?{_DIRWORD}\s+(?:{_BASIS_WORD}\s+)?{_UNIT}"
+    rf"|(?:the\s+)?(?:this|current)\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|(?:the\s+)?{_UNIT})"
 )
 
 
@@ -1113,7 +1143,7 @@ def _part_of(text: str) -> Part | None:
 
 #: What separates a part from its period: "mid-March" and "mid March" are the same phrase,
 #: and "end of the month" carries an article the period itself does not want.
-_OF = r"(?:\s*-\s*|\s+)(?:of\s+|in\s+)?(?:the\s+)?"
+_OF = r"(?:\s*-\s*|\s+)(?:(?:of|in)(?:\s*-\s*|\s+))?(?:the\s+)?"  # also "end-of-month"
 
 
 def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
@@ -1123,6 +1153,15 @@ def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
         return None
     if re.fullmatch(_DECADE, tail, re.IGNORECASE):
         return _p_decade(tail, cfg)  # "the early 1990s", "mid-1990s"
+    tail = re.sub(r"^the\s+", "", tail, flags=re.IGNORECASE)  # "the 1st of the next month"
+    dashed = re.fullmatch(rf"({_MONTH})-(\d{{2}}|\d{{4}})", tail, re.IGNORECASE)
+    if dashed:
+        # "start of Mar-24": March 2024. REGRESSION: the year was lost, and it was this
+        # year's March.
+        return Spec(
+            Kind.ABS_MONTH, month=MONTHS[dashed.group(1).lower()],
+            year=_pivot_year(dashed.group(2), cfg),
+        )
     if find_month(tail) is not None:
         # The month rule's own reader, so "the first week of June FY25" is June 2024 with
         # an April year, the same as "June FY25" is.
@@ -1189,7 +1228,10 @@ _NTH_OF = r"\s+(?:of|in)\s+"
 _NTH_TARGET = (
     rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
     rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_YEAR}"
-    rf"|(?:the\s+)?(?:{_DIRWORD}|this|current)\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|the\s+{_UNIT})"
+    rf"|(?:the\s+)?(?:{_DIRWORD}|this|current)\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|the\s+{_UNIT}"
+    # A single unit needs no article: "last day of month". REGRESSION: it fell through to
+    # "last day" -- yesterday. Plurals still do: "the first Monday in months" is not a date.
+    r"|(?:month|mth|quarter|qtr|year|yr|week|wk)(?![a-z]))"
 )
 
 
@@ -1215,7 +1257,7 @@ def _p_nth_weekday(text: str, cfg: WranglerConfig) -> Spec | None:
     month, giving a date three weeks out.
     """
     m = re.match(
-        rf"\s*(?:the\s+)?({_NTH})\s+({_WEEKDAY_ALT}){_NTH_OF}(.+)$", text, re.IGNORECASE
+        rf"\s*(?:the\s+)?({_NTH})\s+({_WEEKDAY_ALT})\.?{_NTH_OF}(.+)$", text, re.IGNORECASE
     )
     if not m:
         return None
@@ -1238,7 +1280,7 @@ def _p_edge_day(text: str, cfg: WranglerConfig) -> Spec | None:
     different one entirely.
     """
     m = re.match(
-        rf"\s*(?:the\s+)?(first|1st|last|final)\s+({_BIZ_WORD}\s+)?day{_NTH_OF}(.+)$",
+        rf"\s*(?:the\s+)?(first|1st|last|final)\s+({_EDGE_BIZ})?(?:day|date){_NTH_OF}(.+)$",
         text,
         re.IGNORECASE,
     )
@@ -1311,6 +1353,9 @@ def _p_week_bare(text: str, cfg: WranglerConfig) -> Spec | None:
 _BIZ_WORD = r"(?:business|working|trading|work|biz)"
 #: "business days", "working days", "biz days", "business-days", "workdays", "bus. days".
 _BIZ = rf"(?:{_BIZ_WORD}[\s-]+days?|workdays?|bus\.\s*days?)"
+#: The business-day words before "day" in "the last business day of": "business day",
+#: "working day", "workday", "biz day", "bus. day".
+_EDGE_BIZ = rf"(?:{_BIZ_WORD}|bus\.)[\s-]*"
 
 
 def _p_business_relative(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -1348,7 +1393,7 @@ def _p_business_ago(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 #: Between the two days of a run: "1-15", "1st to 15th", "1 through 15".
-_DAY_JOIN = r"\s*(?:-|to|until|till|through|thru)\s*"
+_DAY_JOIN = r"\s*(?:-|to|until|till|through|thru)\s*(?:the\s+)?"  # "1st to the 15th"
 _DAY_NUM = r"\d{1,2}(?:st|nd|rd|th)?"
 
 
@@ -1380,8 +1425,9 @@ _ONE_DAY = (
 )
 _ONE_MONTH = rf"{_MONTH}(?:\s+(?:of\s+)?(?:{_FY_WORD}{_SEP}'?\d{{2,4}}|\d{{4}}))?"
 _WITHIN_HEAD = re.compile(
-    r"\s*(?:the\s+)?(?:(?P<unit>week|month|quarter|half|year)\s+of"
-    r"|(?P<from>week\s+(?:commencing|beginning|starting)|w/c))\s+(?:the\s+)?",
+    r"\s*(?:the\s+)?(?:(?P<unit>week|wk|month|mth|quarter|half|year)\s+of"
+    r"|(?P<from>(?:week|wk)\s+(?:commencing|beginning|starting)|w/c|w\.c\.?|wc))\s+(?:the\s+)?"
+    rf"(?:{_WEEKDAY_ALT},?\s+)?",  # "week commencing Monday 5 October"
     re.IGNORECASE,
 )
 
@@ -1416,7 +1462,7 @@ def _p_within(text: str, cfg: WranglerConfig) -> Spec | None:
     if head.group("from"):
         one_day = spec.kind is Kind.ABS_DAY or spec.day_of_period is not None
         return spec.with_(week_from=True) if one_day else None
-    return spec.with_(within=Grain[head.group("unit").upper()])
+    return spec.with_(within=_unit_of(head.group("unit")))
 
 
 def _p_day_span(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -1520,7 +1566,7 @@ def _p_day_list(text: str, cfg: WranglerConfig) -> Parts | None:
 
 
 #: The units a run can be measured in, "the first 3 months of", "the last week of".
-_SUB_UNIT = r"(?:days?|weeks?|fortnights?|months?|quarters?|qtrs?)"
+_SUB_UNIT = r"(?:days?|weeks?|wks?|fortnights?|months?|mths?|mnths?|mos?|quarters?|qtrs?)"
 #: An ordinal that says so: a word or a suffixed number. A bare "3" is a count, and "3
 #: months of 2024" must not become "the third month of 2024".
 _NTH_STRICT = rf"(?:{alt(ORDINALS)}|\d{{1,2}}(?:st|nd|rd|th)|last|final)"
@@ -1942,12 +1988,14 @@ RULES: tuple[Rule, ...] = (
     Rule("period_to_date", rf"\b{_TD_TARGET}{_TO_DATE}\b", _p_period_to_date),
     Rule(
         "period_ending",
-        rf"\b(?:(?:the\s+)?(?:{_NUM}\s+)?(?:half[\s-]?years?|{_FY_WORD}|{_UNIT})(?:\s+|-)"
-        rf"(?:end(?:ing|ed|s)?|to)|w/e|w\.e\.)\s+"
+        rf"\b(?:(?:(?:the\s+)?(?:{_NUM}\s+)?(?:half[\s-]?years?|{_FY_WORD}|{_UNIT})"
+        rf"(?:\s+period)?(?:\s+|-)(?:end(?:ing|ed|s)?|to)|w/e|w\.e\.|q/?e|y/?e|fye"
+        rf"|(?:the\s+)?\d{{1,2}}\s*m\s+(?:to|ended|ending))\s+"
         rf"(?:\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}[/.-]\d{{1,2}}[/.-](?:\d{{4}}|\d{{2}})"
         rf"|\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}(?:\s+\d{{4}})?"
         rf"|{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\d)(?:,?\s+\d{{4}})?"
-        rf"|{_MONTH}{_YEAR_SUFFIX}|{_YEAR})\b",
+        rf"|{_MONTH}{_YEAR_SUFFIX}|{_YEAR})"
+        r"|(?:19|20)\d{2}\s+year[\s-]+end(?:ing|ed)?)\b",
         _p_period_ending,
     ),
     Rule("trailing_months", r"\b(?:ttm|ltm|[tl]\d{1,2}m)\b", _p_trailing_months),
@@ -1967,16 +2015,17 @@ RULES: tuple[Rule, ...] = (
     # month holds a day; a quarter, half or year may hold a month too.
     Rule(
         "within",
-        rf"\b(?:the\s+)?(?:(?:week|month)\s+of\s+(?:the\s+)?{_ONE_DAY}"
+        rf"\b(?:the\s+)?(?:(?:week|wk|month|mth)\s+of\s+(?:the\s+)?{_ONE_DAY}"
         rf"|(?:quarter|half|year)\s+of\s+(?:the\s+)?(?:{_ONE_DAY}|{_ONE_MONTH})"
-        rf"|(?:week\s+(?:commencing|beginning|starting)|w/c)\s+(?:the\s+)?{_ONE_DAY})\b",
+        rf"|(?:(?:week|wk)\s+(?:commencing|beginning|starting)|w/c|w\.c\.?|wc)\s+(?:the\s+)?"
+        rf"(?:{_WEEKDAY_ALT},?\s+)?{_ONE_DAY})\b",
         _p_within,
     ),
     # Before "part_of": "month end" is an edge of the current period, and part_of would
     # read the bare unit as the whole of it.
     Rule(
         "period_edge",
-        rf"\b(?:eom|eoq|eoy|eow|(?:the\s+)?{_UNIT}[-\s](?:end|start|beginning|close))\b",
+        rf"\b(?:e\.?o\.?[mqyw]|(?:the\s+)?{_UNIT}[-\s](?:end|start|beginning|close))\b",
         _p_period_edge,
     ),
     Rule(
@@ -2042,7 +2091,7 @@ RULES: tuple[Rule, ...] = (
     # "last 1 day" and "last Friday" as the weekday on its own.
     Rule(
         "edge_day",
-        rf"\b(?:the\s+)?(?:first|1st|last|final)\s+(?:{_BIZ_WORD}\s+)?day{_NTH_OF}"
+        rf"\b(?:the\s+)?(?:first|1st|last|final)\s+(?:{_EDGE_BIZ})?(?:day|date){_NTH_OF}"
         rf"{_NTH_TARGET}\b",
         _p_edge_day,
     ),
@@ -2056,7 +2105,7 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "nth_weekday",
-        rf"\b(?:the\s+)?{_NTH}\s+(?:{_WEEKDAY_ALT}){_NTH_OF}{_NTH_TARGET}\b",
+        rf"\b(?:the\s+)?{_NTH}\s+(?:{_WEEKDAY_ALT})\.?{_NTH_OF}{_NTH_TARGET}\b",
         _p_nth_weekday,
     ),
     # After edge_day, which keeps "the last day of", and ahead of relative, fiscal_month
@@ -2067,7 +2116,8 @@ RULES: tuple[Rule, ...] = (
     # resolved by none.
     Rule(
         "sub_period",
-        rf"\b(?:the\s+)?(?:{_NTH_STRICT}\s+(?:{_NUM}\s+)?(?:days?|weeks?|fortnights?|months?)"
+        rf"\b(?:the\s+)?(?:{_NTH_STRICT}\s+(?:{_NUM}\s+)?"
+        rf"(?:days?|weeks?|wks?|fortnights?|months?|mths?|mnths?|mos?)"
         rf"|(?:first|1st|last|final)\s+{_NUM}\s+(?:quarters|qtrs)"
         rf"|(?:last|final)\s+(?:quarter|qtr)){_NTH_OF}{_NTH_TARGET}\b",
         _p_sub_period,
@@ -2173,7 +2223,9 @@ RULES: tuple[Rule, ...] = (
     Rule("weekday_rel", rf"\b(?:{_DIRWORD}|this)\s+{alt(WEEKDAY_NAMES)}\b", _p_weekday),
     Rule(
         "quarter",
-        rf"\b(?:{_QWORD}\s*[1-4](?!\d)|{_ORD}\s*{_QWORD}){_YEAR_SUFFIX}\b",
+        # "Q1-end 2024" is Q1 2024, as "year-end 2024" is the year. REGRESSION: it was a
+        # span from Q1 to the end of 2024.
+        rf"\b(?:{_QWORD}\s*[1-4](?!\d)|{_ORD}\s*{_QWORD})(?:-end\b)?{_YEAR_SUFFIX}\b",
         _p_quarter,
     ),
     Rule(

@@ -299,6 +299,39 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("year end 2024", "2024"),
         ("year-end 2024", "2024"),
         ("the second half of the match", "~"),
+        # Each was nothing, part of itself, or a different period, in 2.1.0.
+        ("first-half of March 2024", "2024-03-01..2024-03-15"),  # H1 2024: January to June
+        ("the back half of 2024", "2024-07..2024-12"),
+        ("the early part of 2024", "2024-01..2024-04"),
+        ("the latter part of 2024", "2024-09..2024-12"),
+        ("end of 1Q 2024", "2024-03"),
+        ("end of the first quarter of 2024", "2024-03"),
+        ("start of Mar-24", "2024-03-01..2024-03-10"),  # March 2026
+        ("end-of-month", "2026-10-21..2026-10-31"),
+        ("E.O.M.", "2026-10-21..2026-10-31"),
+        ("2024 year end", "2024"),  # the end of 2026
+        ("Q1-end 2024", "2024-01..2024-03"),  # 2024, the whole year
+        ("last day of month", "2026-10-31"),  # yesterday
+        ("last business day of month", "2026-10-30"),  # yesterday
+        ("last workday of the month", "2026-10-30"),
+        ("last Friday of month", "2026-10-30"),  # last week's Friday
+        ("the 3rd Thurs. of Nov.", "2026-11-19"),
+        ("first wk of April 2024", "2024-04-01..2024-04-07"),
+        ("last 3 mths of 2024", "2024-10..2024-12"),
+        ("15th of the month", "2026-10-15"),
+        ("the 1st of the next month", "2026-11-01"),
+        ("1st to the 15th of March 2024", "2024-03-01..2024-03-15"),
+        ("wc 5 Oct 2026", "2026-10-05..2026-10-11"),
+        ("week commencing Monday 5 October 2026", "2026-10-05..2026-10-11"),
+        ("QE June 2024", "2024-04..2024-06"),
+        ("YE March 2024", "2023-04..2024-03"),
+        ("FYE March 2024", "2023-04..2024-03"),
+        ("12M to March 2024", "2023-04..2024-03"),
+        ("6M to June 2024", "2024-01..2024-06"),
+        ("the 12-month period ended March 2024", "2023-04..2024-03"),
+        # Unchanged: "starting" without "of" is since; a plural unit is not a period.
+        ("starting March 2024", "2024-03.."),
+        ("the first Monday in months", "-"),
     ]),
     ("spans of years", TODAY, CAL, [
         ("from 2012 to 2013", "2012..2013"),

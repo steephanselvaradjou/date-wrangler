@@ -85,7 +85,8 @@ _DIGIT = re.compile(r"\d")
 #: which would let every "don't" through; and "as of now" has only "now", in every text.
 #: Looked for whole instead.
 _SPELT_TO_DATE = re.compile(
-    r"\b[ymqw][.-]t[.-]?d\b|\bas\s+(?:of|at)\s+now\b|\bup\s+to\s+now\b", re.IGNORECASE
+    r"\b[ymqw][.-]t[.-]?d\b|\bas\s+(?:of|at)\s+now\b|\bup\s+to\s+now\b|\be\.o\.[mqyw]\b",
+    re.IGNORECASE,
 )
 
 

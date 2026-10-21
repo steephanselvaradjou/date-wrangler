@@ -128,6 +128,10 @@ PHRASES = [
     # to date, spelt every way
     "fiscal YTD", "FYTD", "last MTD", "last QTD", "from 01/06/2018 till date", "so far this year",
     "WTD", "LYTD", "2024-YTD", "YTD through March 2024", "as of now",
+    # parts and edges of a period, written short
+    "last day of month", "first-half of March 2024", "2024 year end", "QE June 2024",
+    "YE March 2024", "end-of-month", "wc 5 Oct 2026", "last Friday of month",
+    "15th of the month", "start of Mar-24",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

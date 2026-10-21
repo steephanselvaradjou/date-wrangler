@@ -467,7 +467,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | To-date | `YTD`, `MTD`, `QTD`, `WTD`, `year-to-date`, `Y-T-D`, `so far this year`; `FYTD`, `fiscal YTD`, `FY to date` (from the fiscal year's start), `CYTD`; `last YTD`, `LYTD`, `YTD last year` (the same window a year earlier), `last MTD`, `LMTD` (the same days of last month), `last year's MTD`; `YTD 2024`, `2024-YTD`, `YTD through March 2024`, `March 2024 YTD` |
 | Period to date | `this year to date`, `Q3 to date`, `October to date`, `March 2024 to date` |
 | Reporting shorthand | `TTM`, `LTM`, `T12M`, `L3M`, `trailing 12 months`, `rolling 3 months` |
-| Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024` |
+| Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024`, and as reports abbreviate them: `QE June 2024`, `YE March 2024`, `FYE March 2024`, `12M to March 2024`, `6M to June 2024` |
 | Absolute | `2024-03-15`, `15 January 2024`, `January 15, 2024`, `March 15 2024`, `2024 March 15`, `03/04/2024`, `01-04-2018`, `13.06.18` |
 | A comma or weekday inside the date | `June, 2013`, `12 March, 2014`, `Q1, 2024`, `Friday, 15 March 2024` — one date, and a weekday that does not match it is flagged |
 | Months as numbers | `2024-03`, `2024/03`, `03/2024` |
@@ -486,14 +486,14 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Part of a period | `first half of March`, `early 2024`, `mid March`, `end of Q1` |
 | Day in a period | `1st of next month`, `15th of March`, `the last day of the month` |
 | Runs of days | `1-15 March`, `March 1-15, 2024`, `1st to 15th March` |
-| Unit of a period | `the first week of April`, `the last week of March`, `the last 3 months of the year`, `the last quarter of 2024` |
+| Unit of a period | `the first week of April`, `first wk of April`, `the last week of March`, `the last 3 months of the year`, `last 3 mths of 2024`, `the last quarter of 2024` |
 | Deadlines | `by 31 March`, `on or before 31 March`, `no later than Friday`, `not before 1 April` |
-| Nth weekday | `first Monday of March`, `last Friday of the month`, `3rd Thursday of November` |
+| Nth weekday | `first Monday of March`, `last Friday of the month`, `last Friday of month`, `3rd Thursday of November`, `the 3rd Thurs. of Nov.` |
 | Week numbers | `week 42`, `2026-W42`, `CW42`, `KW 42`, `week 42 of 2026` |
 | Business days | `5 business days ago`, `next business day`, `last business day of the month`, `last 5 biz days`, `next workday` |
 | Same period back | `same quarter last year`, `same month of last year`, `same quarter LY`, `this time last year` |
 | Weekend | `this weekend`, `next weekend`, `last weekend` |
-| Period edges | `month end`, `EOM`, `EOQ`, `end of the quarter`, `year start` |
+| Period edges | `month end`, `EOM`, `E.O.M.`, `end-of-month`, `EOQ`, `end of the quarter`, `end of 1Q 2024`, `year start`, `last day of month`, `last workday of the month` |
 | Ahead | `in 3 days`, `2 weeks from now`, `3 months from today` |
 | Fortnights | `a fortnight ago`, `last fortnight`, `next fortnight` |
 | Day idioms | `day before yesterday`, `day after tomorrow` |
