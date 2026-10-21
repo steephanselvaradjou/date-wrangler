@@ -14,6 +14,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from .vocab import UNIT_WORDS
+
 __all__ = ["Normalized", "normalize"]
 
 #: Characters folded to an ASCII equivalent before matching. NFKC handles fullwidth forms
@@ -51,6 +53,53 @@ _ABBREV_DOT = re.compile(
 
 def _undot(text: str) -> str:
     return _ABBREV_DOT.sub(lambda m: m.group(1) + " ", text) if "." in text else text
+
+
+#: A count written against its unit -- "3months", "5days", "2wks" -- or joined to it by a
+#: hyphen, as an adjective: "12-month", "3-day". Read as if spaced, so every rule that
+#: counts reads them ("last 3months", "3mos ago", "trailing 12-month") without each one
+#: spelling out the joint. Not "half": "2half" is nobody's, and "2 half" would be H2.
+_COUNT_UNIT = re.compile(
+    r"\b(\d{1,4})(-?)(?=(?:"
+    + "|".join(sorted(
+        [w for w in UNIT_WORDS if w not in ("half", "halves")]
+        + ["hours", "hour", "hrs", "hr", "minutes", "minute", "mins", "min",
+           "seconds", "second", "secs", "sec"],
+        key=len, reverse=True,
+    ))
+    + r")\b)",
+    re.IGNORECASE,
+)
+
+
+def _space_counts(
+    text: str, starts: list[int], ends: list[int]
+) -> tuple[str, list[int], list[int]]:
+    """``text`` with a space between each count and its unit, and the offset map to match.
+    A hyphen becomes the space and keeps its place; a space put in where there was none
+    stands for no character of the original."""
+    pieces: list[str] = []
+    new_starts: list[int] = []
+    new_ends: list[int] = []
+    pos = 0
+    for m in _COUNT_UNIT.finditer(text):
+        cut = m.end(1)
+        pieces.append(text[pos:cut])
+        new_starts += starts[pos:cut]
+        new_ends += ends[pos:cut]
+        pieces.append(" ")
+        if m.group(2):
+            new_starts.append(starts[cut])
+            new_ends.append(ends[cut])
+            pos = cut + 1
+        else:
+            new_starts.append(starts[cut])
+            new_ends.append(starts[cut])
+            pos = cut
+    pieces.append(text[pos:])
+    new_starts += starts[pos:]
+    new_ends += ends[pos:]
+    return "".join(pieces), new_starts, new_ends
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,14 +142,21 @@ def normalize(text: str) -> Normalized:
     Pure ASCII input skips the per-character walk. Every key in :data:`_FOLD` is non-ASCII
     and NFKC is a no-op on ASCII, so there is provably nothing to fold -- and skipping the
     walk is worth roughly half the cost of a short parse. Only a month's full stop may
-    change, and that keeps the length, so no map is needed.
+    change, and that keeps the length, so no map is needed -- unless a count touches its
+    unit, which is rare, and then a map is built for that text alone.
     """
     if text.isascii():
-        return Normalized(text=_undot(text), original=text, _starts=None, _ends=None)
+        body = _undot(text)
+        if _COUNT_UNIT.search(body) is None:
+            return Normalized(text=body, original=text, _starts=None, _ends=None)
+        body, starts, ends = _space_counts(
+            body, list(range(len(text))), list(range(1, len(text) + 1))
+        )
+        return Normalized(text=body, original=text, _starts=tuple(starts), _ends=tuple(ends))
 
     out: list[str] = []
-    starts: list[int] = []
-    ends: list[int] = []
+    starts = []
+    ends = []
     for i, ch in enumerate(text):
         folded = _FOLD.get(ch)
         if folded is None:
@@ -110,9 +166,5 @@ def normalize(text: str) -> Normalized:
             out.append(c)
             starts.append(i)
             ends.append(i + 1)
-    return Normalized(
-        text=_undot("".join(out)),
-        original=text,
-        _starts=tuple(starts),
-        _ends=tuple(ends),
-    )
+    body, starts, ends = _space_counts(_undot("".join(out)), starts, ends)
+    return Normalized(text=body, original=text, _starts=tuple(starts), _ends=tuple(ends))

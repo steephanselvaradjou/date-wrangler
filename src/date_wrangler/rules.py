@@ -1240,8 +1240,9 @@ def _p_week_bare(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 #: "business day", "working days", "trading day". Weekend and holidays come from config.
-_BIZ_WORD = r"(?:business|working|trading|work)"
-_BIZ = rf"{_BIZ_WORD}\s+days?"
+_BIZ_WORD = r"(?:business|working|trading|work|biz)"
+#: "business days", "working days", "biz days", "business-days", "workdays", "bus. days".
+_BIZ = rf"(?:{_BIZ_WORD}[\s-]+days?|workdays?|bus\.\s*days?)"
 
 
 def _p_business_relative(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -1526,13 +1527,14 @@ def _p_nth_of(text: str, cfg: WranglerConfig) -> Spec | None:
 def _p_same_period(text: str, cfg: WranglerConfig) -> Spec | None:
     """"same quarter last year", "this time last year" -- today's period, a year back."""
     m = re.match(
-        rf"\s*(?:the\s+)?same\s+({_UNIT})\s+({_DIRWORD})\s+year\b", text, re.IGNORECASE
+        rf"\s*(?:the\s+)?same\s+({_UNIT})\s+{_SAME_YEAR_BACK}", text, re.IGNORECASE
     )
     if m:
         unit = _unit_of(m.group(1))
         if unit is None:
             return None
-        return Spec(Kind.THIS_PERIOD, unit=unit, year_offset=_direction_of(m.group(2)))
+        offset = _direction_of(m.group(2)) if m.group(2) else -1  # "a year ago", "LY"
+        return Spec(Kind.THIS_PERIOD, unit=unit, year_offset=offset)
     m2 = re.match(rf"\s*this\s+time\s+({_DIRWORD})\s+year\b", text, re.IGNORECASE)
     if not m2:
         return None
@@ -1562,19 +1564,31 @@ def _p_rolling(text: str, cfg: WranglerConfig) -> Spec | None:
     )
 
 
+#: How the three days are written: in full, short, and misspelt as often as not.
+_DAY_WORDS: dict[str, int] = {
+    "today": 0, "tdy": 0,
+    "yesterday": -1, "yday": -1, "y'day": -1, "yest": -1, "ystd": -1,
+    "tomorrow": 1, "tmrw": 1, "tmr": 1, "2moro": 1, "2morrow": 1,
+    "tomorow": 1, "tommorow": 1, "tommorrow": 1,
+}
+_YESTERDAY = alt(w for w, n in _DAY_WORDS.items() if n == -1)
+_TOMORROW = alt(w for w, n in _DAY_WORDS.items() if n == 1)
+#: The year back in "same month last year", "same quarter of last year", "same month a year
+#: ago", "same month LY". The direction word is captured; the other two are a year back.
+_SAME_YEAR_BACK = rf"(?:of\s+)?(?:({_DIRWORD})\s+year|a\s+year\s+ago|ly)\b"
+
+
 def _p_day_keyword(text: str, cfg: WranglerConfig) -> Spec | None:
     low = re.sub(r"\s+", " ", text.strip().lower())
-    offset = {
-        "today": 0,
-        "yesterday": -1,
-        "tomorrow": 1,
-        # Idioms, not a modifier plus a day. Read as "before yesterday" they became
-        # unbounded ranges reaching back to the beginning of time.
-        "day before yesterday": -2,
-        "the day before yesterday": -2,
-        "day after tomorrow": 2,
-        "the day after tomorrow": 2,
-    }.get(low)
+    # Idioms, not a modifier plus a day. Read as "before yesterday" they became unbounded
+    # ranges reaching back to the beginning of time.
+    m = re.fullmatch(r"(?:the )?day (before|after) (\S+)", low)
+    if m:
+        side = -1 if m.group(1) == "before" else 1
+        if _DAY_WORDS.get(m.group(2)) != side:
+            return None
+        return Spec(Kind.DAY_KEYWORD, direction=2 * side)
+    offset = _DAY_WORDS.get(low)
     if offset is None:
         return None
     return Spec(Kind.DAY_KEYWORD, direction=offset)
@@ -1582,7 +1596,7 @@ def _p_day_keyword(text: str, cfg: WranglerConfig) -> Spec | None:
 
 def _p_weekend(text: str, cfg: WranglerConfig) -> Spec | None:
     """"this weekend", "next weekend" -- Saturday and Sunday of the week meant."""
-    m = re.match(rf"\s*(?:(this|{_DIRWORD})\s+)?weekend\b", text, re.IGNORECASE)
+    m = re.match(rf"\s*(?:(this|{_DIRWORD})\s+)?(?:weekend|wknd)\b", text, re.IGNORECASE)
     if not m:
         return None
     word = (m.group(1) or "this").lower()
@@ -1906,7 +1920,7 @@ RULES: tuple[Rule, ...] = (
         rf"\b(?:the\s+)?(?:{_PART_ALT}){_OF}{_PART_TARGET}\b",
         _p_part_of,
     ),
-    Rule("weekend", rf"\b(?:(?:this|{_DIRWORD})\s+)?weekend\b", _p_weekend),
+    Rule("weekend", rf"\b(?:(?:this|{_DIRWORD})\s+)?(?:weekend|wknd)\b", _p_weekend),
     Rule(
         "in_future",
         rf"\b(?:(?:in|after|within)\s+{_NUM}\s+{_UNIT}"
@@ -1915,7 +1929,8 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "same_period",
-        rf"\b(?:the\s+)?(?:same\s+{_UNIT}|this\s+time)\s+{_DIRWORD}\s+year\b",
+        rf"\b(?:the\s+)?(?:same\s+{_UNIT}\s+(?:of\s+)?(?:{_DIRWORD}\s+year|a\s+year\s+ago|ly)"
+        rf"|this\s+time\s+{_DIRWORD}\s+year)\b",
         _p_same_period,
     ),
     Rule(
@@ -2038,8 +2053,8 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "day_keyword",
-        r"\b(?:(?:the\s+)?day\s+(?:before\s+yesterday|after\s+tomorrow)"
-        r"|today|yesterday|tomorrow)\b",
+        rf"\b(?:(?:the\s+)?day\s+(?:before\s+{_YESTERDAY}|after\s+{_TOMORROW})"
+        rf"|{alt(_DAY_WORDS)})\b",
         _p_day_keyword,
     ),
     Rule(

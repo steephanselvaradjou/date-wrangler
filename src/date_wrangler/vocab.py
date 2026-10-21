@@ -60,6 +60,8 @@ CARDINALS: dict[str, int] = {
     "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
     # "a month ago" is one month ago. Nobody writes "one month ago" out loud.
     "a": 1, "an": 1,
+    # "a couple of weeks ago": two, as it is read in practice. "a few" stays vague.
+    "couple of": 2, "a couple of": 2,
 }
 
 ORDINALS: dict[str, int] = {
@@ -93,7 +95,7 @@ DECADE_WORDS: dict[str, int] = {
 WEEKDAYS: dict[str, int] = {
     "monday": 0, "mon": 0,
     "tuesday": 1, "tue": 1, "tues": 1,
-    "wednesday": 2, "wed": 2,
+    "wednesday": 2, "wed": 2, "weds": 2,
     "thursday": 3, "thu": 3, "thur": 3, "thurs": 3,
     "friday": 4, "fri": 4,
     "saturday": 5, "sat": 5,
@@ -115,6 +117,8 @@ UNIT_WORDS: dict[str, str] = {
     "week": "WEEK", "weeks": "WEEK", "wk": "WEEK", "wks": "WEEK",
     "fortnight": "WEEK", "fortnights": "WEEK",
     "month": "MONTH", "months": "MONTH", "mo": "MONTH", "mos": "MONTH",
+    "mth": "MONTH", "mths": "MONTH", "mnth": "MONTH", "mnths": "MONTH",
+    "dys": "DAY",
     "quarter": "QUARTER", "quarters": "QUARTER", "qtr": "QUARTER", "qtrs": "QUARTER",
     "half": "HALF", "halves": "HALF",
     "year": "YEAR", "years": "YEAR", "yr": "YEAR", "yrs": "YEAR",
@@ -127,7 +131,7 @@ UNIT_WORDS: dict[str, str] = {
 UNIT_SCALE: dict[str, int] = {"fortnight": 2, "fortnights": 2, "decade": 10, "decades": 10}
 
 PAST_WORDS: frozenset[str] = frozenset(
-    {"last", "past", "previous", "prior", "preceding", "trailing", "rolling"}
+    {"last", "past", "previous", "prev", "prev.", "prior", "preceding", "trailing", "rolling"}
 )
 FUTURE_WORDS: frozenset[str] = frozenset({"next", "coming", "following", "upcoming", "forthcoming"})
 

@@ -485,6 +485,36 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the other day", "!"),
         ("some time ago", "!"),
         ("every Monday", "!"),  # a recurrence, not a period
+        # Each was nothing, or read in part, in 2.1.0.
+        ("last 3months", "2026-07..2026-09"),  # a count against its unit
+        ("3mos ago", "2026-07"),
+        ("in 3days", "2026-10-19"),
+        ("trailing 12-month revenue", "2025-10..2026-09"),
+        ("3qtrs ago", "2026-01..2026-03"),  # REGRESSION: the third quarter of this year
+        ("last 3 mths", "2026-07..2026-09"),
+        ("last mth", "2026-09"),
+        ("prev month", "2026-09"),
+        ("last Weds", "2026-10-14"),
+        ("yday", "2026-10-15"),
+        ("y'day", "2026-10-15"),
+        ("tmrw", "2026-10-17"),
+        ("day before yday", "2026-10-14"),
+        ("last week Fri", "2026-10-09"),  # the week came back, the day lost
+        ("last week's Friday", "2026-10-09"),
+        ("Fri. last week", "2026-10-09"),
+        ("this week on Monday", "2026-10-12"),
+        ("last 5 biz days", "2026-10-09..2026-10-15"),
+        ("5 workdays ago", "2026-10-09"),
+        ("next workday", "2026-10-19"),
+        ("same month of last year", "2025-10"),  # last year, whole
+        ("same month a year ago", "2025-10"),
+        ("same quarter LY", "2025-10..2025-12"),
+        ("this wknd", "2026-10-17..2026-10-18"),
+        ("a couple of weeks ago", "2026-09-28..2026-10-04"),
+        ("last couple of months", "2026-08..2026-09"),
+        # Single letters stay unread: "3m" is minutes or millions as often as months.
+        ("3m ago", "-"),
+        ("last 3 m", "-"),
     ]),
     ("counted from another date", TODAY, CAL, [
         ("3 days before 15 March 2024", "2024-03-12"),

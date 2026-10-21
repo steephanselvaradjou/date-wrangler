@@ -122,6 +122,9 @@ PHRASES = [
     "June - FY25", "in March. 2024 was good", "in March. 15 people came",
     # a day whose marks change: one day
     "15-Mar 2024", "15 Mar-2024", "2024-Mar-15", "Mar-15 2024", "15-Mar", "Mar-15",
+    # relative phrases, spelt short
+    "last 3months", "3qtrs ago", "yday", "last week Fri", "Fri. last week", "last 5 biz days",
+    "same quarter LY", "a couple of weeks ago", "trailing 12-month", "prev quarter",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

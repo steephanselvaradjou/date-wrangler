@@ -19,10 +19,10 @@ from typing import Any
 from .config import DEFAULT_CONFIG, WranglerConfig
 from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
-from .rules import RULES, Rule
+from .rules import _DAY_WORDS, RULES, Rule
 from .spec import Kind, Part, Spec
 from .tokens import Reader
-from .types import DateMatch, DateRange, Grain, Mod, grain_rank
+from .types import Anchor, DateMatch, DateRange, Grain, Mod, grain_rank
 from .vocab import (
     DECADE_WORDS,
     FUTURE_WORDS,
@@ -66,8 +66,10 @@ _TRIGGERS = (
         "second", "seconds", "sec", "secs", "recently", "lately", "ago", "every",
         # "as on date", "till date": today, as statements are asked for.
         "date", "dated", "tonight",
+        "wknd", "workday", "workdays", "biz",
     }
     | set(DECADE_WORDS)
+    | set(_DAY_WORDS)
 )
 #: Tokenising and intersecting a set beats a 116-way alternation by roughly ten times on
 #: text with no date in it, which is the case that has to be cheap: the alternation retries
@@ -713,6 +715,11 @@ _LABEL_YEAR_GAP = re.compile(r"^(?:[-/]|\s*|\s+(?:in|of)\s+(?:the\s+)?)$", re.IG
 #: Between a year and the quarter, half or month after it: "FY 2024 Qtr 3", "2024 - third
 #: quarter", "2024 March". Not a comma, which may list them: "2023, Q3 and Q4".
 _YEAR_LABEL_GAP = re.compile(r"^\s*(?:[-/]\s*)?$")
+#: Between a weekday and its week: "Fri. last week", "Fri. of last week".
+_WEEKDAY_WEEK_GAP = re.compile(r"^\.?\s+(?:of\s+)?(?:the\s+)?$", re.IGNORECASE)
+#: Between a week and its weekday: "last week Friday", "last week's Friday", "this week on
+#: Monday".
+_WEEK_WEEKDAY_GAP = re.compile(r"^(?:'s)?\s+(?:on\s+)?$", re.IGNORECASE)
 _FULL_MONTH_NAMES = frozenset(name.lower() for name in MONTH_DISPLAY)
 
 
@@ -772,6 +779,12 @@ def _joined(prev: _Raw, raw: _Raw, text: str, cfg: WranglerConfig) -> _Raw | Non
         if _is_a_year(a) and _is_a_label(raw, text) and _YEAR_LABEL_GAP.match(gap):
             basis = b.basis if b.basis is not None else a.basis
             return _Raw("label_year", b.with_(year=a.year, basis=basis), prev.start, raw.end)
+    # A weekday and the week it falls in, either way round. "Friday last week" is one
+    # rule's; written the other way, or with "Fri.", the week came back alone, the day lost.
+    if prev.rule == "weekday" and _is_one_week(raw) and _WEEKDAY_WEEK_GAP.match(gap):
+        return _Raw("weekday_of_week", _on_weekday(b, a), prev.start, raw.end)
+    if raw.rule == "weekday" and _is_one_week(prev) and _WEEK_WEEKDAY_GAP.match(gap):
+        return _Raw("weekday_of_week", _on_weekday(a, b), prev.start, raw.end)
     if (
         a.kind is Kind.WEEKDAY
         and a.weekday_span is None
@@ -823,6 +836,28 @@ def _is_a_label(raw: _Raw, text: str) -> bool:
     if spec.kind is Kind.ABS_MONTH:
         return _takes_a_year(spec) and text[raw.start : raw.end] != "may"
     return spec.kind in (Kind.ABS_QUARTER, Kind.ABS_HALF) and _takes_a_year(spec)
+
+
+def _is_one_week(raw: _Raw) -> bool:
+    """"last week", "this week", "next week": one whole week, nothing more said of it."""
+    spec = raw.spec
+    return (
+        raw.rule in ("relative", "this_period")
+        and spec.unit is Grain.WEEK
+        and spec.kind in (Kind.RELATIVE, Kind.THIS_PERIOD)
+        and (spec.count or 1) == 1
+        and spec.weekday_span is None
+        and not spec.business
+        and not spec.through_today
+    )
+
+
+def _on_weekday(week: Spec, weekday: Spec) -> Spec:
+    """The day of ``week`` that ``weekday`` names, as "Friday last week" reads: the week
+    taken whole, Monday to Sunday, whatever anchoring is configured."""
+    assert weekday.index is not None
+    anchor = Anchor.ANCHORED if week.kind is Kind.RELATIVE else week.anchor
+    return week.with_(weekday_span=(weekday.index, weekday.index), anchor=anchor)
 
 
 def _is_abbreviated_month(raw: _Raw, text: str) -> bool:

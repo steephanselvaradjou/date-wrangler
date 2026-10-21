@@ -461,7 +461,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Years and labelled periods | `2024`, `the year 2024`, `Q1 of 2024`, `January 2024`, `CY2024` — see [which calendar](#configuration) for how a year is read |
 | Fiscal month index | `third month of FY24`, `twelfth month` |
 | Month of a fiscal year | `June FY25`, `Jun-FY25`, `FY25 June`, `June FY 2024-25`, `Oct to Mar FY25` — the June *inside* FY25, so June 2024 with an April year; `June 2025` stays June 2025 |
-| Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` |
+| Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` — and spelt short: `last 3months`, `3mos ago`, `last mth`, `prev quarter`, `a couple of weeks ago`, `yday`, `tmrw`. A single letter for a unit (`3m`) is not read: it is minutes or millions as often as months |
 | Stated basis | `this fiscal year`, `this FY`, `last 2 fiscal quarters`, `next calendar year` |
 | Weekdays | `last Monday`, `next Friday`, `this Tuesday` |
 | To-date | `YTD`, `MTD`, `QTD`, `last YTD` (the same window a year earlier) |
@@ -478,7 +478,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Counted from a date | `3 days before 15 March 2024`, `two weeks after 1 April`, `a year after March 2024`, `the day after 15 March` |
 | Two back | `the month before last`, `the year before last`, `the week before last` |
 | The nearest month | `last March`, `this March`, `next March` |
-| Weekdays of a week | `Friday last week`, `Monday to Friday last week`, `Monday next` |
+| Weekdays of a week | `Friday last week`, `last week Friday`, `last week's Fri`, `Fri. last week`, `Monday to Friday last week`, `Monday next` |
 | Decades | `the 1990s`, `the 1990's`, `the '90s`, `the 90s`, `the nineties`, `the early 1990s`, `mid-1990s`, `the late 90s` |
 | Reporting periods | `9M 2024`, `9M FY24` (the first nine months), `the March quarter 2024` (the quarter ending March), `the first 3 quarters of 2024`, `first fortnight of March` |
 | Point-in-time | `as of 31 March 2024` |
@@ -490,8 +490,8 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Deadlines | `by 31 March`, `on or before 31 March`, `no later than Friday`, `not before 1 April` |
 | Nth weekday | `first Monday of March`, `last Friday of the month`, `3rd Thursday of November` |
 | Week numbers | `week 42`, `2026-W42`, `CW42`, `KW 42`, `week 42 of 2026` |
-| Business days | `5 business days ago`, `next business day`, `last business day of the month` |
-| Same period back | `same quarter last year`, `this time last year` |
+| Business days | `5 business days ago`, `next business day`, `last business day of the month`, `last 5 biz days`, `next workday` |
+| Same period back | `same quarter last year`, `same month of last year`, `same quarter LY`, `this time last year` |
 | Weekend | `this weekend`, `next weekend`, `last weekend` |
 | Period edges | `month end`, `EOM`, `EOQ`, `end of the quarter`, `year start` |
 | Ahead | `in 3 days`, `2 weeks from now`, `3 months from today` |

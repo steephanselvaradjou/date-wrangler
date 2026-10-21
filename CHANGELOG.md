@@ -19,11 +19,22 @@ The full notes for each release, with examples, are on the
   A spaced dash after the label is still a span, as before: `June - FY25`, `Q3 - 2024`.
 - `tests/test_label_years.py`: every quarter, half and month label, each way of joining
   it to its year, every way of writing the year, in both orders.
+- Relative phrases spelt short, as in chat and reports: a count against its unit (`last
+  3months`, `3mos ago`, `trailing 12-month`), short units (`mth`, `mths`, `mnths`),
+  `prev`, `Weds`, `yday`, `y'day`, `tmrw`, `tmr`, `day before yday`, `wknd`, `biz days`,
+  `workdays`, `business-days`, `a couple of weeks ago`, `same month of last year`,
+  `same quarter LY`, and the week before its weekday: `last week Fri`, `last week's
+  Friday`, `Fri. last week`. A single letter for a unit (`3m`, `3d`, `last q`) stays
+  unread: it is minutes or millions as often as months.
+- `tests/test_relative_spellings.py`: 927 spellings of relative phrases, each held to its
+  plain form.
 
 ### Fixed
 - `2024-Mar` and `2024 - March` were January to March 2024, and `FY24 - June` the start
   of FY24 to June; they are the month, as `FY24 - Q3` is the quarter.
 - `2024-3Q` was March 2024, and `2024-1H` January 2024.
+- `3qtrs ago` was the third quarter of this year; `last week Fri` was all of last week;
+  `same month of last year` was the whole of last year.
 - `15th-Mar-2024` was 15 October of this year and March 2024; `15 March2024` was
   15 March of this year.
 - A day whose marks change between its parts: `15-Mar 2024`, `15/Mar 2024` and
@@ -47,7 +58,7 @@ The full notes for each release, with examples, are on the
   each listed their own spellings.
 - Each rule's reading of a fragment is remembered, per configuration and within a fixed
   bound, so "Q1" or "FY24" is read once rather than in every text. With the token reader,
-  text that names a month parses about as fast as in 2.1.0, and other text about 15%
+  text that names a month parses about as fast as in 2.1.0, and other text 10–15%
   faster.
 
 ## 2.1.0 — 2026-10-16
