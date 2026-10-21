@@ -101,6 +101,27 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("15 March2024", "2024-03-15"),
         ("2024Mar15", "2024-03-15"),
         ("MAR15, 2024", "2024-03-15"),
+        # Marks that change between the day, the month and the year. REGRESSION, each in
+        # 2.1.0: the day was lost, or the 15 read as the year 2015, or a span came out.
+        ("15-Mar 2024", "2024-03-15"),  # March 2024
+        ("15/Mar 2024", "2024-03-15"),  # March 2024
+        ("15.Mar.2024", "2024-03-15"),  # March 2024
+        ("15-Mar, 2024", "2024-03-15"),  # March 2024
+        ("15 Mar-2024", "2024-03-15"),  # 15 March to the end of 2024
+        ("15 Mar/2024", "2024-03-15"),  # 15 March, and 2024
+        ("Mar 15-2024", "2024-03-15"),  # 15 March to the end of 2024
+        ("Mar 15/2024", "2024-03-15"),
+        ("Mar-15 2024", "2024-03-15"),  # March 2015
+        ("Mar-15, 2024", "2024-03-15"),  # March 2015, and 2024
+        ("2024-Mar-15", "2024-03-15"),  # 2024, and March 2015
+        ("2024/Mar/15", "2024-03-15"),  # nothing
+        ("2024.Mar.15", "2024-03-15"),  # 15 March this year
+        ("15-Mar", "2026-03-15"),  # March
+        ("1-Mar to 15-Mar", "2026-03-01..2026-03-15"),
+        # Still what they were: a dash alone settles "Mar-15" as a month, and a spaced dash
+        # after the day is a span, as after any label.
+        ("Mar-15", "2015-03"),
+        ("15 Mar - 2024", "2024-03-15..2024-12-31"),
     ]),
     ("a weekday with its date", TODAY, CAL, [
         ("Friday, 15 March 2024", "2024-03-15"),

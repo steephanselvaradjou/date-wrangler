@@ -120,6 +120,8 @@ PHRASES = [
     "2024-1H", "1HFY24", "1H FY-24", "1H fiscal 2024", "Q1 and Q3 in 2024", "Q3 to 2024",
     "June in 2024", "Mar/2024", "2024 March", "2024-Mar", "FY24 - June", "Mar. FY24",
     "June - FY25", "in March. 2024 was good", "in March. 15 people came",
+    # a day whose marks change: one day
+    "15-Mar 2024", "15 Mar-2024", "2024-Mar-15", "Mar-15 2024", "15-Mar", "Mar-15",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

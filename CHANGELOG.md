@@ -26,6 +26,11 @@ The full notes for each release, with examples, are on the
 - `2024-3Q` was March 2024, and `2024-1H` January 2024.
 - `15th-Mar-2024` was 15 October of this year and March 2024; `15 March2024` was
   15 March of this year.
+- A day whose marks change between its parts: `15-Mar 2024`, `15/Mar 2024` and
+  `15.Mar.2024` were March 2024, the day lost; `Mar-15 2024` was March 2015, and
+  `2024-Mar-15` 2024 and March 2015; `15 Mar-2024` and `Mar 15-2024` ran to the end of
+  2024; `2024/Mar/15` was nothing. Each is 15 March 2024, and `15-Mar` alone is 15 March.
+  `Mar-15` alone is still March 2015, and `15 Mar - 2024`, spaced, still a span.
 - `March 15 to 03/04/2024` was April 2024, and `Jun FY25 - 15 March` was nothing.
 - `1H FY-24` was the first half of this fiscal year.
 - `1Q and since 1Q` gave two overlapping matches.
@@ -39,8 +44,9 @@ The full notes for each release, with examples, are on the
 ### Changed
 - Dates written with month names are read by splitting the text into words and numbers
   and naming each piece once (`tokens.py`), in place of eleven regular expressions that
-  each listed their own spellings. Text that names a month parses about 10% slower than
-  in 2.1.0; text that names none is unchanged, and prose with no date about 9% faster.
+  each listed their own spellings. Text that names a month parses about 10–17% slower
+  than in 2.1.0; text that names none is unchanged, and prose with no date about 10%
+  faster.
 
 ## 2.1.0 — 2026-10-16
 
