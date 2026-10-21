@@ -7,9 +7,11 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
-## Unreleased
+## 2.2.0 — 2026-10-21
 
-**Changes answers.**
+Dates with month names read from their words and numbers, not one pattern per spelling,
+and each family of phrase measured against its plain form -- thousands of spellings that
+were read wrongly or not at all. The API is unchanged. **Changes answers.**
 
 ### Added
 - Read for the first time: a quarter, half or month and the year beside it — `Q3 in 2024`,
@@ -106,9 +108,9 @@ The full notes for each release, with examples, are on the
   and naming each piece once (`tokens.py`), in place of eleven regular expressions that
   each listed their own spellings.
 - Each rule's reading of a fragment is remembered, per configuration and within a fixed
-  bound, so "Q1" or "FY24" is read once rather than in every text. With the token reader,
-  text that names a month parses about as fast as in 2.1.0, and other text 10–15%
-  faster.
+  bound, so "Q1" or "FY24" is read once rather than in every text. Against 2.1.0, text
+  that names a month parses 3–9% slower, text naming none 10–13% faster, and prose with
+  no date at all about as fast.
 
 ## 2.1.0 — 2026-10-16
 
