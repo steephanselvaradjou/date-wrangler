@@ -322,46 +322,6 @@ def _month_in(text: str) -> int | None:
     return None if m is None else MONTHS[m.group(1).lower()]
 
 
-def _p_dashed_day(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"15-Mar-2024", "15/Mar/2024", "15MAR2024", "13june2018" -- what spreadsheets, SQL
-    clients and bank systems emit."""
-    month = _month_in(text)
-    if month is None:
-        return None
-    m = re.match(r"\s*(\d{1,2})", text)
-    if not m:
-        return None
-    year_m = re.search(r"'?(\d{2,4})\s*$", text)
-    year = _pivot_year(year_m.group(1), cfg) if year_m else None
-    return Spec(Kind.ABS_DAY, year=year, month=month, day=int(m.group(1)))
-
-
-def _p_dashed_month_day(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"Mar-15-2024" -- month first, then the day and the year."""
-    m = re.fullmatch(rf"\s*({_MONTH})-(\d{{1,2}})-(\d{{2}}|\d{{4}})\s*", text, re.IGNORECASE)
-    if not m:
-        return None
-    return Spec(
-        Kind.ABS_DAY, year=_pivot_year(m.group(3), cfg), month=MONTHS[m.group(1).lower()],
-        day=int(m.group(2)),
-    )
-
-
-def _p_dashed_month(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"Mar-24", "Mar-2024".
-
-    The hyphen settles the ``jan 24`` ambiguity on its own: a column of "Jan-24, Feb-24,
-    Mar-24" is months, and a day would be written "15-Mar-24" with the month in the middle.
-    """
-    month = find_month(text)
-    if month is None:
-        return None
-    m = re.search(r"-\s*'?(\d{2,4})\s*$", text)
-    if not m:
-        return None
-    return Spec(Kind.ABS_MONTH, year=_pivot_year(m.group(1), cfg), month=month)
-
-
 #: "the 1990s", "the 1990's", "the '90s", "the 90s", "the nineties".
 _DECADE = rf"(?:(?:1[89]|20)\d0'?s|'?\d0s|{alt(DECADE_WORDS)})"
 
@@ -926,31 +886,6 @@ def _p_month_nearest(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(
         Kind.ABS_MONTH, month=MONTHS[m.group(2).lower()], nearest=_NEAREST[m.group(1).lower()]
     )
-
-
-def _p_month_of_fy_span(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"June FY 2024-25", "FY2024-25 June" -- a month of a fiscal year written in full."""
-    month = find_month(text)
-    label = _fy_label_of_span(text, cfg)
-    if month is None or label is None:
-        return None
-    return Spec(Kind.ABS_MONTH, year=label, month=month, basis=Basis.FISCAL)
-
-
-def _p_fy_month(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"FY25 June", "FY2024-25 March" -- the fiscal year first, then the month inside it."""
-    head = re.match(
-        rf"\s*{_FY_WORD}{_SEP}'?\d{{2,4}}(\s*[-/]\s*'?\d{{2,4}})?", text, re.IGNORECASE
-    )
-    if head is None:
-        return None
-    if head.group(1):
-        return _p_month_of_fy_span(text, cfg)
-    year, basis = parse_year_token(head.group(0), cfg)
-    month = find_month(text[head.end() :])
-    if year is None or month is None:
-        return None
-    return Spec(Kind.ABS_MONTH, year=year, month=month, basis=basis)
 
 
 def _p_year(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -1707,33 +1642,6 @@ def _p_in_future(text: str, cfg: WranglerConfig) -> Spec | None:
         # it was the one day thirty days out.
         return Spec(Kind.RELATIVE, count=count, unit=unit, direction=1)
     return Spec(Kind.AGO, count=count, unit=unit, direction=1)
-
-
-def _p_year_month_day(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"2024 March 15" -- the year first, as in a heading or a log."""
-    m = re.fullmatch(
-        rf"\s*((?:19|20)\d{{2}})\s+({_MONTH})\s+(\d{{1,2}})(?:st|nd|rd|th)?\s*", text, re.I
-    )
-    if not m:
-        return None
-    return Spec(
-        Kind.ABS_DAY, year=int(m.group(1)), month=MONTHS[m.group(2).lower()],
-        day=int(m.group(3)),
-    )
-
-
-def _p_month_ordinal_word(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"January first, 2024", "March the fifteenth" -- the day written as a word."""
-    m = re.match(rf"\s*({_MONTH})\s+(?:the\s+)?({alt(ORDINALS)})", text, re.IGNORECASE)
-    if not m:
-        return None
-    day = ordinal_to_int(m.group(2))
-    if day is None:
-        return None
-    year, _, offset = _period_suffix(text[m.end() :].replace(",", " "), cfg)
-    return Spec(
-        Kind.ABS_DAY, year=year, month=MONTHS[m.group(1).lower()], day=day, year_offset=offset
-    )
 
 
 def _p_months_of_year(text: str, cfg: WranglerConfig) -> Spec | None:

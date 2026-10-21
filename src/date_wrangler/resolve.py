@@ -97,9 +97,6 @@ def _shift(start: date, unit: Grain, n: int) -> date:
 # ---------------------------------------------------------------------------
 
 
-#: Kinds that count a period from today rather than naming one.
-_FROM_TODAY = frozenset({Kind.RELATIVE, Kind.THIS_PERIOD, Kind.TO_DATE, Kind.AGO})
-
 
 def _basis_for(spec: Spec, cfg: WranglerConfig) -> Basis:
     """The calendar a period is measured on: what the phrase says, else ``year_basis``.
