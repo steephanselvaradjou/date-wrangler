@@ -796,6 +796,75 @@ def test_stopping_at_a_month_name_date_changes_no_match():
             assert got_diags == want_diags, text
 
 
+def test_spec_copies_are_what_dataclasses_replace_makes():
+    """Spec.with_ copies field by field, for speed. That is only the same as
+    dataclasses.replace while Spec checks nothing on construction; a __post_init__ added
+    later would be skipped by every copy."""
+    from dataclasses import fields, replace
+
+    from date_wrangler.spec import Kind, Spec
+
+    assert not hasattr(Spec, "__post_init__")
+    spec = Spec(Kind.ABS_QUARTER, year=2024, index=3)
+    for field in fields(Spec):
+        value = getattr(Spec(Kind.ABS_DAY, year=1, month=1, day=1), field.name)
+        assert spec.with_(**{field.name: value}) == replace(spec, **{field.name: value})
+    with pytest.raises(TypeError):
+        spec.with_(no_such_field=1)
+
+
+def test_a_remembered_reading_is_the_configurations_own():
+    """Rules read a fragment once per configuration. "Q3 2024-25" is a quarter on a fiscal
+    basis and refused on a calendar one; remembering either must not hand it to the other."""
+    from date_wrangler.wrangler import _READINGS
+
+    _READINGS.clear()
+    calendar, fiscal = WranglerConfig(), WranglerConfig(year_basis=Basis.FISCAL)
+    for _ in range(2):
+        found, diags = diagnose("Q3 2024-25", today=TODAY, config=calendar)
+        assert found == [] and diags
+        assert rng("Q3 2024-25", fiscal) == (date(2024, 10, 1), date(2025, 1, 1))
+
+
+def test_remembered_readings_are_bounded():
+    """A caller may make a configuration per request, and text is unbounded: neither may
+    grow the memory without limit."""
+    from date_wrangler.wrangler import _MAX_CONFIGS, _MAX_READINGS, _READINGS
+
+    _READINGS.clear()
+    cfg = WranglerConfig()
+    for year in range(1000, 1000 + _MAX_READINGS + 200):
+        parse(f"Q1 {year}", today=TODAY, config=cfg)
+    assert all(len(readings) <= _MAX_READINGS for _, readings in _READINGS.values())
+    for k in range(_MAX_CONFIGS * 3):
+        parse("Q1 2024", today=TODAY, config=WranglerConfig(two_digit_pivot=k))
+    assert len(_READINGS) <= _MAX_CONFIGS
+
+
+def test_a_warm_memory_gives_the_same_answers_as_a_cold_one():
+    import sys
+    from pathlib import Path
+
+    from date_wrangler.wrangler import _READINGS
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    import test_formats
+
+    texts = [p for _, _, _, cases in test_formats.SECTIONS for p, _ in cases]
+    texts += test_formats._bank_lines()
+
+    def answers():
+        out = []
+        for text in texts:
+            found, diags = diagnose(text, today=TODAY, config=CFG)
+            out.append(([m.to_dict() for m in found], [(d.span, d.rule, d.reason) for d in diags]))
+        return out
+
+    _READINGS.clear()
+    cold = answers()
+    assert answers() == cold
+
+
 def test_both_scanners_accept_the_same_fragments():
     """_scan lowers ASCII text and uses the case-sensitive pattern, which is only valid
     while every rule pattern is written in lower case. A new rule with a literal capital

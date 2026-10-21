@@ -44,8 +44,10 @@ The full notes for each release, with examples, are on the
 ### Changed
 - Dates written with month names are read by splitting the text into words and numbers
   and naming each piece once (`tokens.py`), in place of eleven regular expressions that
-  each listed their own spellings. Text that names a month parses about 10–17% slower
-  than in 2.1.0; text that names none is unchanged, and prose with no date about 10%
+  each listed their own spellings.
+- Each rule's reading of a fragment is remembered, per configuration and within a fixed
+  bound, so "Q1" or "FY24" is read once rather than in every text. With the token reader,
+  text that names a month parses about as fast as in 2.1.0, and other text about 15%
   faster.
 
 ## 2.1.0 — 2026-10-16

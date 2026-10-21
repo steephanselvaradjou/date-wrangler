@@ -585,6 +585,40 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
     return out
 
 
+#: What a rule read from a fragment: (True, what it read), or (False, why it refused).
+_Reading = tuple[bool, Any]
+#: Readings already made, per configuration. "Q1", "FY24" and "Q3 2024" recur from text to
+#: text, and reading one again cost as much as the first time: a seventh to a quarter of
+#: parse(). Keyed on the configuration object, which each entry holds, so its id cannot
+#: pass to another while the entry lives. Bounded both ways, since a caller may make a
+#: configuration per request; when full, an entry is emptied rather than grown.
+_READINGS: dict[int, tuple[WranglerConfig, dict[tuple[str, str], _Reading]]] = {}
+_MAX_CONFIGS = 8
+_MAX_READINGS = 4096
+
+
+def _reading(rule: Rule, fragment: str, cfg: WranglerConfig) -> _Reading:
+    """``rule``'s reading of ``fragment``, made once per configuration."""
+    entry = _READINGS.get(id(cfg))
+    if entry is None or entry[0] is not cfg:
+        if len(_READINGS) >= _MAX_CONFIGS:
+            _READINGS.clear()
+        entry = _READINGS[id(cfg)] = (cfg, {})
+    readings = entry[1]
+    key = (rule.name, fragment)
+    found = readings.get(key)
+    if found is None:
+        assert rule.parse is not None
+        try:
+            found = (True, rule.parse(fragment, cfg))
+        except (ValueError, KeyError) as exc:
+            found = (False, str(exc))
+        if len(readings) >= _MAX_READINGS:
+            readings.clear()
+        readings[key] = found
+    return found
+
+
 def _read_match(
     m: re.Match[str],
     text: str,
@@ -598,12 +632,11 @@ def _read_match(
     if name is None or rule is None or rule.parse is None:
         return
     fragment = text[m.start() : m.end()]
-    try:
-        spec = rule.parse(fragment, cfg)
-    except (ValueError, KeyError) as exc:
+    read, spec = _reading(rule, fragment, cfg)
+    if not read:
         # The rule said why; that reason alone, not a second, vaguer one beside it.
         if diags is not None:
-            diags.append(Diagnostic(fragment, m.span(), name, str(exc)))
+            diags.append(Diagnostic(fragment, m.span(), name, spec))
         return
     if spec is None:
         if diags is not None:

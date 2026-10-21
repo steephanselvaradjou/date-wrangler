@@ -18,7 +18,7 @@ from bisect import bisect_left
 from collections.abc import Callable
 
 from .config import MonthNumber, WranglerConfig
-from .rules import _fy_label_of_span, _not_one_fiscal_year, parse_year_token
+from .rules import _fy_label_of_span, _not_one_fiscal_year, _pivot_year, parse_year_token
 from .spec import Kind, Spec
 from .types import Basis
 from .vocab import MONTH_DISPLAY, MONTHS, ORDINALS
@@ -89,10 +89,6 @@ def _year4(t: Token) -> int | None:
 
 def _two_digits(t: Token) -> int | None:
     return int(t.low) if len(t.low) == 2 and t.low.isdigit() else None
-
-
-def _pivot(two: int, cfg: WranglerConfig) -> int:
-    return 2000 + two if two <= cfg.two_digit_pivot else 1900 + two
 
 
 _FULL_MONTH_NAMES = frozenset(name.lower() for name in MONTH_DISPLAY)
@@ -173,8 +169,7 @@ class _Pieces:
                 j += 1
             y = self.at(j)
             if y is not None and y.low.isdigit() and len(y.low) in (2, 4):
-                value = int(y.low)
-                return (_pivot(value, cfg) if value < 100 else value), None, None, j + 1
+                return _pivot_year(y.low, cfg), None, None, j + 1
             return None
         t = self.at(k)
         if t is None:
@@ -182,7 +177,7 @@ class _Pieces:
         if t.text == "'":
             nxt = self.at(k + 1)
             if nxt is not None and nxt.tight and _two_digits(nxt) is not None:
-                return _pivot(int(nxt.low), cfg), None, None, k + 2
+                return _pivot_year(nxt.low, cfg), None, None, k + 2
             if nxt is not None and _year4(nxt) is not None:
                 return int(nxt.low), None, None, k + 2
             return None
@@ -258,8 +253,7 @@ class _Pieces:
         t = self.at(j)
         if t is None or not t.low.isdigit() or len(t.low) not in (2, 4):
             return None
-        value = int(t.low)
-        year = _pivot(value, cfg) if value < 100 else value
+        year = _pivot_year(t.low, cfg)
         end = j + 1
         q = end + 1 + (1 if self.is_(end + 1, "'") else 0)  # the second year: "-25", "-'25"
         dash, two = self.at(end), self.at(q)
@@ -363,7 +357,7 @@ def _compact_day(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     if (
         k > j or sep is None
     ) and t is not None and t.tight and t.low.isdigit() and len(t.low) in (2, 4):
-        year = int(t.low) if len(t.low) == 4 else _pivot(int(t.low), cfg)
+        year = _pivot_year(t.low, cfg)
         return "dashed_day", Spec(Kind.ABS_DAY, year=year, month=month, day=day), k + 1
     if sep is None or p.is_(j, sep, tight=True):
         return None  # "15-Mar-FY24" is not a day with something stranded after it
@@ -389,7 +383,7 @@ def _dashed_month_day(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     if p.is_(i + 3, "-", tight=True) and t is not None and t.tight:
         if not t.low.isdigit() or len(t.low) not in (2, 4):
             return None
-        year = int(t.low) if len(t.low) == 4 else _pivot(int(t.low), cfg)
+        year = _pivot_year(t.low, cfg)
         return "dashed_month_day", Spec(Kind.ABS_DAY, year=year, month=month, day=day), i + 5
     if not p.toks[i + 2].tight:
         return None
@@ -444,7 +438,7 @@ def _day_month_year(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     two = p.at(i + 2)
     if two is not None and not two.tight and _two_digits(two) is not None and not p.is_(i + 3, ":"):
         # "15 Mar 24": the day is filled, so a bare two-digit number can only be the year.
-        spec = Spec(Kind.ABS_DAY, year=_pivot(int(two.low), cfg), month=month, day=day)
+        spec = Spec(Kind.ABS_DAY, year=_pivot_year(two.low, cfg), month=month, day=day)
         return "day_month_year", spec, i + 3
     return "day_month_year", Spec(Kind.ABS_DAY, month=month, day=day), i + 2
 
@@ -473,7 +467,7 @@ def _month_day_year(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
             return None
         if p.number_follows(j + 1) or p.is_(j + 1, ":"):
             return None
-        spec = Spec(Kind.ABS_MONTH, month=month, year=_pivot(int(number.group(1)), cfg))
+        spec = Spec(Kind.ABS_MONTH, month=month, year=_pivot_year(number.group(1), cfg))
         return "month_day_year", spec, j + 1
     after = p.year_after(j + 1, cfg, quarter_check=True)
     if after is not None:
@@ -495,7 +489,7 @@ def _month_day_year(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     if day_tok.low.isdigit() and len(digits) == 2 and (
         int(digits) > 31 or cfg.month_number is MonthNumber.YEAR
     ):
-        spec = Spec(Kind.ABS_MONTH, month=month, year=_pivot(int(digits), cfg))
+        spec = Spec(Kind.ABS_MONTH, month=month, year=_pivot_year(digits, cfg))
         return "month_day_year", spec, j + 1
     return "month_day_year", Spec(Kind.ABS_DAY, month=month, day=day), j + 1
 
@@ -526,7 +520,7 @@ def _month_year(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     if p.is_(i + 1, "-", tight=True):
         t = p.at(i + 2)
         if t is not None and t.tight and t.low.isdigit() and len(t.low) in (2, 4):
-            dashed = int(t.low) if len(t.low) == 4 else _pivot(int(t.low), cfg)
+            dashed = _pivot_year(t.low, cfg)
             return "dashed_month", Spec(Kind.ABS_MONTH, year=dashed, month=month), i + 3
         label = p.label_year(i + 2, cfg)
         if label is not None and t is not None and t.tight:  # "Jun-FY25"
