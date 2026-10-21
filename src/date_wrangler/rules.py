@@ -48,6 +48,9 @@ __all__ = ["Rule", "RULES", "parse_year_token"]
 _MONTH = alt(MONTH_NAMES)
 _ORD = rf"(?:{alt(ORDINALS)}|\d{{1,2}}(?:st|nd|rd|th)?)"
 _NUM = rf"(?:\d{{1,4}}|{alt(CARDINALS)})"
+#: A count where "a couple of" may stand for one: "a couple of weeks ago", "the last couple
+#: of months", "in a couple of days". Only in those rules -- see vocab.COUPLE.
+_COUNT = rf"(?:{_NUM}|(?:a\s+)?couple\s+of)"
 _UNIT = alt(UNIT_WORDS)
 _PAST = alt(PAST_WORDS)
 _FUTURE = alt(FUTURE_WORDS)
@@ -535,28 +538,93 @@ def _p_iso_week_day(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.ABS_DAY, year=d.year, month=d.month, day=d.day)
 
 
+#: A basis said outright with a to-date: "fiscal YTD", "FY YTD", "calendar year to date".
+_TD_BASIS = r"(?:fiscal|financial|calendar|f\.?y\.?|c\.?y\.?)"
+#: The same window back: "last YTD", "prior year YTD", "last year's YTD", "LY YTD", "PY YTD".
+_TD_PAST = rf"(?:{_PAST}(?:\s+(?:year|month|quarter|week)(?:'s)?)?|ly|py)"
+#: The to-dates short -- "YTD", "Y-T-D", "Y.T.D.", "MTD", "QTD", "WTD", "LYTD", "PYTD",
+#: "LMTD", "LQTD", "FYTD", "CYTD" -- and the units they are spelt out with.
+_TD_SHORT = r"(?:[ymqw][.-]?t[.-]?d\b\.?|[lp]ytd|lmtd|lqtd|fytd|cytd)"
+_TD_UNIT_WORD = r"(?:year|month|mth|quarter|qtr|week)"
+_TD_CORE = (
+    rf"(?:(?:{_TD_BASIS}[\s-]*)?(?:{_TD_SHORT}|{_TD_UNIT_WORD}[\s-]*(?:to|till|until)[\s-]*date)"
+    rf"|{_TD_BASIS}[\s-]+to[\s-]+date"
+    rf"|(?:(?:this|the)\s+)?(?:{_TD_BASIS}\s+)?{_TD_UNIT_WORD}\s+so\s+far"
+    rf"|so\s+far\s+(?:this|the)\s+(?:{_TD_BASIS}\s+)?{_TD_UNIT_WORD})"
+)
+#: What may follow one: its year -- "YTD 2024", "YTD for 2024", "YTD-2024", "YTD'24" -- or
+#: a unit back: "YTD last year", "MTD last month", "YTD LY". Not after a comma or a spaced
+#: dash: "YTD, 2024" lists two periods and "YTD - 2024" spans them.
+_TD_TAIL = (
+    rf"(?:\s+(?:of|for|in)\s+{_YEAR}|-{_YEAR}(?![-/.]\d)|\s+{_YEAR}|'\d{{2}}(?!\d)"
+    rf"|\s+(?:{_PAST}\s+{_TD_UNIT_WORD}|ly|py))"
+)
+#: The month a YTD runs to, and the words that lead to it: "YTD through March 2024". Not
+#: "to": "YTD to March" is a span, both ends its own, as "to" always makes one.
+_TD_UNTIL = r"(?:through|thru|till|until|up\s*to|upto|as\s+(?:of|at|on)|ending|ended)"
+_TD_MONTH = rf"{_MONTH}(?:\s*,\s*\d{{4}}|-\d{{2}}(?:\d{{2}})?(?!\d)|{_YEAR_SUFFIX})"
+_TD_YTD = r"(?:y[.-]?t[.-]?d|year[\s-]*to[\s-]*date)"
+
+#: Which to-date a phrase names: the letter of its abbreviation, or the unit spelt out.
+_TD_WHICH = re.compile(
+    r"\b(?:[lp]?([ymqw])[.-]?t[.-]?d"
+    r"|(year|month|mth|quarter|qtr|week)[\s-]*(?:(?:to|till|until)[\s-]*date|so\s+far)"
+    r"|so\s+far\s+(?:this|the)\s+(?:(?:fiscal|financial|calendar)\s+)?"
+    r"(year|month|mth|quarter|qtr|week))"
+)
+_TD_UNITS = {
+    "y": Grain.YEAR, "year": Grain.YEAR, "m": Grain.MONTH, "month": Grain.MONTH,
+    "mth": Grain.MONTH, "q": Grain.QUARTER, "quarter": Grain.QUARTER, "qtr": Grain.QUARTER,
+    "w": Grain.WEEK, "week": Grain.WEEK,
+}
+_TD_YEAR_BACK = re.compile(rf"\b(?:{_PAST}\s+year|ly|py|[lp]ytd)\b")
+_TD_UNIT_BACK = re.compile(rf"\b(?:{_PAST}|lmtd|lqtd)\b")
+_TD_FISCAL = re.compile(r"\b(?:fiscal|financial|fytd)\b|\bf\.?y\.?(?![\s'-]*\d)")
+_TD_CALENDAR = re.compile(r"\b(?:calendar|cytd)\b|\bc\.?y\.?(?![\s'-]*\d)")
+#: The year written with the month: "March 2024", "Mar-24", "March, 2024", "Mar'24".
+_TD_MONTH_YEAR = re.compile(
+    rf"(?:{_MONTH})(?:\s*[,']?\s*|-)(\d{{4}}|(?<=[-'])\d{{2}}(?!\d))", re.IGNORECASE
+)
+
+
 def _p_to_date(text: str, cfg: WranglerConfig) -> Spec | None:
+    """YTD, MTD, QTD, WTD -- short, spelt out or "so far" -- with a basis, a year, a month
+    to run to, or a step back.
+
+    REGRESSION: "fiscal year to date" and "FY YTD" were the *calendar* year to date --
+    the basis was dropped; "2024-YTD" ran from 2024 to today; "YTD last year" and
+    "YTD through March 2024" were two dates each; "this year so far" was the whole year.
+    """
     low = text.lower()
-    if re.search(r"\b(?:mtd|month\s*to\s*date)\b", low):
-        unit = Grain.MONTH
-    elif re.search(r"\b(?:qtd|quarter\s*to\s*date)\b", low):
-        unit = Grain.QUARTER
-    else:
-        unit = Grain.YEAR
-    direction = -1 if re.search(rf"\b{_PAST}\b", low) else 0
-    spec = Spec(Kind.TO_DATE, unit=unit, direction=direction)
+    which = _TD_WHICH.search(low)
+    unit = Grain.YEAR if which is None else _TD_UNITS[next(g for g in which.groups() if g)]
+    year_back = _TD_YEAR_BACK.search(low) is not None
+    back = year_back or _TD_UNIT_BACK.search(low) is not None
+    spec = Spec(Kind.TO_DATE, unit=unit, direction=-1 if back else 0)
+    if year_back and unit is not Grain.YEAR:
+        # "last year's MTD": the month so far, a year back -- not last month's.
+        spec = spec.with_(direction=0, year_offset=-1)
+    stated = (
+        Basis.FISCAL if _TD_FISCAL.search(low)
+        else Basis.CALENDAR if _TD_CALENDAR.search(low) else None
+    )
     month = find_month(low)
     year, basis = _year_from_suffix(text, cfg)
-    lead = re.match(rf"\s*((?:19|20)\d{{2}}|{_MARKED_YEAR})\s+(?=ytd|year)", text, re.I)
+    lead = re.match(rf"\s*((?:19|20)\d{{2}}|{_MARKED_YEAR})[\s-]+(?=y)", text, re.I)
     if year is None and lead is not None:
         # "2024 YTD": the year first, as a column heading puts it.
         year, basis = parse_year_token(lead.group(1), cfg)
+    if year is None and month is not None:
+        written = _TD_MONTH_YEAR.search(text)  # "March 2024 YTD", "YTD Mar-24"
+        if written is not None:
+            year = _pivot_year(written.group(1), cfg)
+    basis = stated or basis
     if month is not None:
         # Year may still be unstated ("YTD March"); resolve() picks the most recent March.
         return spec.with_(month=month, year=year, basis=basis)
     if year is not None:
         return spec.with_(year=year, basis=basis)
-    return spec
+    return spec if basis is None else spec.with_(basis=basis)
 
 
 #: "to date", "-to-date", "to-date".
@@ -907,7 +975,7 @@ def _p_bare_year(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 def _p_ago(text: str, cfg: WranglerConfig) -> Spec | None:
-    m = re.match(rf"\s*({_NUM})\s+({_UNIT})\s+({_AGO_WORDS})", text, re.IGNORECASE)
+    m = re.match(rf"\s*({_COUNT})\s+({_UNIT})\s+({_AGO_WORDS})", text, re.IGNORECASE)
     if not m:
         return None
     count = word_to_int(m.group(1))
@@ -953,7 +1021,7 @@ def _period_basis(word: str | None, unit: Grain) -> Basis | None:
 
 def _p_relative(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.match(
-        rf"\s*({_DIRWORD})\s+(?:({_NUM})\s+)?(?:({_BASIS_WORD})\s+)?({_UNIT})\b",
+        rf"\s*({_DIRWORD})\s+(?:({_COUNT})\s+)?(?:({_BASIS_WORD})\s+)?({_UNIT})\b",
         text,
         re.IGNORECASE,
     )
@@ -1639,10 +1707,10 @@ def _p_in_future(text: str, cfg: WranglerConfig) -> Spec | None:
     """
     # "after 6 months" is a duration from now; "after March" is the AFTER modifier and is
     # handled elsewhere. The number is what tells them apart.
-    m = re.match(rf"\s*(?:in|after|within)\s+({_NUM})\s+({_UNIT})\b", text, re.IGNORECASE)
+    m = re.match(rf"\s*(?:in|after|within)\s+({_COUNT})\s+({_UNIT})\b", text, re.IGNORECASE)
     if m is None:
         m = re.match(
-            rf"\s*({_NUM})\s+({_UNIT})\s+from\s+(?:now|today)\b", text, re.IGNORECASE
+            rf"\s*({_COUNT})\s+({_UNIT})\s+from\s+(?:now|today)\b", text, re.IGNORECASE
         )
     if m is None:
         return None
@@ -1740,7 +1808,7 @@ def _p_till_now(text: str, cfg: WranglerConfig) -> Spec | None:
     low = text.strip().lower()
     if low.startswith("as"):
         return Spec(Kind.DAY_KEYWORD, direction=0, mod=Mod.AS_OF)
-    if re.match(r"(?:till|until|upto)\b", low):
+    if re.match(r"(?:up\s*)?(?:till|until)\b|upto\b|up\s+to\b", low):
         return Spec(Kind.DAY_KEYWORD, direction=0, mod=Mod.UNTIL)
     return Spec(Kind.DAY_KEYWORD, direction=0)
 
@@ -1858,18 +1926,14 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "ytd_period",
-        rf"\b(?:{_PAST}\s+)?(?:ytd|year\s*to\s*date)\s+{_MONTH}{_YEAR_SUFFIX}\b",
+        rf"\b(?:(?:{_TD_PAST}\s+)?(?:{_TD_BASIS}[\s-]*)?{_TD_YTD}\s+(?:{_TD_UNTIL}\s+)?{_TD_MONTH}"
+        rf"|{_TD_MONTH}\s+{_TD_YTD})\b",
         _p_to_date,
     ),
-    Rule(
-        "to_date",
-        rf"\b(?:{_PAST}\s+)?(?:ytd|mtd|qtd|year\s*to\s*date|month\s*to\s*date"
-        rf"|quarter\s*to\s*date)(?:\s+(?:of\s+)?{_YEAR})?\b",
-        _p_to_date,
-    ),
+    Rule("to_date", rf"\b(?:{_TD_PAST}\s+)?{_TD_CORE}{_TD_TAIL}?\b", _p_to_date),
     Rule(
         "year_ytd",
-        rf"\b(?:(?:19|20)\d{{2}}|{_MARKED_YEAR})\s+(?:ytd|year\s*to\s*date)\b",
+        rf"\b(?:(?:19|20)\d{{2}}|{_MARKED_YEAR})(?:\s+|-){_TD_YTD}\b",
         _p_to_date,
     ),
     # After to_date, so "year to date" and "last year to date" keep their YTD reading, and
@@ -1923,8 +1987,8 @@ RULES: tuple[Rule, ...] = (
     Rule("weekend", rf"\b(?:(?:this|{_DIRWORD})\s+)?(?:weekend|wknd)\b", _p_weekend),
     Rule(
         "in_future",
-        rf"\b(?:(?:in|after|within)\s+{_NUM}\s+{_UNIT}"
-        rf"|{_NUM}\s+{_UNIT}\s+from\s+(?:now|today))\b",
+        rf"\b(?:(?:in|after|within)\s+{_COUNT}\s+{_UNIT}"
+        rf"|{_COUNT}\s+{_UNIT}\s+from\s+(?:now|today))\b",
         _p_in_future,
     ),
     Rule(
@@ -2020,7 +2084,7 @@ RULES: tuple[Rule, ...] = (
     _from_tokens("month_ordinal_word"),
     # Before "fiscal_month": both open with a bare number, and "3 months ago" would
     # otherwise read as "the 3rd month".
-    Rule("ago", rf"\b{_NUM}\s+{_UNIT}\s+(?:{_AGO_WORDS})\b", _p_ago),
+    Rule("ago", rf"\b{_COUNT}\s+{_UNIT}\s+(?:{_AGO_WORDS})\b", _p_ago),
     # Singular "month" only: an ordinal position is "the third month", never "months".
     Rule("fiscal_month", rf"\b(?:the\s+)?{_ORD}\s+month\b{_YEAR_SUFFIX}", _p_fiscal_month),
     Rule(
@@ -2029,7 +2093,8 @@ RULES: tuple[Rule, ...] = (
         _p_relative_fy,
     ),
     Rule(
-        "relative", rf"\b{_DIRWORD}\s+(?:{_NUM}\s+)?(?:{_BASIS_WORD}\s+)?{_UNIT}\b", _p_relative
+        "relative", rf"\b{_DIRWORD}\s+(?:{_COUNT}\s+)?(?:{_BASIS_WORD}\s+)?{_UNIT}\b",
+        _p_relative,
     ),
     Rule(
         "this_period",
@@ -2039,7 +2104,9 @@ RULES: tuple[Rule, ...] = (
     # "till date", "as on date": today, as statements are asked for. Before day_keyword.
     Rule(
         "till_now",
-        r"\b(?:(?:till|until|upto)\s+(?:date|dated|now)|as\s+(?:on|of)\s+(?:date|dated))\b",
+        r"\b(?:(?:up\s*)?(?:till|until)\s+(?:the\s+present|date|dated|dt|now|present)"
+        r"|upto\s+(?:date|dated|dt|now)|up\s+to\s+now"
+        r"|as\s+(?:on|of|at)\s+(?:date|dated|dt)|as\s+(?:of|at)\s+now)\b",
         _p_till_now,
     ),
     # "to present", "to now", "-present", "to date": today, but only as the end of the date
@@ -2048,7 +2115,9 @@ RULES: tuple[Rule, ...] = (
         "to_now",
         r"\b(?:to|through|thru)\s+(?:the\s+)?(?:present|now)\b"
         r"(?!\s+(?:the|a|an|our|your|their|this|that|these|those|it|them|you|we|us)\b)"
-        r"|\bto\s+date\b|\b(?:(?<=-)|(?<=-\s))(?:present|now|date)\b",
+        # "up to date" only here, as the end of a date: on its own it is an adjective.
+        r"|\bto(?:\s+|\s*-\s*)date\b|\bup\s+to\s+date\b|\bto\s+this\s+day\b"
+        r"|\b(?:(?<=-)|(?<=-\s))(?:present|now|date)\b",
         _p_till_now,
     ),
     Rule(

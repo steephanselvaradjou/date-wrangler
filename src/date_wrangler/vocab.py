@@ -60,9 +60,12 @@ CARDINALS: dict[str, int] = {
     "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
     # "a month ago" is one month ago. Nobody writes "one month ago" out loud.
     "a": 1, "an": 1,
-    # "a couple of weeks ago": two, as it is read in practice. "a few" stays vague.
-    "couple of": 2, "a couple of": 2,
 }
+
+#: "a couple of weeks ago": two, as it is read in practice; "a few" stays vague. Kept out
+#: of CARDINALS, which open a dozen rules: in it, every word starting with "c" -- in every
+#: text -- became a place each of them had to be tried.
+COUPLE = re.compile(r"(?:a\s+)?couple\s+of", re.IGNORECASE)
 
 ORDINALS: dict[str, int] = {
     "first": 1, "1st": 1,
@@ -169,6 +172,8 @@ def word_to_int(text: str) -> int | None:
         return CARDINALS[low]
     if low.isdigit():
         return int(low)
+    if COUPLE.fullmatch(low):
+        return 2
     return None
 
 

@@ -125,6 +125,9 @@ PHRASES = [
     # relative phrases, spelt short
     "last 3months", "3qtrs ago", "yday", "last week Fri", "Fri. last week", "last 5 biz days",
     "same quarter LY", "a couple of weeks ago", "trailing 12-month", "prev quarter",
+    # to date, spelt every way
+    "fiscal YTD", "FYTD", "last MTD", "last QTD", "from 01/06/2018 till date", "so far this year",
+    "WTD", "LYTD", "2024-YTD", "YTD through March 2024", "as of now",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

@@ -376,6 +376,40 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("2024 YTD", "2024"),
         ("the report is up to date", "-"),
         ("we want to present the results", "-"),
+        # Each was nothing, two dates, or a different period, in 2.1.0.
+        ("from 01/06/2018 till date", "2018-06-01..2026-10-16"),  # open-ended: its end lost
+        ("since 1 June 2018 till date", "2018-06-01..2026-10-16"),
+        ("1 June 2018 up till now", "2018-06-01..2026-10-16"),
+        ("1 June 2018 till present", "2018-06-01..2026-10-16"),
+        ("1 June 2018 to-date", "2018-06-01..2026-10-16"),
+        ("1 June 2018 onwards till date", "2018-06-01..2026-10-16"),
+        ("1 June 2018 through to today", "2018-06-01..2026-10-16"),
+        ("till present", "..2026-10-16"),
+        ("as of now", "2026-10-16"),
+        ("YTD", "2026-01-01..2026-10-16"),
+        ("year-to-date", "2026-01-01..2026-10-16"),
+        ("Y-T-D", "2026-01-01..2026-10-16"),
+        ("so far this year", "2026-01-01..2026-10-16"),
+        ("this quarter so far", "2026-10-01..2026-10-16"),  # was the whole quarter
+        ("WTD", "2026-10-12..2026-10-16"),
+        ("fiscal YTD", "2026-04-01..2026-10-16"),  # was the calendar year to date
+        ("fiscal year to date", "2026-04-01..2026-10-16"),
+        ("FYTD", "2026-04-01..2026-10-16"),
+        ("FY to date", "2026-04-01..2026-10-16"),
+        ("CYTD", "2026-01-01..2026-10-16"),
+        ("LYTD", "2025-01-01..2025-10-16"),
+        ("YTD last year", "2025-01-01..2025-10-16"),
+        ("last MTD", "2026-09-01..2026-09-16"),  # the same days last month: was a year back
+        ("MTD last month", "2026-09-01..2026-09-16"),
+        ("last QTD", "2026-07-01..2026-07-16"),
+        ("last year's MTD", "2025-10-01..2025-10-16"),
+        ("2024-YTD", "2024"),  # was 2024 to today
+        ("YTD for 2024", "2024"),
+        ("YTD through March 2024", "2024-01..2024-03"),
+        ("March 2024 YTD", "2024-01..2024-03"),
+        ("YTD Mar-24", "2024-01..2024-03"),
+        # Still two: a comma lists, and "to" spans.
+        ("YTD, 2024", "2026-01-01..2026-10-16 ; 2024"),
     ]),
     ("open-ended", TODAY, CAL, [
         ("since 2012", "2012.."),

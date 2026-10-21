@@ -464,7 +464,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` — and spelt short: `last 3months`, `3mos ago`, `last mth`, `prev quarter`, `a couple of weeks ago`, `yday`, `tmrw`. A single letter for a unit (`3m`) is not read: it is minutes or millions as often as months |
 | Stated basis | `this fiscal year`, `this FY`, `last 2 fiscal quarters`, `next calendar year` |
 | Weekdays | `last Monday`, `next Friday`, `this Tuesday` |
-| To-date | `YTD`, `MTD`, `QTD`, `last YTD` (the same window a year earlier) |
+| To-date | `YTD`, `MTD`, `QTD`, `WTD`, `year-to-date`, `Y-T-D`, `so far this year`; `FYTD`, `fiscal YTD`, `FY to date` (from the fiscal year's start), `CYTD`; `last YTD`, `LYTD`, `YTD last year` (the same window a year earlier), `last MTD`, `LMTD` (the same days of last month), `last year's MTD`; `YTD 2024`, `2024-YTD`, `YTD through March 2024`, `March 2024 YTD` |
 | Period to date | `this year to date`, `Q3 to date`, `October to date`, `March 2024 to date` |
 | Reporting shorthand | `TTM`, `LTM`, `T12M`, `L3M`, `trailing 12 months`, `rolling 3 months` |
 | Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024` |
@@ -473,7 +473,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Months as numbers | `2024-03`, `2024/03`, `03/2024` |
 | Abbreviations and run-together forms | `Sept. 2013`, `Mar. 15, 2024`, `FEB.2018`, `15MAR2024`, `13june2018`, `01may 2018`, `may'18`, `June' 2018`, `Mar-15-2024` |
 | Ranges | `Q1 to Q2`, `Jan–Mar`, `from April to September 2024`, `Nov to Feb` (wraps), `2024-03-15/2024-03-20`, `1-4-2018-31-5-2018`, `the years 2012 through 2014` |
-| Up to today | `01/06/2018 to till date`, `April 2015 to till date`, `1st march 2018 to as on date`, `from 2012 to present`, `2012-present`, `as on date` |
+| Up to today | `01/06/2018 to till date`, `from 01/06/2018 till date`, `April 2015 to till date`, `1st march 2018 to as on date`, `from 2012 to present`, `2012-present`, `1 June 2018 up till now`, `June 2018 till present`, `1 June 2018 to-date`, `as on date`, `as of now`. A `from` or `since` day with an end written after it ends there, not open-ended |
 | Open-ended | `since March`, `from Q1 onwards`, `up to March 2024`, `before 2024`, `after FY24`, `prior to 2012`, `pre-2012`, `post-2012`, `2012 and later`, `in or after 2012`, `starting 2012` |
 | Counted from a date | `3 days before 15 March 2024`, `two weeks after 1 April`, `a year after March 2024`, `the day after 15 March` |
 | Two back | `the month before last`, `the year before last`, `the week before last` |

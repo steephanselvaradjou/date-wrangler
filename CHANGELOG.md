@@ -28,6 +28,13 @@ The full notes for each release, with examples, are on the
   unread: it is minutes or millions as often as months.
 - `tests/test_relative_spellings.py`: 927 spellings of relative phrases, each held to its
   plain form.
+- To-date phrases however they are written: `year-to-date`, `Y-T-D`, `so far this year`,
+  `this quarter so far`, `WTD` and `week to date`, `FYTD`, `fiscal YTD`, `FY to date`,
+  `CYTD`, `LYTD`, `PYTD`, `LMTD`, `YTD last year`, `MTD last month`, `last year's MTD`,
+  `YTD for 2024`, `2024-YTD`, `YTD through March 2024`, `March 2024 YTD`, `YTD Mar-24`;
+  and the ends people write after a start date: `till present`, `up till now`, `to-date`,
+  `uptill date`, `till dt`, `onwards till date`, `through to today`, `as of now`.
+  `tests/test_to_date_spellings.py` holds 382 of them.
 
 ### Fixed
 - `2024-Mar` and `2024 - March` were January to March 2024, and `FY24 - June` the start
@@ -35,6 +42,16 @@ The full notes for each release, with examples, are on the
 - `2024-3Q` was March 2024, and `2024-1H` January 2024.
 - `3qtrs ago` was the third quarter of this year; `last week Fri` was all of last week;
   `same month of last year` was the whole of last year.
+- `fiscal year to date`, `fiscal YTD` and `FY YTD` were the *calendar* year to date: the
+  fiscal year was dropped. They start at the fiscal year's first day.
+- `from 01/06/2018 till date`, and any `from` or `since` a day with an end written after
+  it, was open-ended -- the end dropped -- where `from 2012 to date` ended today. It ends
+  today.
+- **Changes answers:** `last MTD` and `last QTD` went back a year; they are the same days
+  of the previous month and quarter, as LMTD means. `last YTD` is unchanged, and `last
+  year's MTD` is the month so far a year back.
+- `2024-YTD` ran from 2024 to today; it is 2024's year to date, as `2024 YTD` is.
+  `this year so far` was the whole year, future included.
 - `15th-Mar-2024` was 15 October of this year and March 2024; `15 March2024` was
   15 March of this year.
 - A day whose marks change between its parts: `15-Mar 2024`, `15/Mar 2024` and

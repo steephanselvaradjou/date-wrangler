@@ -67,6 +67,7 @@ _TRIGGERS = (
         # "as on date", "till date": today, as statements are asked for.
         "date", "dated", "tonight",
         "wknd", "workday", "workdays", "biz",
+        "wtd", "lytd", "pytd", "lmtd", "lqtd", "fytd", "cytd", "dt", "upto", "uptill",
     }
     | set(DECADE_WORDS)
     | set(_DAY_WORDS)
@@ -80,11 +81,21 @@ _WORDS = re.compile(r"[a-z]+")
 _DIGIT = re.compile(r"\d")
 
 
+#: Dates no trigger word finds: "Y-T-D", "M.T.D.", split into words, are single letters,
+#: which would let every "don't" through; and "as of now" has only "now", in every text.
+#: Looked for whole instead.
+_SPELT_TO_DATE = re.compile(
+    r"\b[ymqw][.-]t[.-]?d\b|\bas\s+(?:of|at)\s+now\b|\bup\s+to\s+now\b", re.IGNORECASE
+)
+
+
 def _might_hold_a_date(text: str) -> bool:
     """Cheap rejection. Every rule needs a digit or one of the trigger words."""
     if _DIGIT.search(text) is not None:
         return True
-    return not _TRIGGERS.isdisjoint(_WORDS.findall(text.lower()))
+    if not _TRIGGERS.isdisjoint(_WORDS.findall(text.lower())):
+        return True
+    return _SPELT_TO_DATE.search(text) is not None
 
 
 try:  # Python 3.11 moved the regex parser; it is the same module either way.
@@ -193,7 +204,9 @@ _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 # ---------------------------------------------------------------------------
 
 #: A gap that joins two periods into one span.
-_STRONG_LINK = re.compile(r"^\s*(?:to|through|thru|until|till|up\s*to|upto|-|–|—)\s*$", re.I)
+_STRONG_LINK = re.compile(
+    r"^\s*(?:to|through(?:\s+to)?|thru(?:\s+to)?|until|till|up\s*to|upto|-|–|—)\s*$", re.I
+)
 #: "and" joins a range only when nothing suggests a list.
 #: "and" joins a range only when nothing suggests a list. A relative period after it may
 #: keep its article: "2024 and the year before".
@@ -701,7 +714,7 @@ _COMMA_GAP = re.compile(r"^\s*,\s*$")
 #: Between a weekday and the date it names: "Friday, 15 March", "Friday 15 March".
 _WEEKDAY_GAP = re.compile(r"^\s*,?\s*$")
 #: Before "till date", "to present": "01/06/2018 to till date", "10th June 2018-to till date".
-_TILL_GAP = re.compile(r"^\s*(?:-\s*)?(?:to\s*)?$", re.IGNORECASE)
+_TILL_GAP = re.compile(r"^\s*(?:onwards\s+)?(?:-\s*)?(?:to\s*)?$", re.IGNORECASE)
 #: Between a count and the date it counts from: "3 days before 15 March", "prior to".
 _FROM_DATE_GAP = re.compile(r"^\s*(?:to\s+)?$", re.IGNORECASE)
 #: A count that points at a date after it: "3 days before", "a year after".
@@ -1055,6 +1068,8 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
     for pattern, mod in _MOD_PREFIXES:
         m = pattern.search(before)
         if m:
+            if mod is Mod.SINCE and raw.spec.through_today:
+                break  # "since 1 June 2018 till date" says where it ends: today
             spec = raw.spec.with_(mod=mod)
             # "before / by / until the end of March" means by the close of March. Read
             # literally it was "before the last third of March", which ended on the 20th.
@@ -1065,11 +1080,15 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
             ):
                 spec = spec.with_(part=None, mod=Mod.UNTIL)
             return _Raw(raw.rule, spec, window + m.start(), raw.end)
+    # "from 15 March" runs onwards -- unless it says where it stops. REGRESSION: "from
+    # 01/06/2018 till date" was open-ended, its end dropped, where "from 2012 to date" and
+    # "01/06/2018 till date" both ended today.
     m = _FROM_PREFIX.search(before)
     if (
         m
         and _names_a_day(raw.spec)
         and raw.spec.mod is None
+        and not raw.spec.through_today
         and not _DURATION_FROM.search(before)
     ):
         return _Raw(raw.rule, raw.spec.with_(mod=Mod.SINCE), window + m.start(), raw.end)
