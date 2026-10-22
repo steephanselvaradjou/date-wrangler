@@ -136,6 +136,9 @@ PHRASES = [
     "03-2024", "2024 week 11", "W11-2024", "week number 11 of 2024", "weeks 11-12 2024",
     "yr 2024", "throughout 2024", "every first Monday of the month", "the past few weeks",
     "a while back", "the summer months of 2024", "the 2015-16 NBA season",
+    # "compare ... with"
+    "compare claims paid in Q1 FY25 with Q1 FY26", "compare 2023 with 2024",
+    "compare Q1 2024 with the same quarter last year",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

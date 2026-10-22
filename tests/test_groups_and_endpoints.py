@@ -33,6 +33,14 @@ def groups(text):
         ("2019 versus 2020", [("2019", 0, None), ("2020", 0, "compare")]),
         ("Q1 FY25 vs Q1 FY26", [("Q1 FY25", 0, None), ("Q1 FY26", 0, "compare")]),
         ("compare Q1 2024 to Q1 2025", [("Q1 2024", 0, None), ("Q1 2025", 0, "compare")]),
+        # REGRESSION: "with" after "compare" linked nothing, so the two quarters were
+        # unrelated, and two bare years, with no other cue, were not read at all.
+        (
+            "compare claims paid in Q1 FY25 with Q1 FY26",
+            [("Q1 FY25", 0, None), ("Q1 FY26", 0, "compare")],
+        ),
+        ("comparing 2023 with 2024", [("2023", 0, None), ("2024", 0, "compare")]),
+        ("compare 2023 to 2024", [("2023", 0, None), ("2024", 0, "compare")]),
         (
             "revenue in Q1 and Q3 2024 vs 2023",
             [("Q1", 0, None), ("Q3 2024", 0, "list"), ("2023", 0, "compare")],
@@ -49,6 +57,8 @@ def test_dates_named_together_share_a_group(text, expected):
         "patients diagnosed on 1994/2/19 whose concentration on 1993/11/12 was high",
         "crimes committed in 1995 by people with accounts opened in 1997",
         "sales in March. Returns in June.",
+        # "with" compares only after "compare": here it is an ordinary preposition.
+        "sales in Q1 with returns in Q2",
     ],
 )
 def test_unrelated_dates_are_each_in_a_group_of_their_own(text):

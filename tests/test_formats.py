@@ -521,6 +521,12 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("March 2024 compared to the previous month", "2024-03 ; 2024-02"),
         ("2024 vs prior year", "2024 ; 2023"),
         ("2024 vs the year before", "2024 ; 2023"),
+        # Each was unrelated, read from today, or not read at all, in 2.2.0.
+        ("compare claims paid in Q1 FY25 with Q1 FY26", "2024-04..2024-06 ; 2025-04..2025-06"),
+        ("compare Q1 2024 with the same quarter last year", "2024-01..2024-03 ; 2023-01..2023-03"),
+        ("compare March 2024 with the previous month", "2024-03 ; 2024-02"),
+        ("compare 2023 with 2024", "2023 ; 2024"),
+        ("comparing 2023 vs 2024", "2023 ; 2024"),
     ]),
     ("relative to today", TODAY, CAL, [
         ("last March", "2026-03"),

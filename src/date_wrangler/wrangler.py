@@ -234,6 +234,11 @@ _COMPARISON_GAP = re.compile(
 _COMPARISON_LEAD = re.compile(
     r"\b(?:compare[ds]?|comparing|comparison|benchmark(?:ed)?|contrast)\b[^.;!?]{0,24}$", re.I
 )
+#: "with" compares only after such a lead: "compare claims paid in Q1 FY25 with Q1 FY26".
+#: On its own it ties nothing together -- "sales in Q1 with returns in Q2". REGRESSION:
+#: after "compare" it linked nothing either, so the two quarters came back as unrelated,
+#: where "vs", "and" and "to" made them one comparison.
+_WITH_LINK = re.compile(r"^\s*with\s*(?:the\s+)?$", re.IGNORECASE)
 
 _MOD_PREFIXES: tuple[tuple[re.Pattern[str], Mod], ...] = (
     (re.compile(r"\bas\s+(?:of|on|at)\s+$", re.IGNORECASE), Mod.AS_OF),
@@ -346,6 +351,9 @@ _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|throughout|between|before|after|"
     r"no\s+(?:later|earlier)\s+than|"
     r"vs|versus|compared\s+(?:to|with)|"
+    # The words that make "to" a comparison: "compare 2023 with 2024". REGRESSION: both
+    # years were dropped, there being no other cue.
+    r"compare[ds]?|comparing|comparison|benchmark(?:ed)?|contrast|"
     r"sales|revenue|profit|data|report|numbers|figures|results|performance|growth|"
     r"spend|cost|budget|forecast|actuals|"
     # Everyday text, not just reporting. Without these "Can we meet Thursday?" and
@@ -915,7 +923,7 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
             links.append("range" if _is_dated_day(a.spec) and _is_dated_day(b.spec) else "list")
         elif _LIST_LINK.match(gap):
             links.append("list")
-        elif _STRONG_LINK.match(gap) or _WEAK_LINK.match(gap):
+        elif _STRONG_LINK.match(gap) or _WEAK_LINK.match(gap) or _WITH_LINK.match(gap):
             lead = text[max(0, a.start - 40) : a.start]
             opened = lead.rfind("(")
             if opened > lead.rfind(")"):
@@ -924,6 +932,8 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
                 lead = lead[opened + 1 :]
             if _COMPARISON_LEAD.search(lead):
                 links.append("compare")
+            elif _WITH_LINK.match(gap):
+                links.append(None)
             elif _WEAK_LINK.match(gap) and not _BETWEEN_LEAD.search(lead[-24:]):
                 # "and" lists periods; only "between ... and" makes a span. "Q1 and Q3" is
                 # two quarters -- one range for both would hold Q2, which nobody named.

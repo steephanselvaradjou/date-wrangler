@@ -7,6 +7,22 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## Unreleased
+
+**Changes answers.**
+
+### Fixed
+- `compare claims paid in Q1 FY25 with Q1 FY26` gave two unrelated quarters: "with" after
+  "compare" joined nothing, where "vs", "and" and "to" made one comparison. It is one
+  comparison now, so `group` and `joined_by` say so. On its own "with" still joins
+  nothing: `sales in Q1 with returns in Q2` is two unrelated quarters.
+- For the same reason, a relative period after "compare … with" counted from today:
+  `compare Q1 2024 with the same quarter last year` was Q4 2025, and `compare March 2024
+  with the previous month` September 2026. They are Q1 2023 and February 2024.
+- `compare 2023 with 2024`, `compare 2023 to 2024` and `comparing 2023 vs 2024` found
+  nothing: a bare year needs a word that marks it as a date, and "compare" was not one.
+  It is now, with `comparing`, `comparison`, `benchmark` and `contrast`.
+
 ## 2.2.0 — 2026-10-21
 
 Dates with month names read from their words and numbers, not one pattern per spelling,
