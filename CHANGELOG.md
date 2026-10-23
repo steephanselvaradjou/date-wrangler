@@ -7,9 +7,11 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
-## Unreleased
+## 2.3.0 — 2026-10-23
 
-**Changes answers.**
+Two periods joined as the words between them say, whatever the words: comparisons, lists
+and spans with every connector people write, and a period named as another moved back.
+The API is unchanged. **Changes answers.**
 
 ### Fixed
 - `compare claims paid in Q1 FY25 with Q1 FY26` gave two unrelated quarters: "with" after
