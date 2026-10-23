@@ -324,6 +324,14 @@ default 2026-10-08 | the 2015-16 NBA season | (none) !! 'the 2015-16 NBA season'
 default 2026-10-08 | compare claims paid in Q1 FY25 with Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
 default 2026-10-08 | compare 2023 with 2024 | '2023' 2023-01-01..2023-12-31 year calendar c=0.8 +compare+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8
 default 2026-10-08 | compare Q1 2024 with the same quarter last year | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'the same quarter last year' 2023-01-01..2023-03-31 quarter calendar c=1
+default 2026-10-08 | Q1 FY25 v/s Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+default 2026-10-08 | claims in Q1 FY25 as against claims in Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+default 2026-10-08 | difference between Q1 and Q3 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'Q3 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-10-08 | Q1 2024 vs the same period last year | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'the same period last year' 2023-01-01..2023-03-31 quarter calendar c=1
+default 2026-10-08 | YTD vs LY | 'YTD' 2026-01-01..2026-10-08 year calendar c=1 +compare+ 'LY' 2025-01-01..2025-10-08 year calendar c=1
+default 2026-10-08 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
+default 2026-10-08 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +list+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+default 2026-10-08 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
 default 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 default 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
@@ -696,6 +704,14 @@ default 2026-03-31 | the 2015-16 NBA season | (none) !! 'the 2015-16 NBA season'
 default 2026-03-31 | compare claims paid in Q1 FY25 with Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
 default 2026-03-31 | compare 2023 with 2024 | '2023' 2023-01-01..2023-12-31 year calendar c=0.8 +compare+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8
 default 2026-03-31 | compare Q1 2024 with the same quarter last year | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'the same quarter last year' 2023-01-01..2023-03-31 quarter calendar c=1
+default 2026-03-31 | Q1 FY25 v/s Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+default 2026-03-31 | claims in Q1 FY25 as against claims in Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+default 2026-03-31 | difference between Q1 and Q3 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'Q3 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+default 2026-03-31 | Q1 2024 vs the same period last year | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'the same period last year' 2023-01-01..2023-03-31 quarter calendar c=1
+default 2026-03-31 | YTD vs LY | 'YTD' 2026-01-01..2026-03-31 year calendar c=1 +compare+ 'LY' 2025-01-01..2025-03-31 year calendar c=1
+default 2026-03-31 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
+default 2026-03-31 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +list+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+default 2026-03-31 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
 default 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 default 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1
@@ -1068,6 +1084,14 @@ fiscal 2026-10-08 | the 2015-16 NBA season | (none) !! 'the 2015-16 NBA season' 
 fiscal 2026-10-08 | compare claims paid in Q1 FY25 with Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
 fiscal 2026-10-08 | compare 2023 with 2024 | '2023' 2022-04-01..2023-03-31 year fiscal c=0.8 +compare+ '2024' 2023-04-01..2024-03-31 year fiscal c=0.8
 fiscal 2026-10-08 | compare Q1 2024 with the same quarter last year | 'Q1 2024' 2023-04-01..2023-06-30 quarter fiscal c=1 +compare+ 'the same quarter last year' 2022-04-01..2022-06-30 quarter fiscal c=1
+fiscal 2026-10-08 | Q1 FY25 v/s Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+fiscal 2026-10-08 | claims in Q1 FY25 as against claims in Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+fiscal 2026-10-08 | difference between Q1 and Q3 2024 | 'Q1' 2023-04-01..2023-06-30 quarter fiscal c=1 +compare+ 'Q3 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-10-08 | Q1 2024 vs the same period last year | 'Q1 2024' 2023-04-01..2023-06-30 quarter fiscal c=1 +compare+ 'the same period last year' 2022-04-01..2022-06-30 quarter fiscal c=1
+fiscal 2026-10-08 | YTD vs LY | 'YTD' 2026-04-01..2026-10-08 year fiscal c=1 +compare+ 'LY' 2025-04-01..2025-10-08 year fiscal c=1
+fiscal 2026-10-08 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
+fiscal 2026-10-08 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +list+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+fiscal 2026-10-08 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
 fiscal 2026-10-08 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
 fiscal 2026-10-08 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter fiscal c=1
@@ -1440,6 +1464,14 @@ fiscal 2026-03-31 | the 2015-16 NBA season | (none) !! 'the 2015-16 NBA season' 
 fiscal 2026-03-31 | compare claims paid in Q1 FY25 with Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
 fiscal 2026-03-31 | compare 2023 with 2024 | '2023' 2022-04-01..2023-03-31 year fiscal c=0.8 +compare+ '2024' 2023-04-01..2024-03-31 year fiscal c=0.8
 fiscal 2026-03-31 | compare Q1 2024 with the same quarter last year | 'Q1 2024' 2023-04-01..2023-06-30 quarter fiscal c=1 +compare+ 'the same quarter last year' 2022-04-01..2022-06-30 quarter fiscal c=1
+fiscal 2026-03-31 | Q1 FY25 v/s Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+fiscal 2026-03-31 | claims in Q1 FY25 as against claims in Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +compare+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+fiscal 2026-03-31 | difference between Q1 and Q3 2024 | 'Q1' 2023-04-01..2023-06-30 quarter fiscal c=1 +compare+ 'Q3 2024' 2023-10-01..2023-12-31 quarter fiscal c=1
+fiscal 2026-03-31 | Q1 2024 vs the same period last year | 'Q1 2024' 2023-04-01..2023-06-30 quarter fiscal c=1 +compare+ 'the same period last year' 2022-04-01..2022-06-30 quarter fiscal c=1
+fiscal 2026-03-31 | YTD vs LY | 'YTD' 2025-04-01..2026-03-31 year fiscal c=1 +compare+ 'LY' 2024-04-01..2025-03-31 year fiscal c=1
+fiscal 2026-03-31 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
+fiscal 2026-03-31 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +list+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
+fiscal 2026-03-31 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
 fiscal 2026-03-31 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
 fiscal 2026-03-31 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter fiscal c=1
@@ -1812,6 +1844,14 @@ us 2026-10-08 | the 2015-16 NBA season | (none) !! 'the 2015-16 NBA season' name
 us 2026-10-08 | compare claims paid in Q1 FY25 with Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +compare+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
 us 2026-10-08 | compare 2023 with 2024 | '2023' 2023-01-01..2023-12-31 year calendar c=0.8 +compare+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8
 us 2026-10-08 | compare Q1 2024 with the same quarter last year | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'the same quarter last year' 2023-01-01..2023-03-31 quarter calendar c=1
+us 2026-10-08 | Q1 FY25 v/s Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +compare+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
+us 2026-10-08 | claims in Q1 FY25 as against claims in Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +compare+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
+us 2026-10-08 | difference between Q1 and Q3 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'Q3 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-10-08 | Q1 2024 vs the same period last year | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'the same period last year' 2023-01-01..2023-03-31 quarter calendar c=1
+us 2026-10-08 | YTD vs LY | 'YTD' 2026-01-01..2026-10-08 year calendar c=1 +compare+ 'LY' 2025-01-01..2025-10-08 year calendar c=1
+us 2026-10-08 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
+us 2026-10-08 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +list+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
+us 2026-10-08 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
 us 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 us 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
@@ -2184,6 +2224,14 @@ us 2026-03-31 | the 2015-16 NBA season | (none) !! 'the 2015-16 NBA season' name
 us 2026-03-31 | compare claims paid in Q1 FY25 with Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +compare+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
 us 2026-03-31 | compare 2023 with 2024 | '2023' 2023-01-01..2023-12-31 year calendar c=0.8 +compare+ '2024' 2024-01-01..2024-12-31 year calendar c=0.8
 us 2026-03-31 | compare Q1 2024 with the same quarter last year | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'the same quarter last year' 2023-01-01..2023-03-31 quarter calendar c=1
+us 2026-03-31 | Q1 FY25 v/s Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +compare+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
+us 2026-03-31 | claims in Q1 FY25 as against claims in Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +compare+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
+us 2026-03-31 | difference between Q1 and Q3 2024 | 'Q1' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'Q3 2024' 2024-07-01..2024-09-30 quarter calendar c=1
+us 2026-03-31 | Q1 2024 vs the same period last year | 'Q1 2024' 2024-01-01..2024-03-31 quarter calendar c=1 +compare+ 'the same period last year' 2023-01-01..2023-03-31 quarter calendar c=1
+us 2026-03-31 | YTD vs LY | 'YTD' 2026-01-01..2026-03-31 year calendar c=1 +compare+ 'LY' 2025-01-01..2025-03-31 year calendar c=1
+us 2026-03-31 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
+us 2026-03-31 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +list+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
+us 2026-03-31 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
 us 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 us 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1

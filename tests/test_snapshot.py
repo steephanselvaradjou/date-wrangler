@@ -139,6 +139,10 @@ PHRASES = [
     # "compare ... with"
     "compare claims paid in Q1 FY25 with Q1 FY26", "compare 2023 with 2024",
     "compare Q1 2024 with the same quarter last year",
+    "Q1 FY25 v/s Q1 FY26", "claims in Q1 FY25 as against claims in Q1 FY26",
+    "difference between Q1 and Q3 2024", "Q1 2024 vs the same period last year",
+    "YTD vs LY", "March 2024 vs a year earlier", "Q1 FY25 as well as Q1 FY26",
+    "the same period last year",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",
