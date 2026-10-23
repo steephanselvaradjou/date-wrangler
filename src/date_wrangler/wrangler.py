@@ -218,22 +218,48 @@ _WEAK_LINK = re.compile(r"^\s*(?:and|&)\s*(?:the\s+)?$", re.IGNORECASE)
 #: REGRESSION: "in 2012 or 2013" was 2012 alone -- "or" linked nothing, and the second
 #: year, left without a cue, was dropped.
 _LIST_LINK = re.compile(
-    r"^\s*(?:,\s*(?:and\s+|or\s+)?|,?\s*(?:or|and/or)\s+)(?:the\s+)?$", re.IGNORECASE
+    r"^\s*(?:,\s*(?:and\s+|or\s+)?|,?\s*(?:or|and/or)\s+"
+    # REGRESSION: each of these left the two periods unrelated, and a bare year after
+    # them unread: "Q1 FY25 as well as Q1 FY26", "2023 plus 2024".
+    r"|(?:as\s+well\s+as|along\s+with|together\s+with|plus)\s+|\+\s*)(?:the\s+)?$",
+    re.IGNORECASE,
 )
 #: "Jan/Feb 2024" lists; "2024-03-15/2024-03-20" is an ISO interval. The ends decide.
 _SLASH_LINK = re.compile(r"^\s*/\s*$")
 
+#: Up to three plain words -- no comma, no full stop -- on either side of a comparison:
+#: "claims in Q1 FY25 vs claims in Q1 FY26", "Q1 FY25 claims vs Q1 FY26 claims", "Q1 FY25
+#: was higher than Q1 FY26". REGRESSION: the measure written again on either side left the
+#: two periods unrelated.
+_GAP_WORDS = r"(?:[a-z]+\s+){0,3}?"
+_GAP_WORDS_AFTER = rf"\s+{_GAP_WORDS}(?:(?:in|for|during|of|on|at)\s+)?(?:the\s+)?"
 #: Gaps that mean "these are two things being contrasted", never one range. REGRESSION:
-#: "compared to the previous month" linked nothing, for the "the".
+#: "compared to the previous month" linked nothing, for the "the"; "v/s", "as against",
+#: "as compared to", "in comparison with", "vis-a-vis", "how does A compare to B" and "A
+#: stacks up against B" linked nothing at all.
 _COMPARISON_GAP = re.compile(
-    r"^\s*(?:vs\.?|v\.?|versus|against|compared\s+(?:to|with)|relative\s+to|over)\s*"
-    r"(?:the\s+)?$",
+    rf"^\s*{_GAP_WORDS}(?:vs\.?|v\.?|v/s|v\.s\.?|versus|against|vis[-\s]+[aà][-\s]+vis"
+    r"|(?:as\s+)?compared\s+(?:to|with|against)|in\s+comparison\s+(?:to|with)|as\s+against"
+    r"|relative\s+to|compares?\s+(?:to|with|against)|(?:stacks?|measures?)\s+up\s+(?:against|to)"
+    rf"|than){_GAP_WORDS_AFTER}$"
+    # "over" only on its own, since it is a preposition first: "spread over three regions".
+    r"|^\s*over\s+(?:the\s+)?$",
     re.IGNORECASE,
 )
-#: Text before the first period that turns even a plain "to" into a comparison.
+#: Text before the first period that turns even a plain "to" into a comparison. "the
+#: difference between Q1 and Q3" compares two quarters, where "between Q1 and Q3" is a
+#: span: REGRESSION -- it ran from Q1 to Q3, holding a quarter nobody named.
 _COMPARISON_LEAD = re.compile(
-    r"\b(?:compare[ds]?|comparing|comparison|benchmark(?:ed)?|contrast)\b[^.;!?]{0,24}$", re.I
+    r"\b(?:(?:compare[ds]?|comparing|comparison|benchmark(?:ed)?|contrast)\b"
+    r"|(?:differences?|variances?|gaps?|deltas?)\b[^.;!?]{0,24}?\bbetween\b)[^.;!?]{0,24}$",
+    re.I,
 )
+#: After such a lead, "with" compares, and "and", "to" and "with" may carry the measure
+#: written again: "compare claims paid in Q1 FY25 with Q1 FY26", "compare claims in Q1
+#: FY25 with claims in Q1 FY26". On their own they tie nothing together -- "sales in Q1
+#: with returns in Q2". REGRESSION: after "compare" each linked nothing, so the two
+#: quarters came back as unrelated, where "vs" made them one comparison.
+_LED_LINK = re.compile(rf"^\s*{_GAP_WORDS}(?:with|to|and|&){_GAP_WORDS_AFTER}$", re.IGNORECASE)
 
 _MOD_PREFIXES: tuple[tuple[re.Pattern[str], Mod], ...] = (
     (re.compile(r"\bas\s+(?:of|on|at)\s+$", re.IGNORECASE), Mod.AS_OF),
@@ -321,8 +347,14 @@ _MOD_SUFFIXES: tuple[tuple[re.Pattern[str], Mod | None], ...] = (
         re.compile(rf"^\s*(?:and|or)\s+(?:later|after|beyond|onwards?)\b{_NO_DATE_AFTER}", re.I),
         Mod.SINCE,
     ),
+    # Not before one unit: "2024 and prior year" is two years. REGRESSION: it was "up to
+    # 2024", with the prior year beside it. "2012 and prior years" is still up to 2012.
     (
-        re.compile(rf"^\s*(?:and|or)\s+(?:earlier|before|prior)\b{_NO_DATE_AFTER}", re.I),
+        re.compile(
+            rf"^\s*(?:and|or)\s+(?:earlier|before|prior)\b{_NO_DATE_AFTER}"
+            r"(?!\s+(?:year|quarter|month|week|fortnight|half|day|period)\b)",
+            re.I,
+        ),
         Mod.UNTIL,
     ),
     (re.compile(r"^\s*to\s+date\b", re.IGNORECASE), None),  # handled by the to_date rule
@@ -345,7 +377,10 @@ _BETWEEN_LEAD = re.compile(
 _CUE = re.compile(
     r"\b(?:in|on|at|for|during|of|since|from|until|till|by|through|throughout|between|before|after|"
     r"no\s+(?:later|earlier)\s+than|"
-    r"vs|versus|compared\s+(?:to|with)|"
+    r"vs|versus|compared\s+(?:to|with)|v/s|v\.s|as\s+against|"
+    # The words that make "to" a comparison: "compare 2023 with 2024". REGRESSION: both
+    # years were dropped, there being no other cue.
+    r"compare[ds]?|comparing|comparison|benchmark(?:ed)?|contrast|"
     r"sales|revenue|profit|data|report|numbers|figures|results|performance|growth|"
     r"spend|cost|budget|forecast|actuals|"
     # Everyday text, not just reporting. Without these "Can we meet Thursday?" and
@@ -388,8 +423,13 @@ _PERSON_VERB = re.compile(
 )
 
 #: A capitalised word straight after a capitalised month -- "June Patel" -- unless it is
-#: one of the nouns a month legitimately qualifies ("June Quarter").
+#: one of the nouns a month legitimately qualifies ("June Quarter"), or a word joining it
+#: to another date: REGRESSION -- in "March Vs June" March was taken for a person.
 _SURNAME = re.compile(r"^\s+([A-Z][a-z]+)")
+_JOINING_WORDS = frozenset({
+    "vs", "versus", "and", "or", "to", "through", "thru", "till", "until", "against",
+    "compared", "plus", "than", "over",
+})
 
 #: "June's laptop" is a person; "March's figures" is a month. The noun decides.
 _POSSESSIVE = re.compile(r"^'s\s+([A-Za-z]+)")
@@ -511,7 +551,7 @@ def _looks_like_a_person(text: str, start: int, end: int) -> bool:
         return True
     if text[start].isupper():
         surname = _SURNAME.match(after)
-        if surname and surname.group(1).lower() not in _MONTH_NOUNS:
+        if surname and surname.group(1).lower() not in _MONTH_NOUNS | _JOINING_WORDS:
             return True
     owned = _POSSESSIVE.match(after)
     return bool(owned and owned.group(1).lower() not in _MONTH_NOUNS)
@@ -906,8 +946,22 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
     links: list[str | None] = []
     for a, b in zip(raws, raws[1:], strict=False):
         gap = text[a.end : b.start]
+        # A plain "to" or "and" first: most gaps are one, and neither can be a comparison,
+        # a slash or a list, so the longer patterns need not be tried.
+        strong = _STRONG_LINK.match(gap) is not None
+        weak = not strong and _WEAK_LINK.match(gap) is not None
         if a.rule == b.rule == "split_year" and gap.strip() in ("-", "/"):
             links.append("range")  # "2024-25" on a calendar basis: 2024 to 2025
+        elif strong or weak:
+            lead = _lead(text, a.start)
+            if _COMPARISON_LEAD.search(lead):
+                links.append("compare")
+            elif weak and not _BETWEEN_LEAD.search(lead[-24:]):
+                # "and" lists periods; only "between ... and" makes a span. "Q1 and Q3" is
+                # two quarters -- one range for both would hold Q2, which nobody named.
+                links.append("and")
+            else:
+                links.append("range")
         elif _COMPARISON_GAP.match(gap):
             links.append("compare")
         elif _SLASH_LINK.match(gap):
@@ -915,24 +969,22 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
             links.append("range" if _is_dated_day(a.spec) and _is_dated_day(b.spec) else "list")
         elif _LIST_LINK.match(gap):
             links.append("list")
-        elif _STRONG_LINK.match(gap) or _WEAK_LINK.match(gap):
-            lead = text[max(0, a.start - 40) : a.start]
-            opened = lead.rfind("(")
-            if opened > lead.rfind(")"):
-                # Inside brackets, a "compare" outside them does not reach in: in "compare
-                # Q1 2024 (January 2024 to March 2024) to Q1 2025" the bracket is one span.
-                lead = lead[opened + 1 :]
-            if _COMPARISON_LEAD.search(lead):
-                links.append("compare")
-            elif _WEAK_LINK.match(gap) and not _BETWEEN_LEAD.search(lead[-24:]):
-                # "and" lists periods; only "between ... and" makes a span. "Q1 and Q3" is
-                # two quarters -- one range for both would hold Q2, which nobody named.
-                links.append("and")
-            else:
-                links.append("range")
+        elif _LED_LINK.match(gap) and _COMPARISON_LEAD.search(_lead(text, a.start)):
+            links.append("compare")
         else:
             links.append(None)
     return links
+
+
+def _lead(text: str, start: int) -> str:
+    """The words before a period that may say a comparison is coming."""
+    lead = text[max(0, start - 40) : start]
+    opened = lead.rfind("(")
+    if opened > lead.rfind(")"):
+        # Inside brackets, a "compare" outside them does not reach in: in "compare Q1 2024
+        # (January 2024 to March 2024) to Q1 2025" the bracket is one span.
+        lead = lead[opened + 1 :]
+    return lead
 
 
 def _demote_lists(links: list[str | None]) -> list[str | None]:
@@ -1160,10 +1212,12 @@ def parse(
     if not raws:
         _diagnostics_to_original(diagnostics, mark, norm)
         return []
+    raws = _short_years_back(raws, body)
 
     links = _demote_lists(_link_kinds(raws, body))
     _propagate_year(raws, links)
-    anchors = _anchors(raws, links, body, day, config)
+    moved_back = _periods_moved_back(raws, links, body)
+    anchors = _anchors(raws, links, body, day, config, moved_back)
     raws_ok = []
     for idx, raw in enumerate(raws):
         if raw.rule == "unit_before" and idx not in anchors:
@@ -1174,6 +1228,17 @@ def parse(
                         body[raw.start : raw.end], (raw.start, raw.end), raw.rule,
                         f"{body[raw.start : raw.end]!r} counts from a date, and none is "
                         "given beside it",
+                    )
+                )
+            raws_ok.append(False)
+        elif raw.rule == "same_period" and idx not in moved_back and _is_same_period(raw.spec):
+            # "the same period last year" on its own: the same as which period?
+            if diagnostics is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        body[raw.start : raw.end], (raw.start, raw.end), raw.rule,
+                        f"{body[raw.start : raw.end]!r} is the period it is compared with, "
+                        "a year back, and none is given beside it",
                     )
                 )
             raws_ok.append(False)
@@ -1269,18 +1334,99 @@ _COUNTS_FROM_NAMED = re.compile(
 )
 
 
+#: "vs LY", "against PY": the finance shorthand for the same period last year. Read only
+#: straight after a comparison word -- on its own "PY" is as likely a file extension.
+_SHORT_YEAR_BACK = re.compile(
+    rf"\s*{_GAP_WORDS}(?:vs\.?|v/s|versus|against|compared\s+(?:to|with)|as\s+against"
+    r"|(with|to|and))\s+(ly|py)\b",
+    re.IGNORECASE,
+)
+
+
+_LY_OR_PY = re.compile(r"\b[LlPp][Yy]\b")
+
+
+def _short_years_back(raws: list[_Raw], text: str) -> list[_Raw]:
+    """Add "LY" and "PY" where a comparison ends in one: "Q1 2024 vs LY", "Q1 FY25 claims
+    vs PY", "compare Q1 2024 with LY".
+
+    REGRESSION: neither was read, so the comparison had one side.
+    """
+    if ("y" not in text and "Y" not in text) or _LY_OR_PY.search(text) is None:
+        return raws
+    out: list[_Raw] = []
+    for i, raw in enumerate(raws):
+        out.append(raw)
+        m = _SHORT_YEAR_BACK.match(text, raw.end)
+        if m is None or (i + 1 < len(raws) and m.end() > raws[i + 1].start):
+            continue
+        # "with", "to" and "and" compare only after a word that says so, as between dates.
+        if m.group(1) and not _COMPARISON_LEAD.search(text[max(0, raw.start - 40) : raw.start]):
+            continue
+        out.append(_Raw("same_period", Spec(Kind.THIS_PERIOD, year_offset=-1), *m.span(2)))
+    return out
+
+
+def _is_same_period(spec: Spec) -> bool:
+    """"the same period last year", "LY": a period with no unit of its own."""
+    return spec.kind is Kind.THIS_PERIOD and spec.unit is None
+
+
+#: "a year earlier", "3 months before": a count back from whatever was just named.
+_EARLIER = re.compile(r"\b(?:earlier|before|prior)\s*$", re.IGNORECASE)
+
+
+def _periods_moved_back(raws: list[_Raw], links: list[str | None], text: str) -> set[int]:
+    """Make a period named only as another moved back into that period, moved back.
+
+    "Q1 2024 vs the same period last year" is Q1 2023, "YTD vs LY" last year's year to
+    date, "March 2024 vs a year earlier" March 2023 and "vs 3 months earlier" December
+    2023. REGRESSION: "the same period last year" was all of last year, and "a year
+    earlier" the year before today -- each a period nobody compared with. Returns where
+    that was done; the spec there is now its partner's, moved.
+    """
+    out: set[int] = set()
+    for k, link in enumerate(links):
+        if link is None or link == "range":
+            continue
+        a, b = raws[k], raws[k + 1]
+        if b.rule == "same_period" and _is_same_period(b.spec):
+            years = b.spec.year_offset or -1
+            b.spec = a.spec.with_(year_offset=(a.spec.year_offset or 0) + years)
+            out.add(k + 1)
+        elif (
+            b.rule == "ago"
+            and (unit := b.spec.unit) is not None
+            and (count := b.spec.count)
+            and a.spec.shift is None
+            and _EARLIER.search(text[b.start : b.end])
+        ):
+            if unit is Grain.YEAR:
+                b.spec = a.spec.with_(year_offset=(a.spec.year_offset or 0) - count)
+            else:
+                b.spec = a.spec.with_(shift=(-count, unit))
+            out.add(k + 1)
+    return out
+
+
 def _anchors(
-    raws: list[_Raw], links: list[str | None], text: str, day: date, cfg: WranglerConfig
+    raws: list[_Raw],
+    links: list[str | None],
+    text: str,
+    day: date,
+    cfg: WranglerConfig,
+    moved_back: set[int],
 ) -> dict[int, date]:
     """The day each relative period counts from, when it is not today.
 
     "March 2024 compared to the previous month" is February 2024, not the month before
     today; "2024 vs prior year" is 2023. REGRESSION: both counted from today, so the
-    comparison was against a period nobody named.
+    comparison was against a period nobody named. A period already moved back from its
+    partner (:func:`_periods_moved_back`) is its partner's, and counts from where it does.
     """
     out: dict[int, date] = {}
     for k, link in enumerate(links):
-        if link is None or link == "range":
+        if link is None or link == "range" or k + 1 in moved_back:
             continue
         a, b = raws[k], raws[k + 1]
         if a.spec.is_relative or not b.spec.is_relative:

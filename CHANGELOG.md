@@ -7,6 +7,44 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## 2.3.0 — 2026-10-23
+
+Two periods joined as the words between them say, whatever the words: comparisons, lists
+and spans with every connector people write, and a period named as another moved back.
+The API is unchanged. **Changes answers.**
+
+### Fixed
+- `compare claims paid in Q1 FY25 with Q1 FY26` gave two unrelated quarters: "with" after
+  "compare" joined nothing, where "vs", "and" and "to" made one comparison. It is one
+  comparison now, so `group` and `joined_by` say so. On its own "with" still joins
+  nothing: `sales in Q1 with returns in Q2` is two unrelated quarters.
+- For the same reason, a relative period after "compare … with" counted from today:
+  `compare Q1 2024 with the same quarter last year` was Q4 2025, and `compare March 2024
+  with the previous month` September 2026. They are Q1 2023 and February 2024.
+- `compare 2023 with 2024`, `compare 2023 to 2024` and `comparing 2023 vs 2024` found
+  nothing: a bare year needs a word that marks it as a date, and "compare" was not one.
+  It is now, with `comparing`, `comparison`, `benchmark` and `contrast`.
+- These gave two unrelated periods, and a bare year after them was not read at all; each
+  is a comparison now: `v/s`, `v.s.`, `as against`, `as compared to`, `in comparison
+  with`, `compared against`, `vis-a-vis`, `how does A compare to B`, `A stacks up against
+  B`, `more in A than B`, and the measure written again on either side — `claims in Q1
+  FY25 vs claims in Q1 FY26`, `Q1 FY25 claims vs Q1 FY26 claims`.
+- Likewise lists: `as well as`, `along with`, `together with`, `plus`, `+`.
+- `the difference between Q1 and Q3`, and the variance, gap or delta between them, ran
+  from Q1 to Q3, holding Q2, which nobody named. It compares the two quarters. `between
+  Q1 and Q3` alone is still the span, and `growth from 2012 to 2013` still a span with
+  its two ends.
+- `March 2024 vs a year earlier` was all of 2025, `Q1 2024 vs the same period last year`
+  all of last year, `compare March 2024 to the previous month` September 2026, and `vs
+  LY`/`vs PY` were not read. Each is the period it is compared with, moved back: March
+  2023, Q1 2023, February 2024, and `YTD vs LY` last year's YTD. `the same period last
+  year` with nothing beside it is declined with a reason.
+- `compare 2024 and prior year` was "up to 2024" and 2023; it is 2024 and 2023. `2012 and
+  prior years` is still up to 2012.
+- In `revenue in March Vs June`, March was taken for a person ("Vs" for a surname).
+- `tests/test_comparison_spellings.py`: 1,081 phrases joining two periods with every
+  connector; 467 of them failed in 2.2.0.
+
 ## 2.2.0 — 2026-10-21
 
 Dates with month names read from their words and numbers, not one pattern per spelling,

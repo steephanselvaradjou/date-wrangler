@@ -1683,11 +1683,18 @@ def _p_nth_of(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 def _p_same_period(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"same quarter last year", "this time last year" -- today's period, a year back."""
+    """"same quarter last year", "this time last year" -- today's period, a year back.
+
+    "the same period last year" names no unit: it is the period it is compared with, a
+    year back, and the wrangler fills that in. Here it is a THIS_PERIOD with no unit.
+    """
     m = re.match(
-        rf"\s*(?:the\s+)?same\s+({_UNIT})\s+{_SAME_YEAR_BACK}", text, re.IGNORECASE
+        rf"\s*(?:the\s+)?same\s+({_UNIT}|period)\s+{_SAME_YEAR_BACK}", text, re.IGNORECASE
     )
     if m:
+        if m.group(1).lower() == "period":
+            offset = _direction_of(m.group(2)) if m.group(2) else -1
+            return Spec(Kind.THIS_PERIOD, year_offset=offset)
         unit = _unit_of(m.group(1))
         if unit is None:
             return None
@@ -1733,7 +1740,7 @@ _YESTERDAY = alt(w for w, n in _DAY_WORDS.items() if n == -1)
 _TOMORROW = alt(w for w, n in _DAY_WORDS.items() if n == 1)
 #: The year back in "same month last year", "same quarter of last year", "same month a year
 #: ago", "same month LY". The direction word is captured; the other two are a year back.
-_SAME_YEAR_BACK = rf"(?:of\s+)?(?:({_DIRWORD})\s+year|a\s+year\s+ago|ly)\b"
+_SAME_YEAR_BACK = rf"(?:of\s+)?(?:({_DIRWORD})\s+year|a\s+year\s+ago|ly|py)\b"
 
 
 def _p_day_keyword(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -2090,8 +2097,8 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "same_period",
-        rf"\b(?:the\s+)?(?:same\s+{_UNIT}\s+(?:of\s+)?(?:{_DIRWORD}\s+year|a\s+year\s+ago|ly)"
-        rf"|this\s+time\s+{_DIRWORD}\s+year)\b",
+        rf"\b(?:the\s+)?(?:same\s+(?:{_UNIT}|period)\s+(?:of\s+)?(?:{_DIRWORD}\s+year"
+        rf"|a\s+year\s+ago|ly|py)|this\s+time\s+{_DIRWORD}\s+year)\b",
         _p_same_period,
     ),
     Rule(
