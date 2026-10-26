@@ -29,10 +29,12 @@ from .vocab import (
     MONTH_DISPLAY,
     MONTH_NAMES,
     PAST_WORDS,
+    UNIT_SCALE,
     UNIT_WORDS,
     WEEKDAY_DISPLAY,
     WEEKDAY_NAMES,
     alt,
+    word_to_int,
 )
 
 __all__ = ["parse", "parse_one", "substitute", "diagnose", "Diagnostic", "YEAR_GUESSED"]
@@ -267,18 +269,20 @@ _MOD_PREFIXES: tuple[tuple[re.Pattern[str], Mod], ...] = (
     # would claim on its own -- "on or after" ends in "after", "not before" in "before" --
     # and read that way the boundary day is lost ("on or after 1 April" began on the 2nd)
     # or the meaning is reversed ("not before 1 April" meant up to 31 March).
+    # REGRESSION: "not later than March" was after March -- the "not" unread -- and "on and
+    # after 15 March" began on the 16th.
     (
         re.compile(
-            r"\b(?:(?:on|in)\s+or\s+after|not\s+before|no\s+earlier\s+than"
-            r"|from\s+and\s+including)\s+$",
+            r"\b(?:(?:on|in)\s+(?:or|and)\s+after|not\s+before|no[t]?\s+earlier\s+than"
+            r"|from\s+and\s+including|as\s+from|with\s+effect\s+from|w\.?\s?e\.?\s?f)\.?\s+$",
             re.IGNORECASE,
         ),
         Mod.SINCE,
     ),
     (
         re.compile(
-            r"\b(?:(?:on|in)\s+or\s+before|not\s+after|no\s+later\s+than"
-            r"|up\s+to\s+and\s+including|by)\s+$",
+            r"\b(?:(?:on|in)\s+(?:or|and)\s+before|not\s+after|no[t]?\s+later\s+than"
+            r"|(?:up\s+to|until|till)\s+and\s+including|by)\s+$",
             re.IGNORECASE,
         ),
         Mod.UNTIL,
@@ -292,19 +296,80 @@ _MOD_PREFIXES: tuple[tuple[re.Pattern[str], Mod], ...] = (
         ),
         Mod.SINCE,
     ),
-    (re.compile(r"\b(?:prior\s+to|earlier\s+than|before)\s+$", re.IGNORECASE), Mod.BEFORE),
+    # "ahead of", "preceding", "older than", "pre March". REGRESSION: each was dropped, and
+    # the answer was the period itself.
+    (
+        re.compile(
+            r"\b(?:prior\s+to|earlier\s+than|before|ahead\s+of|preceding|older\s+than|pre)\s+$",
+            re.IGNORECASE,
+        ),
+        Mod.BEFORE,
+    ),
     (re.compile(r"\bpre-$", re.IGNORECASE), Mod.BEFORE),
     # "through 31 March" on its own is a deadline, inclusive. Inside a range ("Jan through
     # Mar") the two ends are merged before any modifier is looked for, so this never sees it.
-    (re.compile(r"\b(?:up\s*to|upto|until|till|through|thru)\s+$", re.IGNORECASE), Mod.UNTIL),
-    (re.compile(r"\b(?:after|later\s+than)\s+$", re.IGNORECASE), Mod.AFTER),
+    # "til", "untill", "uptil" as they are typed.
+    (
+        re.compile(r"\b(?:up\s*to|upto|until|untill|till|til|uptil|through|thru)\s+$", re.I),
+        Mod.UNTIL,
+    ),
+    # Not "post March" without its hyphen: "post March figures" is a verb as often.
+    (
+        re.compile(r"\b(?:after|later\s+than|subsequent\s+to|beyond)\s+$", re.IGNORECASE),
+        Mod.AFTER,
+    ),
     (re.compile(r"\bpost-$", re.IGNORECASE), Mod.AFTER),
 )
+#: The prefixes above as one pattern, searched once rather than each in turn. Every one
+#: ends where the date starts, so the leftmost match is the longest phrase -- "no later
+#: than" over "later than", "on or after" over "after" -- the precedence the list keeps.
+_MOD_PREFIX_ANY = re.compile(
+    "|".join(f"(?P<m{i}>{p.pattern})" for i, (p, _) in enumerate(_MOD_PREFIXES)), re.IGNORECASE
+)
+#: The words those prefixes can end in. Most dates follow some other word -- "in", "for",
+#: a measure -- and need no search at all.
+_PREFIX_LAST_WORDS = frozenset({
+    "of", "on", "at", "after", "before", "than", "including", "from", "wef", "w.e.f", "by",
+    "since", "starting", "beginning", "commencing", "in", "with", "to", "preceding", "pre",
+    "upto", "until", "untill", "till", "til", "uptil", "through", "thru", "beyond",
+})
+
+
+def _prefix_mod(before: str) -> re.Match[str] | None:
+    """The bounding words straight before a date -- "no later than", "w.e.f." -- if any."""
+    if before.endswith("-"):
+        return _MOD_PREFIX_ANY.search(before)  # "pre-2012", "post-2012"
+    if not before[-1:].isspace():
+        return None
+    words = before.split()
+    if not words or words[-1].rstrip(".").lower() not in _PREFIX_LAST_WORDS:
+        return None
+    return _MOD_PREFIX_ANY.search(before)
+
+#: As a query is written: ">= 2024-03-15". REGRESSION: the operator was not read, and the
+#: answer was the day alone. Looked for only when one of its characters is there.
+_OPERATOR = re.compile(r"(?:^|[\s(])(>=|=>|≥|<=|=<|≤|>|<)\s*$")
+_OPERATOR_MOD = {
+    ">=": Mod.SINCE, "=>": Mod.SINCE, "≥": Mod.SINCE,
+    "<=": Mod.UNTIL, "=<": Mod.UNTIL, "≤": Mod.UNTIL,
+    ">": Mod.AFTER, "<": Mod.BEFORE,
+}  # fmt: skip
+_OPERATOR_CHARS = frozenset("<>≥≤")
+
+
+def _operator_before(before: str) -> re.Match[str] | None:
+    """A comparison operator straight before a date, if there is one."""
+    return _OPERATOR.search(before) if not _OPERATOR_CHARS.isdisjoint(before) else None
+
 
 #: "from" starts something only when what follows is a single day: "from 1 April",
 #: "from Monday". After a period it more often names a source -- "the figures from Q1" are
 #: Q1's figures, not everything since -- so a period after "from" is left as it is.
 _FROM_PREFIX = re.compile(r"\bfrom\s+$", re.IGNORECASE)
+#: Unless it goes on: "from 2012 forward", "from Q1 on". Only after "from", and only where
+#: the clause ends -- "let's march forward" and "Q1 on the west coast" are not dates.
+#: REGRESSION: each was the period alone.
+_FROM_FORWARD = re.compile(r"^\s*(?:forwards?|on)(?=\s*(?:[.,;:!?)]|$))", re.IGNORECASE)
 _DAY_KINDS = frozenset({Kind.ABS_DAY, Kind.DAY_KEYWORD, Kind.WEEKDAY})
 
 
@@ -320,13 +385,26 @@ def _names_a_day(spec: Spec) -> bool:
         or spec.day_of_period is not None
         or spec.nth_weekday is not None
     )
+_COUNT_WORD = r"(?:a|an|\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
 #: "two weeks from Friday" counts on from Friday; it does not start there. A duration
 #: ahead of "from" leaves the word for the safety net, which flags the phrase as partial.
 _DURATION_FROM = re.compile(
-    r"\b(?:a|an|\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
-    r"\s+(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+$",
+    rf"\b{_COUNT_WORD}\s+(?:day|week|fortnight|month|quarter|half|year)s?\s+from\s+$",
     re.IGNORECASE,
 )
+#: "two weeks from 1 April", "two weeks following 1 April", "two weeks past 1 April": the
+#: date moved on by the count. REGRESSION: the count was dropped, and the answer was the
+#: date itself.
+_COUNT_ON = re.compile(
+    rf"\b({_COUNT_WORD})\s+({alt(UNIT_WORDS)})\s+(?:from|following|past)\s+$", re.IGNORECASE
+)
+#: "1 April 2024 + 2 weeks", "15 March 2024 minus 3 days", "March 2024 plus a year". Not
+#: a bare "-": "1 April - 15 April" is a span.
+_PLUS_COUNT = re.compile(
+    rf"^\s*(plus|\+|minus)\s*({_COUNT_WORD})\s+({alt(UNIT_WORDS)})\b", re.IGNORECASE
+)
+_PLUS_STARTS = frozenset("+pPmM")
+_COUNT_ON_HINT = re.compile(r"(?:from|following|past)\s+$", re.IGNORECASE)
 
 #: Not followed by the start of another date: a number, a quarter or half, a month, a
 #: fiscal or calendar year, or a word counting from today.
@@ -738,8 +816,13 @@ def _passes_strictness(
         return True
     # A word that bounds the period is a cue too: "prior to 2012", "2012 onwards".
     # REGRESSION: both were read, then dropped, because a bare year needs a cue.
-    if any(p.search(before) for p, _ in _MOD_PREFIXES) or any(
-        mod is not None and p.match(text[chain_end : chain_end + 24]) for p, mod in _MOD_SUFFIXES
+    if (
+        _prefix_mod(before) is not None
+        or _operator_before(before) is not None
+        or any(
+            mod is not None and p.match(text[chain_end : chain_end + 24])
+            for p, mod in _MOD_SUFFIXES
+        )
     ):
         return True
     # "the March figures", "the 1998's figures" -- no cue in front, but the noun behind
@@ -758,10 +841,15 @@ _COMMA_GAP = re.compile(r"^\s*,\s*$")
 _WEEKDAY_GAP = re.compile(r"^\s*,?\s*$")
 #: Before "till date", "to present": "01/06/2018 to till date", "10th June 2018-to till date".
 _TILL_GAP = re.compile(r"^\s*(?:onwards\s+)?(?:-\s*)?(?:to\s*)?$", re.IGNORECASE)
-#: Between a count and the date it counts from: "3 days before 15 March", "prior to".
-_FROM_DATE_GAP = re.compile(r"^\s*(?:to\s+)?$", re.IGNORECASE)
-#: A count that points at a date after it: "3 days before", "a year after".
-_COUNTS_FROM = re.compile(r"\b(?:before|after|prior|earlier|later)\s*$", re.IGNORECASE)
+#: Between a count and the date it counts from: "3 days before 15 March", "prior to",
+#: "earlier than", "later than", "ahead of".
+_FROM_DATE_GAP = re.compile(r"^\s*(?:(?:to|than|of)\s+)?$", re.IGNORECASE)
+#: A count that points at a date after it: "3 days before", "a year after", "two weeks
+#: later than". REGRESSION: "3 days earlier than 15 March" and "two weeks later than 1
+#: April" counted from today, the date beside them a second answer.
+_COUNTS_FROM = re.compile(r"\b(?:before|after|prior|earlier|later|ahead)\s*$", re.IGNORECASE)
+#: "3 days ahead of 15 March" is three days before it, whatever "3 days ahead" means alone.
+_AHEAD_OF = re.compile(r"\bahead\s*$", re.IGNORECASE)
 _OF_GAP = re.compile(r"^\s+of\s+(?:the\s+)?$", re.IGNORECASE)
 _TILL_RULES = frozenset({"till_now", "to_now"})
 #: Between a quarter, half or month and the year after it: "Q3 in 2024", "H1-FY25",
@@ -862,15 +950,24 @@ def _joined(prev: _Raw, raw: _Raw, text: str, cfg: WranglerConfig) -> _Raw | Non
         return _Raw("within_of", b, prev.start, raw.end)
     if (
         a.kind is Kind.AGO
-        and not a.business
         and a.unit is not None
+        and (not a.business or _names_a_day(b))
         and _FROM_DATE_GAP.match(gap)
-        and _COUNTS_FROM.search(text[prev.start : prev.end])
+        and (counted := _COUNTS_FROM.search(text[prev.start : prev.end])) is not None
         and not b.is_relative
     ):
+        # Each word takes only its own gap: "prior to", "earlier/later than", "ahead of".
+        word = counted.group(0).strip().lower()
+        joiner = gap.strip().lower()
+        if joiner and joiner != {"prior": "to", "earlier": "than", "later": "than"}.get(
+            word, "of" if word == "ahead" else ""
+        ):
+            return None
+        direction = -1 if _AHEAD_OF.search(text[prev.start : prev.end]) else a.direction
         rule = "shift_the" if prev.rule == "unit_before" else "shift"
-        shift = (a.direction * (a.count or 1), a.unit)
-        return _Raw(rule, b.with_(shift=shift), prev.start, raw.end)
+        shift = (direction * (a.count or 1), a.unit)
+        # "3 business days before 15 March" steps over weekends and holidays.
+        return _Raw(rule, b.with_(shift=shift, business=a.business), prev.start, raw.end)
     return None
 
 
@@ -1101,6 +1198,41 @@ def _is_dated_day(spec: Spec) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _counted_on(raw: _Raw, text: str, floor: int) -> _Raw | None:
+    """The date moved by a count written around it: "two weeks from 1 April", "1 April +
+    2 weeks", "15 March minus 3 days". None when there is no such count."""
+    spec = raw.spec
+    if spec.shift is not None or spec.is_relative or spec.mod is not None:
+        return None
+    window = max(floor, raw.start - 32)
+    # The patterns only where they could match: most dates have neither.
+    tail = text[raw.end : raw.end + 24]
+    after = _PLUS_COUNT.match(tail) if tail.lstrip()[:1] in _PLUS_STARTS else None
+    if after is not None:
+        sign, count_word, unit_word = after.groups()
+        start, end = raw.start, raw.end + after.end()
+    else:
+        # Counted on from a single day only: "two weeks from 1 April" is the 15th, but "a
+        # year from March" may as well be the twelve months starting in March, and is
+        # left flagged as unread rather than guessed.
+        head = text[window : raw.start]
+        before = (
+            _COUNT_ON.search(head)
+            if _names_a_day(spec) and _COUNT_ON_HINT.search(head) is not None
+            else None
+        )
+        if before is None:
+            return None
+        sign, (count_word, unit_word) = "plus", before.groups()
+        start, end = window + before.start(), raw.end
+    count = 1 if count_word.lower() in ("a", "an") else word_to_int(count_word)
+    if count is None:
+        return None
+    n = count * UNIT_SCALE.get(unit_word.lower(), 1) * (-1 if sign.lower() == "minus" else 1)
+    unit = Grain[UNIT_WORDS[unit_word.lower()]]
+    return _Raw(raw.rule, spec.with_(shift=(n, unit)), start, end)
+
+
 def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
     """Attach a leading or trailing modifier, extending the span over it.
 
@@ -1108,6 +1240,9 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
     two matches end up claiming the same words: in "0 MONTH BEFORE 1Q" the "before"
     belongs to the count on its left, and 1Q must not swallow it as a modifier.
     """
+    moved = _counted_on(raw, text, floor)
+    if moved is not None:
+        return moved
     for pattern, mod in _MOD_SUFFIXES:
         if mod is not None and pattern.match(text[raw.end : raw.end + 24]):
             m = pattern.match(text[raw.end : raw.end + 24])
@@ -1120,11 +1255,15 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
     article = _ARTICLE.search(before) if "the" in before.lower() else None
     if article is not None:
         before = before[: article.start()]
-    for pattern, mod in _MOD_PREFIXES:
-        m = pattern.search(before)
-        if m:
-            if mod is Mod.SINCE and raw.spec.through_today:
-                break  # "since 1 June 2018 till date" says where it ends: today
+    operator = _operator_before(before)
+    if operator is not None and not raw.spec.through_today:
+        spec = raw.spec.with_(mod=_OPERATOR_MOD[operator.group(1)])
+        return _Raw(raw.rule, spec, window + operator.start(1), raw.end)
+    m = _prefix_mod(before)
+    if m is not None and m.lastgroup is not None:
+        mod = _MOD_PREFIXES[int(m.lastgroup[1:])][1]
+        # "since 1 June 2018 till date" says where it ends: today.
+        if not (mod is Mod.SINCE and raw.spec.through_today):
             spec = raw.spec.with_(mod=mod)
             # "before / by / until the end of March" means by the close of March. Read
             # literally it was "before the last third of March", which ended on the 20th.
@@ -1139,6 +1278,10 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
     # 01/06/2018 till date" was open-ended, its end dropped, where "from 2012 to date" and
     # "01/06/2018 till date" both ended today.
     m = _FROM_PREFIX.search(before)
+    on = _FROM_FORWARD.match(text[raw.end : raw.end + 24]) if m else None
+    if m and on and raw.spec.mod is None and not raw.spec.through_today:
+        spec = raw.spec.with_(mod=Mod.SINCE)
+        return _Raw(raw.rule, spec, window + m.start(), raw.end + on.end())
     if (
         m
         and _names_a_day(raw.spec)

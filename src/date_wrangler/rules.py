@@ -1118,12 +1118,14 @@ _PART_WORDS: tuple[tuple[str, Part], ...] = (
         r"|back[\s-]+half",
         Part.SECOND_HALF,
     ),
-    # "begin", "starting", "begining" only with "of": "starting March" is since March.
-    # The "... part" forms first: the parse takes what follows the word as the period, so
-    # "early" alone would leave "part of 2024" to be read as one.
+    # "begin", "beginning", "starting", "begining" only with "of": "starting March" and
+    # "beginning March 2024" are since March, as a notice says "beginning 1 April, fees
+    # rise". REGRESSION: "beginning March 2024" was 1-10 March. The "... part" forms first:
+    # the parse takes what follows the word as the period, so "early" alone would leave
+    # "part of 2024" to be read as one.
     (
-        r"(?:early|earlier|first)\s+part|beginning|start|early"
-        r"|(?:begin|begining|starting)(?=\s+of\b)",
+        r"(?:early|earlier|first)\s+part|start|early"
+        r"|(?:begin|beginning|begining|starting)(?=[\s-]+of\b)",
         Part.EARLY,
     ),
     (r"middle\s+part|middle|mid", Part.MID),
@@ -1132,11 +1134,17 @@ _PART_WORDS: tuple[tuple[str, Part], ...] = (
 _PART_ALT = "|".join(p for p, _ in _PART_WORDS)
 
 #: The period a part or an ordinal day can be taken from.
+#: A month in numbers as the period a part is taken from: "by the end of 2024-03". And a
+#: year there may not be the start of one: REGRESSION -- "the end of 2024-03" was refused
+#: as two calendar years, and "end of 2024-03-15" was the end of 2024.
+_NUMERIC_MONTH = (
+    r"(?:(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])|(?:0?[1-9]|1[0-2])[-/](?:19|20)\d{2})(?![\d/.-])"
+)
 _PART_TARGET = (
     rf"(?:{_MONTH}(?:-\d{{2}}(?:\d{{2}})?(?!\d)|{_YEAR_SUFFIX})"
     rf"|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}|[1-4]\s*q(?![a-z]){_YEAR_SUFFIX}"
     rf"|(?:the\s+)?{_ORD}\s+(?:quarter|qtr){_YEAR_SUFFIX}"
-    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_DECADE}|{_YEAR}"
+    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_DECADE}|{_NUMERIC_MONTH}|{_YEAR}(?![-/.]\d)"
     rf"|(?:the\s+)?{_DIRWORD}\s+(?:{_BASIS_WORD}\s+)?{_UNIT}"
     rf"|(?:the\s+)?(?:this|current)\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|(?:the\s+)?{_UNIT})"
 )
@@ -1162,6 +1170,8 @@ def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
     if re.fullmatch(_DECADE, tail, re.IGNORECASE):
         return _p_decade(tail, cfg)  # "the early 1990s", "mid-1990s"
     tail = re.sub(r"^the\s+", "", tail, flags=re.IGNORECASE)  # "the 1st of the next month"
+    if re.fullmatch(_NUMERIC_MONTH, tail):
+        return _p_numeric_month(tail, cfg)  # "the end of 2024-03"
     dashed = re.fullmatch(rf"({_MONTH})-(\d{{2}}|\d{{4}})", tail, re.IGNORECASE)
     if dashed:
         # "start of Mar-24": March 2024. REGRESSION: the year was lost, and it was this
@@ -1235,7 +1245,7 @@ _NTH = rf"(?:{_ORD}|last|final)"
 _NTH_OF = r"\s+(?:of|in)\s+"
 _NTH_TARGET = (
     rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
-    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_YEAR}"
+    rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_NUMERIC_MONTH}|{_YEAR}(?![-/.]\d)"
     rf"|(?:the\s+)?(?:{_DIRWORD}|this|current)\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|the\s+{_UNIT}"
     # A single unit needs no article: "last day of month". REGRESSION: it fell through to
     # "last day" -- yesterday. Plurals still do: "the first Monday in months" is not a date.

@@ -347,6 +347,10 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the 12-month period ended March 2024", "2023-04..2024-03"),
         # Unchanged: "starting" without "of" is since; a plural unit is not a period.
         ("starting March 2024", "2024-03.."),
+        # And so is "beginning" without "of": as a notice says "beginning 1 April". It was
+        # 1-10 March in 2.3.0.
+        ("beginning March 2024", "2024-03.."),
+        ("the beginning of March 2024", "2024-03-01..2024-03-10"),
         ("the first Monday in months", "-"),
     ]),
     ("spans of years", TODAY, CAL, [
@@ -487,6 +491,23 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("before 2000-01-01", "..1999-12-31"),
         ("after 2012-08-15", "2012-08-16.."),
         ("on or after 1 April 2024", "2024-04-01.."),
+        # Each was wrong, or the period alone with its bound dropped, in 2.3.0.
+        ("not later than March 2024", "..2024-03"),  # was after March
+        ("on and after 15 March 2024", "2024-03-15.."),  # was from the 16th
+        ("w.e.f. 1 April 2024", "2024-04-01.."),
+        ("with effect from Q1 FY25", "2024-04.."),
+        ("as from 2012", "2012.."),
+        ("from 2012 forward", "2012.."),
+        ("til March 2024", "..2024-03"),
+        ("pre 2012", "..2011"),
+        ("beyond 2012", "2013.."),
+        ("subsequent to 2012", "2013.."),
+        (">= 2024-03-15", "2024-03-15.."),
+        ("< 2024-03-15", "..2024-03-14"),
+        ("by the end of 2024-03", "..2024-03"),
+        ("beginning March 2024", "2024-03.."),  # was 1-10 March
+        # Left alone: "post" without its hyphen is a verb as often.
+        ("post March 2024 figures", "2024-03"),
     ]),
     ("lists", TODAY, CAL, [
         ("2012, 2013 and 2014", "2012 ; 2013 ; 2014"),
@@ -632,6 +653,15 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the month before March 2024", "2024-02"),
         ("the week before 15 March 2024", "~"),
         ("within 30 days of 15 March 2024", "~"),
+        # Each counted from today, or dropped its count, in 2.3.0.
+        ("3 days earlier than 15 March 2024", "2024-03-12"),
+        ("3 days ahead of 15 March 2024", "2024-03-12"),
+        ("two weeks later than 1 April 2024", "2024-04-15"),
+        ("two weeks from 1 April 2024", "2024-04-15"),
+        ("1 April 2024 + 2 weeks", "2024-04-15"),
+        ("15 March 2024 minus 3 days", "2024-03-12"),
+        ("3 business days before 18 March 2024", "2024-03-13"),
+        ("a year from March", "~"),  # March next year, or twelve months from March?
     ]),
     ("decades and seasons", TODAY, CAL, [
         ("the 1990s", "1990..1999"),

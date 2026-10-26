@@ -7,6 +7,34 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## Unreleased
+
+**Changes answers.**
+
+### Fixed
+- `not later than March 2024` was *after* March, the "not" unread; it is up to the end
+  of March. `on and after 15 March` began on the 16th, and `on and before` ended on the
+  14th; both keep the day.
+- These were the period alone, the bound dropped: `w.e.f.`, `wef`, `with effect from`,
+  `as from`, `til`, `untill`, `uptil`, `until and including`, `pre March 2024`, `ahead
+  of`, `preceding`, `older than`, `subsequent to`, `beyond`, `from 2012 forward`, `from
+  Q1 on`, and as a query writes them, `>=`, `<=`, `>`, `<`, `≥`, `≤`.
+- `3 days earlier than 15 March 2024`, `3 days ahead of 15 March 2024`, `two weeks later
+  than 1 April 2024` and `3 business days before 15 March 2024` counted from today, with
+  the date beside them a second answer; `two weeks from 1 April 2024`, `1 April 2024 + 2
+  weeks` and `15 March 2024 minus 3 days` were the date alone. Each is the date moved by
+  the count, business days stepping over weekends and holidays. `a year from March` is
+  still flagged: it may be the twelve months starting in March.
+- `beginning March 2024` was 1–10 March; it is March 2024 onwards, as a notice says
+  "beginning 1 April". `the beginning of March` is still the start of March.
+- `by the end of 2024-03` was refused as two calendar years, and `end of 2024-03-15` was
+  the end of 2024; a month in numbers can now have a part taken out of it.
+- `a month from the 15th of March` was flagged as partly read; it is 15 April.
+- `tests/test_bound_spellings.py`: 627 spellings of open-ended periods, bounds, counts
+  from a date and "as of"; 166 of its cases failed in 2.3.0. Left alone on purpose:
+  `post March` without its hyphen, which is a verb as often, and `forward` or `on`
+  without a `from` before the date.
+
 ## 2.3.0 — 2026-10-23
 
 Two periods joined as the words between them say, whatever the words: comparisons, lists

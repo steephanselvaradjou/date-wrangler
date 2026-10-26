@@ -332,6 +332,15 @@ default 2026-10-08 | YTD vs LY | 'YTD' 2026-01-01..2026-10-08 year calendar c=1 
 default 2026-10-08 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
 default 2026-10-08 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +list+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
 default 2026-10-08 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
+default 2026-10-08 | not later than March 2024 | 'not later than March 2024' .....2024-03-31 month calendar until c=1
+default 2026-10-08 | w.e.f. 1 April 2024 | 'w.e.f. 1 April 2024' 2024-04-01..... day calendar since c=1
+default 2026-10-08 | >= 2024-03-15 | '>= 2024-03-15' 2024-03-15..... day calendar since c=1
+default 2026-10-08 | pre 2012 | 'pre 2012' .....2011-12-31 year calendar before c=0.8
+default 2026-10-08 | beginning March 2024 | 'beginning March 2024' 2024-03-01..... month calendar since c=1
+default 2026-10-08 | by the end of 2024-03 | 'by the end of 2024-03' .....2024-03-31 month calendar until c=1
+default 2026-10-08 | 3 days earlier than 15 March 2024 | '3 days earlier than 15 March 2024' 2024-03-12..2024-03-12 day calendar c=1
+default 2026-10-08 | 1 April 2024 + 2 weeks | '1 April 2024 + 2 weeks' 2024-04-15..2024-04-15 day calendar c=1
+default 2026-10-08 | 3 business days before 18 March 2024 | '3 business days before 18 March 2024' 2024-03-13..2024-03-13 day calendar c=1
 default 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 default 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
@@ -347,7 +356,7 @@ default 2026-10-08 | from 15th of March | 'from 15th of March' 2026-03-15..... d
 default 2026-10-08 | from the last day of March | 'from the last day of March' 2026-03-31..... day calendar since c=0.7
 default 2026-10-08 | from the first Monday of March | 'from the first Monday of March' 2026-03-02..... day calendar since c=0.7
 default 2026-10-08 | two weeks from the 15th | 'the 15th' 2026-10-15..2026-10-15 day calendar c=0.5 !! read '15th' but not 'two weeks from the', which changes the period
-default 2026-10-08 | a month from the 15th of March | 'the 15th of March' 2026-03-15..2026-03-15 day calendar c=0.5 !! read 'the 15th of March' but not 'a month from', which changes the period
+default 2026-10-08 | a month from the 15th of March | 'a month from the 15th of March' 2026-04-15..2026-04-15 day calendar c=0.7
 default 2026-10-08 | the week of 5 October | 'the week of 5 October' 2026-10-05..2026-10-11 week calendar c=0.7
 default 2026-10-08 | the week of October 5 | 'the week of October 5' 2026-10-05..2026-10-11 week calendar c=0.7
 default 2026-10-08 | week of 2026-10-07 | 'week of 2026-10-07' 2026-10-05..2026-10-11 week calendar c=1
@@ -712,6 +721,15 @@ default 2026-03-31 | YTD vs LY | 'YTD' 2026-01-01..2026-03-31 year calendar c=1 
 default 2026-03-31 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
 default 2026-03-31 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +list+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
 default 2026-03-31 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
+default 2026-03-31 | not later than March 2024 | 'not later than March 2024' .....2024-03-31 month calendar until c=1
+default 2026-03-31 | w.e.f. 1 April 2024 | 'w.e.f. 1 April 2024' 2024-04-01..... day calendar since c=1
+default 2026-03-31 | >= 2024-03-15 | '>= 2024-03-15' 2024-03-15..... day calendar since c=1
+default 2026-03-31 | pre 2012 | 'pre 2012' .....2011-12-31 year calendar before c=0.8
+default 2026-03-31 | beginning March 2024 | 'beginning March 2024' 2024-03-01..... month calendar since c=1
+default 2026-03-31 | by the end of 2024-03 | 'by the end of 2024-03' .....2024-03-31 month calendar until c=1
+default 2026-03-31 | 3 days earlier than 15 March 2024 | '3 days earlier than 15 March 2024' 2024-03-12..2024-03-12 day calendar c=1
+default 2026-03-31 | 1 April 2024 + 2 weeks | '1 April 2024 + 2 weeks' 2024-04-15..2024-04-15 day calendar c=1
+default 2026-03-31 | 3 business days before 18 March 2024 | '3 business days before 18 March 2024' 2024-03-13..2024-03-13 day calendar c=1
 default 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 default 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1
@@ -727,7 +745,7 @@ default 2026-03-31 | from 15th of March | 'from 15th of March' 2026-03-15..... d
 default 2026-03-31 | from the last day of March | 'from the last day of March' 2026-03-31..... day calendar since c=0.7
 default 2026-03-31 | from the first Monday of March | 'from the first Monday of March' 2026-03-02..... day calendar since c=0.7
 default 2026-03-31 | two weeks from the 15th | 'the 15th' 2026-03-15..2026-03-15 day calendar c=0.5 !! read '15th' but not 'two weeks from the', which changes the period
-default 2026-03-31 | a month from the 15th of March | 'the 15th of March' 2026-03-15..2026-03-15 day calendar c=0.5 !! read 'the 15th of March' but not 'a month from', which changes the period
+default 2026-03-31 | a month from the 15th of March | 'a month from the 15th of March' 2026-04-15..2026-04-15 day calendar c=0.7
 default 2026-03-31 | the week of 5 October | 'the week of 5 October' 2026-10-05..2026-10-11 week calendar c=0.7
 default 2026-03-31 | the week of October 5 | 'the week of October 5' 2026-10-05..2026-10-11 week calendar c=0.7
 default 2026-03-31 | week of 2026-10-07 | 'week of 2026-10-07' 2026-10-05..2026-10-11 week calendar c=1
@@ -1092,6 +1110,15 @@ fiscal 2026-10-08 | YTD vs LY | 'YTD' 2026-04-01..2026-10-08 year fiscal c=1 +co
 fiscal 2026-10-08 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
 fiscal 2026-10-08 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +list+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
 fiscal 2026-10-08 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
+fiscal 2026-10-08 | not later than March 2024 | 'not later than March 2024' .....2024-03-31 month calendar until c=1
+fiscal 2026-10-08 | w.e.f. 1 April 2024 | 'w.e.f. 1 April 2024' 2024-04-01..... day calendar since c=1
+fiscal 2026-10-08 | >= 2024-03-15 | '>= 2024-03-15' 2024-03-15..... day calendar since c=1
+fiscal 2026-10-08 | pre 2012 | 'pre 2012' .....2011-03-31 year fiscal before c=0.8
+fiscal 2026-10-08 | beginning March 2024 | 'beginning March 2024' 2024-03-01..... month calendar since c=1
+fiscal 2026-10-08 | by the end of 2024-03 | 'by the end of 2024-03' .....2024-03-31 month calendar until c=1
+fiscal 2026-10-08 | 3 days earlier than 15 March 2024 | '3 days earlier than 15 March 2024' 2024-03-12..2024-03-12 day calendar c=1
+fiscal 2026-10-08 | 1 April 2024 + 2 weeks | '1 April 2024 + 2 weeks' 2024-04-15..2024-04-15 day calendar c=1
+fiscal 2026-10-08 | 3 business days before 18 March 2024 | '3 business days before 18 March 2024' 2024-03-13..2024-03-13 day calendar c=1
 fiscal 2026-10-08 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
 fiscal 2026-10-08 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter fiscal c=1
@@ -1107,7 +1134,7 @@ fiscal 2026-10-08 | from 15th of March | 'from 15th of March' 2026-03-15..... da
 fiscal 2026-10-08 | from the last day of March | 'from the last day of March' 2026-03-31..... day calendar since c=0.7
 fiscal 2026-10-08 | from the first Monday of March | 'from the first Monday of March' 2026-03-02..... day calendar since c=0.7
 fiscal 2026-10-08 | two weeks from the 15th | 'the 15th' 2026-10-15..2026-10-15 day calendar c=0.5 !! read '15th' but not 'two weeks from the', which changes the period
-fiscal 2026-10-08 | a month from the 15th of March | 'the 15th of March' 2026-03-15..2026-03-15 day calendar c=0.5 !! read 'the 15th of March' but not 'a month from', which changes the period
+fiscal 2026-10-08 | a month from the 15th of March | 'a month from the 15th of March' 2026-04-15..2026-04-15 day calendar c=0.7
 fiscal 2026-10-08 | the week of 5 October | 'the week of 5 October' 2026-10-05..2026-10-11 week fiscal c=0.7
 fiscal 2026-10-08 | the week of October 5 | 'the week of October 5' 2026-10-05..2026-10-11 week fiscal c=0.7
 fiscal 2026-10-08 | week of 2026-10-07 | 'week of 2026-10-07' 2026-10-05..2026-10-11 week fiscal c=1
@@ -1472,6 +1499,15 @@ fiscal 2026-03-31 | YTD vs LY | 'YTD' 2025-04-01..2026-03-31 year fiscal c=1 +co
 fiscal 2026-03-31 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
 fiscal 2026-03-31 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2024-04-01..2024-06-30 quarter fiscal c=1 +list+ 'Q1 FY26' 2025-04-01..2025-06-30 quarter fiscal c=1
 fiscal 2026-03-31 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
+fiscal 2026-03-31 | not later than March 2024 | 'not later than March 2024' .....2024-03-31 month calendar until c=1
+fiscal 2026-03-31 | w.e.f. 1 April 2024 | 'w.e.f. 1 April 2024' 2024-04-01..... day calendar since c=1
+fiscal 2026-03-31 | >= 2024-03-15 | '>= 2024-03-15' 2024-03-15..... day calendar since c=1
+fiscal 2026-03-31 | pre 2012 | 'pre 2012' .....2011-03-31 year fiscal before c=0.8
+fiscal 2026-03-31 | beginning March 2024 | 'beginning March 2024' 2024-03-01..... month calendar since c=1
+fiscal 2026-03-31 | by the end of 2024-03 | 'by the end of 2024-03' .....2024-03-31 month calendar until c=1
+fiscal 2026-03-31 | 3 days earlier than 15 March 2024 | '3 days earlier than 15 March 2024' 2024-03-12..2024-03-12 day calendar c=1
+fiscal 2026-03-31 | 1 April 2024 + 2 weeks | '1 April 2024 + 2 weeks' 2024-04-15..2024-04-15 day calendar c=1
+fiscal 2026-03-31 | 3 business days before 18 March 2024 | '3 business days before 18 March 2024' 2024-03-13..2024-03-13 day calendar c=1
 fiscal 2026-03-31 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
 fiscal 2026-03-31 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter fiscal c=1
@@ -1487,7 +1523,7 @@ fiscal 2026-03-31 | from 15th of March | 'from 15th of March' 2026-03-15..... da
 fiscal 2026-03-31 | from the last day of March | 'from the last day of March' 2026-03-31..... day calendar since c=0.7
 fiscal 2026-03-31 | from the first Monday of March | 'from the first Monday of March' 2026-03-02..... day calendar since c=0.7
 fiscal 2026-03-31 | two weeks from the 15th | 'the 15th' 2026-03-15..2026-03-15 day calendar c=0.5 !! read '15th' but not 'two weeks from the', which changes the period
-fiscal 2026-03-31 | a month from the 15th of March | 'the 15th of March' 2026-03-15..2026-03-15 day calendar c=0.5 !! read 'the 15th of March' but not 'a month from', which changes the period
+fiscal 2026-03-31 | a month from the 15th of March | 'a month from the 15th of March' 2026-04-15..2026-04-15 day calendar c=0.7
 fiscal 2026-03-31 | the week of 5 October | 'the week of 5 October' 2026-10-05..2026-10-11 week fiscal c=0.7
 fiscal 2026-03-31 | the week of October 5 | 'the week of October 5' 2026-10-05..2026-10-11 week fiscal c=0.7
 fiscal 2026-03-31 | week of 2026-10-07 | 'week of 2026-10-07' 2026-10-05..2026-10-11 week fiscal c=1
@@ -1852,6 +1888,15 @@ us 2026-10-08 | YTD vs LY | 'YTD' 2026-01-01..2026-10-08 year calendar c=1 +comp
 us 2026-10-08 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
 us 2026-10-08 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +list+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
 us 2026-10-08 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
+us 2026-10-08 | not later than March 2024 | 'not later than March 2024' .....2024-03-31 month calendar until c=1
+us 2026-10-08 | w.e.f. 1 April 2024 | 'w.e.f. 1 April 2024' 2024-04-01..... day calendar since c=1
+us 2026-10-08 | >= 2024-03-15 | '>= 2024-03-15' 2024-03-15..... day calendar since c=1
+us 2026-10-08 | pre 2012 | 'pre 2012' .....2011-12-31 year calendar before c=0.8
+us 2026-10-08 | beginning March 2024 | 'beginning March 2024' 2024-03-01..... month calendar since c=1
+us 2026-10-08 | by the end of 2024-03 | 'by the end of 2024-03' .....2024-03-31 month calendar until c=1
+us 2026-10-08 | 3 days earlier than 15 March 2024 | '3 days earlier than 15 March 2024' 2024-03-12..2024-03-12 day calendar c=1
+us 2026-10-08 | 1 April 2024 + 2 weeks | '1 April 2024 + 2 weeks' 2024-04-15..2024-04-15 day calendar c=1
+us 2026-10-08 | 3 business days before 18 March 2024 | '3 business days before 18 March 2024' 2024-03-13..2024-03-13 day calendar c=1
 us 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 us 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
@@ -1867,7 +1912,7 @@ us 2026-10-08 | from 15th of March | 'from 15th of March' 2026-03-15..... day ca
 us 2026-10-08 | from the last day of March | 'from the last day of March' 2026-03-31..... day calendar since c=0.7
 us 2026-10-08 | from the first Monday of March | 'from the first Monday of March' 2026-03-02..... day calendar since c=0.7
 us 2026-10-08 | two weeks from the 15th | 'the 15th' 2026-10-15..2026-10-15 day calendar c=0.5 !! read '15th' but not 'two weeks from the', which changes the period
-us 2026-10-08 | a month from the 15th of March | 'the 15th of March' 2026-03-15..2026-03-15 day calendar c=0.5 !! read 'the 15th of March' but not 'a month from', which changes the period
+us 2026-10-08 | a month from the 15th of March | 'a month from the 15th of March' 2026-04-15..2026-04-15 day calendar c=0.7
 us 2026-10-08 | the week of 5 October | 'the week of 5 October' 2026-10-04..2026-10-10 week calendar c=0.7
 us 2026-10-08 | the week of October 5 | 'the week of October 5' 2026-10-04..2026-10-10 week calendar c=0.7
 us 2026-10-08 | week of 2026-10-07 | 'week of 2026-10-07' 2026-10-04..2026-10-10 week calendar c=1
@@ -2232,6 +2277,15 @@ us 2026-03-31 | YTD vs LY | 'YTD' 2026-01-01..2026-03-31 year calendar c=1 +comp
 us 2026-03-31 | March 2024 vs a year earlier | 'March 2024' 2024-03-01..2024-03-31 month calendar c=1 +compare+ 'a year earlier' 2023-03-01..2023-03-31 month calendar c=1
 us 2026-03-31 | Q1 FY25 as well as Q1 FY26 | 'Q1 FY25' 2025-10-01..2025-12-31 quarter fiscal c=1 +list+ 'Q1 FY26' 2026-10-01..2026-12-31 quarter fiscal c=1
 us 2026-03-31 | the same period last year | (none) !! 'the same period last year' is the period it is compared with, a year back, and none is given beside it
+us 2026-03-31 | not later than March 2024 | 'not later than March 2024' .....2024-03-31 month calendar until c=1
+us 2026-03-31 | w.e.f. 1 April 2024 | 'w.e.f. 1 April 2024' 2024-04-01..... day calendar since c=1
+us 2026-03-31 | >= 2024-03-15 | '>= 2024-03-15' 2024-03-15..... day calendar since c=1
+us 2026-03-31 | pre 2012 | 'pre 2012' .....2011-12-31 year calendar before c=0.8
+us 2026-03-31 | beginning March 2024 | 'beginning March 2024' 2024-03-01..... month calendar since c=1
+us 2026-03-31 | by the end of 2024-03 | 'by the end of 2024-03' .....2024-03-31 month calendar until c=1
+us 2026-03-31 | 3 days earlier than 15 March 2024 | '3 days earlier than 15 March 2024' 2024-03-12..2024-03-12 day calendar c=1
+us 2026-03-31 | 1 April 2024 + 2 weeks | '1 April 2024 + 2 weeks' 2024-04-15..2024-04-15 day calendar c=1
+us 2026-03-31 | 3 business days before 18 March 2024 | '3 business days before 18 March 2024' 2024-03-13..2024-03-13 day calendar c=1
 us 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 us 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1
@@ -2247,7 +2301,7 @@ us 2026-03-31 | from 15th of March | 'from 15th of March' 2026-03-15..... day ca
 us 2026-03-31 | from the last day of March | 'from the last day of March' 2026-03-31..... day calendar since c=0.7
 us 2026-03-31 | from the first Monday of March | 'from the first Monday of March' 2026-03-02..... day calendar since c=0.7
 us 2026-03-31 | two weeks from the 15th | 'the 15th' 2026-03-15..2026-03-15 day calendar c=0.5 !! read '15th' but not 'two weeks from the', which changes the period
-us 2026-03-31 | a month from the 15th of March | 'the 15th of March' 2026-03-15..2026-03-15 day calendar c=0.5 !! read 'the 15th of March' but not 'a month from', which changes the period
+us 2026-03-31 | a month from the 15th of March | 'a month from the 15th of March' 2026-04-15..2026-04-15 day calendar c=0.7
 us 2026-03-31 | the week of 5 October | 'the week of 5 October' 2026-10-04..2026-10-10 week calendar c=0.7
 us 2026-03-31 | the week of October 5 | 'the week of October 5' 2026-10-04..2026-10-10 week calendar c=0.7
 us 2026-03-31 | week of 2026-10-07 | 'week of 2026-10-07' 2026-10-04..2026-10-10 week calendar c=1
