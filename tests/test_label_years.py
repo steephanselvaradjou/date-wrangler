@@ -8,6 +8,13 @@ both orders.
 
 One join is a span, not a label: a spaced dash after the label, the way "June - FY25" is
 written for June to the end of FY25. Before the label it is a heading: "FY24 - Q3".
+
+Run together, too, as column headings and file names write them: "2024QTR3", "FY24Qtr3",
+"FY-24Q3", "2024June", "JuneFY24". In 2.3.0 each was nothing, and "FY2024-25QTR3" was
+FY2024, "FY2024-25June" a span to the 25th of June, and "Qtr 3-24" this year's Q3.
+
+A lower-case digit-first label -- "3q", "1h" -- is an hour as often ("a 2h drive"), so it
+is a quarter or half only with a year straight after it: "1h 2024", "3qFY24".
 """
 
 from __future__ import annotations
@@ -30,20 +37,27 @@ MONTHS = ["June", "Jun", "JUN", "june"]
 _Q3_2024 = (date(2024, 7, 1), date(2024, 10, 1))
 _H1_2024 = (date(2024, 1, 1), date(2024, 7, 1))
 _JUNE_2024 = (date(2024, 6, 1), date(2024, 7, 1))
-_FY24 = ((date(2023, 10, 1), date(2024, 1, 1)), (date(2023, 4, 1), date(2023, 10, 1)),
-         (date(2023, 6, 1), date(2023, 7, 1)))
+_FY24 = (
+    (date(2023, 10, 1), date(2024, 1, 1)),
+    (date(2023, 4, 1), date(2023, 10, 1)),
+    (date(2023, 6, 1), date(2023, 7, 1)),
+)
 YEARS = {
     "2024": (_Q3_2024, _H1_2024, _JUNE_2024),
     "CY2024": (_Q3_2024, _H1_2024, _JUNE_2024),
     "FY24": _FY24,
     "FY 2024": _FY24,
-    "FY2024-25": ((date(2024, 10, 1), date(2025, 1, 1)), (date(2024, 4, 1), date(2024, 10, 1)),
-                  (date(2024, 6, 1), date(2024, 7, 1))),
+    "FY-24": _FY24,
+    "FY2024-25": (
+        (date(2024, 10, 1), date(2025, 1, 1)),
+        (date(2024, 4, 1), date(2024, 10, 1)),
+        (date(2024, 6, 1), date(2024, 7, 1)),
+    ),
 }
 #: Only after the label: these read oddly in front of it.
 YEARS_AFTER = {"fiscal 2024": _FY24, "calendar year 2024": YEARS["2024"]}
-LABEL_YEAR = [" ", "-", "/", ", ", " of ", " in "]
-YEAR_LABEL = [" ", "-", " - ", "/"]
+LABEL_YEAR = [" ", "-", "/", ", ", " of ", " in ", ""]
+YEAR_LABEL = [" ", "-", " - ", "/", ""]
 
 
 def _which(label: str) -> int:
@@ -54,17 +68,40 @@ def _wordy(label: str) -> bool:
     return " " in label and not label[-1].isdigit()
 
 
+def _runs_together(left: str, right: str, join: str) -> bool:
+    """Run together where it makes another word or number: "Q32024", "20243Q",
+    "Junefiscal 2024", "third quarter2024"."""
+    if join:
+        return False
+    return (
+        (left[-1].isdigit() and right[0].isdigit())
+        or right.split()[0].isalpha()
+        or left[-1].isalpha()
+        and right[0].isalpha()
+        and not right.upper().startswith(("FY", "CY"))
+    )
+
+
 def _cases() -> list[tuple[str, tuple[date, date]]]:
     cases = []
     for label in QUARTERS + HALVES + MONTHS:
         for (year, want), join in product({**YEARS, **YEARS_AFTER}.items(), LABEL_YEAR):
-            if _wordy(label) and join in ("-", "/"):
+            if _wordy(label) and join in ("-", "/", ""):
+                continue
+            if _runs_together(label, year, join):
                 continue
             cases.append((f"{label}{join}{year}", want[_which(label)]))
         for (year, want), join in product(YEARS.items(), YEAR_LABEL):
-            if _wordy(label) and join in ("-", "/"):
+            if _wordy(label) and join in ("-", "/", ""):
+                continue
+            if _runs_together(year, label, join):
                 continue
             cases.append((f"{year}{join}{label}", want[_which(label)]))
+    # A two-digit year after a touching mark, as "Q3-24" always was.
+    for label, year in product(["Q3", "Qtr 3", "QTR3", "Quarter 3", "3Q"], ["-24", "/24"]):
+        cases.append((f"{label}{year}", _Q3_2024))
+    for label, year in product(["H1", "Half 1", "1H"], ["-24", "/24"]):
+        cases.append((f"{label}{year}", _H1_2024))
     return cases
 
 
@@ -94,6 +131,13 @@ def test_a_label_and_its_year_are_one_period(text: str, want: tuple[date, date])
         ("Q3/2024-25", None),
         # The verb, not the month.
         ("2024 may see growth", []),
+        ("FY25 may see growth", [(date(2024, 4, 1), date(2025, 4, 1))]),
+        # A lower-case digit-first label without a year straight after it is not one.
+        ("a 1h drive", []),
+        ("2024 3q", None),
+        ("3q in 2024", [(date(2024, 1, 1), date(2025, 1, 1))]),
+        # Run into a word, a month is no month.
+        ("remarchfy24", []),
     ],
 )
 def test_what_stays_apart(text: str, want: list[tuple[date, date]] | None) -> None:

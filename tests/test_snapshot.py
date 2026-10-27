@@ -150,6 +150,8 @@ PHRASES = [
     # a day, its two-digit year whatever the marks
     "15 Mar-24", "15-March 24", "15 of March24", "15thMarch 2024", "March/15/2024",
     "15 Mar, 24",
+    # labels and years run together
+    "Qtr 3-24", "2024QTR3", "FY2024-25QTR3", "2024March", "MarchFY24", "FY2024-25March",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

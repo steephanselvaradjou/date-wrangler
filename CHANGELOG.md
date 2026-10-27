@@ -37,6 +37,13 @@ The full notes for each release, with examples, are on the
   15 March. Each is 15 March 2024. Left alone on purpose: two digits after a comma (`on
   15 Mar, 24 orders shipped`) and `Mar.15.24`, a decimal as often once the month's full
   stop is read.
+- A quarter, half or month run together with its year, or written out before one: `Qtr
+  3-24` was this year's Q3; `2024QTR3`, `FY24Qtr3`, `FY-24Q3`, `FY-24H1`, `2024March`,
+  `MarchFY24`, `FY24March` and `CY2024Mar` were nothing; `FY2024-25QTR3` was FY2024, and
+  `FY2024-25March` a span from FY2024 to the 25th of March. Each is its period. A
+  lower-case digit-first `3q` or `1h` is still a quarter or half only with a year straight
+  after it -- `1h` is an hour as often. `tests/test_label_years.py` adds them; 32 of its
+  cases failed in 2.3.0.
 - `tests/test_day_spellings.py` now holds 2,620 spellings of a day, its month and year,
   and 288 left alone on purpose; 823 of its cases failed in 2.3.0.
 - `tests/test_bound_spellings.py`: 627 spellings of open-ended periods, bounds, counts

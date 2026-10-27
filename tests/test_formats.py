@@ -164,6 +164,11 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("Monday, 15 March 2024", "~"),  # 15 March 2024 was a Friday
     ]),
     ("months", TODAY, CAL, [
+        # Run together. Each was nothing, or a span to the 25th of March, in 2.3.0.
+        ("2024March", "2024-03"),
+        ("MarchFY24", "2024-03"),  # the March inside FY24, as "March FY24" is
+        ("FY2024-25March", "2025-03"),
+        ("CY2024Mar", "2024-03"),
         ("March 2024", "2024-03"),
         ("Mar 2024", "2024-03"),
         ("Mar-2024", "2024-03"),
@@ -257,6 +262,11 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the 2015-16 season", "!"),  # a season is not a fiscal year either
     ]),
     ("quarters and halves", TODAY, CAL, [
+        # Written out, or run together. Each was nothing, this year's Q3, or FY2024, in 2.3.0.
+        ("Qtr 3-24", "2024-07..2024-09"),
+        ("2024QTR3", "2024-07..2024-09"),
+        ("FY-24Q3", "2023-10..2023-12"),
+        ("FY2024-25QTR3", "2024-10..2024-12"),
         ("Q1 2024", "2024-01..2024-03"),
         ("Q1-2024", "2024-01..2024-03"),
         ("Q1/2024", "2024-01..2024-03"),

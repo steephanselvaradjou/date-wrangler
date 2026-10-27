@@ -849,8 +849,10 @@ def _p_quarter(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.ABS_QUARTER, year=year, index=index, basis=basis, year_offset=offset)
 
 
-#: A quarter or half as a label: Q3, 3Q, H1, 1H.
-_QH = r"(?:q\s*[1-4]|[1-4]\s*q|h\s*[12]|[12]\s*h)"
+#: A quarter or half as a label: Q3, 3Q, H1, 1H, and written out -- "Qtr 3", "Qtr. 3",
+#: "Quarter 3", "Half 1" -- so a year joins them as it joins Q3. REGRESSION: "Qtr 3-24" was
+#: this year's Q3, "2024QTR3" and "FY24Qtr3" were nothing, and "FY2024-25QTR3" was FY2024.
+_QH = r"(?:(?:quarter|qtrs?\.?|q)\s*[1-4]|[1-4]\s*q|(?:half|h)\s*[12]|[12]\s*h)"
 #: An FY or CY touching the H of "1HFY24", "1HCY 2024", where no word boundary falls.
 _H_FY = r"(?=[fc]\.?y\.?[\s-]*'?\d)"
 #: A basis written beside one: "fiscal Q3", "Q3 FY", "calendar H1".
@@ -866,7 +868,7 @@ _LABELLED_FORMS = tuple(
         rf"\s*(?P<qh>{_QH})\s+(?P<basis>fiscal|financial|calendar|fy|cy)\s*",  # Q3 fiscal
         rf"\s*(?P<qh>{_QH})['/-](?P<yr>\d{{2}}(?:\d{{2}})?)\s*",               # Q3'24 Q3/2024
         rf"\s*(?P<yr>(?:19|20)\d{{2}})\s*-?\s*(?P<qh>{_QH})\s*",                # 2024-Q3 2024Q3
-        rf"\s*(?P<basis>{_FY_WORD}|{_CY_WORD})\s*'?(?P<yr>\d{{2,4}})"             # FY2024-25 Q3
+        rf"\s*(?P<basis>{_FY_WORD}|{_CY_WORD})[\s-]*'?(?P<yr>\d{{2,4}})"          # FY2024-25 Q3
         rf"(?P<span>[-/]'?\d{{2,4}})?\s*-?\s*(?P<qh>{_QH})\s*",
         r"\s*(?P<qh>[1-4]\s*q|[12]\s*h)\s*'?(?P<yr>\d{2,4})\s*",             # 3Q24 1H2024
     )
@@ -2030,7 +2032,7 @@ RULES: tuple[Rule, ...] = (
         # Not when the quarter has a year of its own: "FY24 - Q3" is a label, "2023 - H2
         # 2024" a range from 2023 to H2 2024.
         rf"|(?:19|20)\d{{2}}\s*-?\s*{_QH}(?!\s*'?\d)"
-        rf"|(?:{_FY_WORD}|{_CY_WORD})\s*'?\d{{2,4}}(?:[-/]'?\d{{2,4}})?\s*-?\s*{_QH}(?!\s*'?\d)"
+        rf"|(?:{_FY_WORD}|{_CY_WORD})[\s-]*'?\d{{2,4}}(?:[-/]'?\d{{2,4}})?\s*-?\s*{_QH}(?!\s*'?\d)"
         rf"|(?:[1-4]\s*q|[12]\s*h)\s*'?\d{{2,4}})(?!\w)",
         _p_labelled_period,
     ),

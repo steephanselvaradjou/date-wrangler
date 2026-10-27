@@ -48,9 +48,9 @@ class Token:
 #: "15thMarch"), a number, a word, or one mark. The suffix is never optional in the first
 #: branch: an optional one let the number give back a digit, and "15MAR2024" came out as 1,
 #: 5, MAR. REGRESSION: "15thMarch 2024" was "15" and "thMarch", and nothing was read.
+_MONTH_ALT = "|".join(sorted(MONTHS, key=len, reverse=True))
 _LEX = re.compile(
-    rf"\d+(?:st|nd|rd|th)(?:(?![a-z])|(?=(?:{'|'.join(sorted(MONTHS, key=len, reverse=True))})"
-    r"(?![a-z])))|\d+|[a-z]+|\S",
+    rf"\d+(?:st|nd|rd|th)(?:(?![a-z])|(?=(?:{_MONTH_ALT})(?![a-z])))|\d+|[a-z]+|\S",
     re.IGNORECASE,
 )
 
@@ -60,7 +60,15 @@ def tokenize(text: str) -> list[Token]:
     last = -1
     for m in _LEX.finditer(text):
         start, end = m.span()
-        out.append(Token(m.group(), start, end, start == last))
+        word = m.group()
+        # A month name run into the FY or CY after it: "MarchFY24". REGRESSION: it was one
+        # word, "marchfy", and nothing was read. Split here, word by word, rather than in
+        # the pattern, which would try every month name at the start of every word.
+        if len(word) > 4 and word[-2:].lower() in ("fy", "cy") and word[:-2].lower() in MONTHS:
+            out.append(Token(word[:-2], start, end - 2, start == last))
+            out.append(Token(word[-2:], end - 2, end, True))
+        else:
+            out.append(Token(word, start, end, start == last))
         last = end
     return out
 
@@ -70,9 +78,7 @@ def tokenize(text: str) -> list[Token]:
 #: not split into tokens at all. Most questions with a date in them have no month name:
 #: "Q1 2024", "from 2012 to 2013".
 _MAY_HOLD = re.compile(
-    r"(?:(?<![a-z])|(?<=\d(?:st|nd|rd|th)))(?:"
-    + "|".join(sorted(MONTHS, key=len, reverse=True))
-    + r")(?![a-z])",
+    rf"(?:(?<![a-z])|(?<=\d(?:st|nd|rd|th)))(?:{_MONTH_ALT})(?:(?![a-z])|(?=[fc]y(?![a-z])))",
     re.IGNORECASE,
 )
 
@@ -464,6 +470,10 @@ def _year_month_day(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     elif p.is_(j, ".", tight=True) and p.at(j + 1) is not None and p.toks[j + 1].tight:
         j += 1  # "2024Mar.15": the month's own full stop
     day = p.day(j)
+    if day is None and sep is None and p.toks[j - 1].tight and not p.number_follows(j):
+        # "2024March", "2024Mar": the year and its month run together. REGRESSION: nothing
+        # was read, where "2024 March" is March 2024.
+        return "year_month_day", Spec(Kind.ABS_MONTH, year=int(t.low), month=month), j
     if day is None or p.number_follows(j + 1) or p.is_(j + 1, ":"):
         return None
     return "year_month_day", Spec(Kind.ABS_DAY, year=int(t.low), month=month, day=day), j + 1
@@ -589,16 +599,20 @@ def _month_alone(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
 
 
 def _fy_month(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
-    """"FY25 June", "FY2024-25 March" -- the fiscal year first, then the month inside it.
-    Not "may": in "FY25 may see growth" it is a verb."""
+    """"FY25 June", "FY2024-25 March" -- the fiscal year first, then the month inside it --
+    and the same run together or with a calendar year: "FY24March", "FY2024-25March",
+    "CY2024Mar". REGRESSION: run together, the first was nothing and the second a span from
+    FY2024 to the 25th of March. Not "may": in "FY25 may see growth" it is a verb."""
     label = p.label_year(i, cfg, month_may_follow=True)
-    if label is None or label[1] is not Basis.FISCAL:
+    if label is None:
         return None
     year, basis, end = label
     t = p.at(end)
     month = p.month(end)
-    if t is None or t.tight or month is None or t.low == "may":
+    if t is None or month is None or t.low == "may":
         return None
+    if basis is Basis.CALENDAR and not t.tight:
+        return None  # "CY2024 March", spaced, is the join step's, as "2024 March" is
     return "fy_month", Spec(Kind.ABS_MONTH, year=year, month=month, basis=basis), end + 1
 
 
@@ -613,7 +627,7 @@ _OPENING_WITH_A_MONTH: tuple[_ReadFn, ...] = (
 )
 _OPENING_WITH_A_YEAR_WORD: tuple[_ReadFn, ...] = (_fy_month,)
 #: Words a date of this family can open with, besides a number or a month.
-_OPENERS = frozenset({"fy", "f", "fiscal", "financial"})
+_OPENERS = frozenset({"fy", "f", "fiscal", "financial", "cy", "c", "calendar"})
 
 
 #: A date found: the rule it stands in for, its spec (None when declined, with the reason),
