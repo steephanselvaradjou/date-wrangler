@@ -1140,8 +1140,15 @@ _PART_ALT = "|".join(p for p, _ in _PART_WORDS)
 _NUMERIC_MONTH = (
     r"(?:(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])|(?:0?[1-9]|1[0-2])[-/](?:19|20)\d{2})(?![\d/.-])"
 )
+#: A month's year joined by a mark or touching it -- "March-24", "March/24", "Mar.24",
+#: "March2024" -- or, two digits, after a space where the clause ends: "the 15th of
+#: March 24". REGRESSION: "15 of March 24" was this year's 15 March, and "15 of March24"
+#: the 24th of this March.
+_MONTH_JOINED_YEAR = (
+    r"\.?(?:[-/.]?\d{2}(?:\d{2})?(?!\d)|\s+\d{2}(?=\s*(?:[,.;:!?)]|$)))"
+)
 _PART_TARGET = (
-    rf"(?:{_MONTH}(?:-\d{{2}}(?:\d{{2}})?(?!\d)|{_YEAR_SUFFIX})"
+    rf"(?:{_MONTH}(?:{_MONTH_JOINED_YEAR}|{_YEAR_SUFFIX})"
     rf"|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}|[1-4]\s*q(?![a-z]){_YEAR_SUFFIX}"
     rf"|(?:the\s+)?{_ORD}\s+(?:quarter|qtr){_YEAR_SUFFIX}"
     rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_DECADE}|{_NUMERIC_MONTH}|{_YEAR}(?![-/.]\d)"
@@ -1172,13 +1179,15 @@ def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
     tail = re.sub(r"^the\s+", "", tail, flags=re.IGNORECASE)  # "the 1st of the next month"
     if re.fullmatch(_NUMERIC_MONTH, tail):
         return _p_numeric_month(tail, cfg)  # "the end of 2024-03"
-    dashed = re.fullmatch(rf"({_MONTH})-(\d{{2}}|\d{{4}})", tail, re.IGNORECASE)
+    dashed = re.fullmatch(
+        rf"({_MONTH})\.?(?:[-/.]?(\d{{4}}|\d{{2}})|\s+(\d{{2}}))", tail, re.IGNORECASE
+    )
     if dashed:
-        # "start of Mar-24": March 2024. REGRESSION: the year was lost, and it was this
-        # year's March.
+        # "start of Mar-24", "15 of March24", "the 15th of March 24": March 2024.
+        # REGRESSION: the year was lost, and it was this year's March.
         return Spec(
             Kind.ABS_MONTH, month=MONTHS[dashed.group(1).lower()],
-            year=_pivot_year(dashed.group(2), cfg),
+            year=_pivot_year(dashed.group(2) or dashed.group(3), cfg),
         )
     if find_month(tail) is not None:
         # The month rule's own reader, so "the first week of June FY25" is June 2024 with

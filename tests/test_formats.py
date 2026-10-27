@@ -136,6 +136,23 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         # after the day is a span, as after any label.
         ("Mar-15", "2015-03"),
         ("15 Mar - 2024", "2024-03-15..2024-12-31"),
+        # A two-digit year whatever the marks. Each was this year's 15 March in 2.3.0.
+        ("15 Mar-24", "2024-03-15"),
+        ("15-March 24", "2024-03-15"),
+        ("15/March.24", "2024-03-15"),
+        ("15 MAR24", "2024-03-15"),
+        ("15 of March 24", "2024-03-15"),
+        ("15 of March24", "2024-03-15"),  # was 24 March this year
+        ("15Mar. 2024", "2024-03-15"),
+        # Each was nothing, or three dates, in 2.3.0.
+        ("15thMarch 2024", "2024-03-15"),
+        ("March/15/2024", "2024-03-15"),
+        ("March/15th, 2024", "2024-03-15"),
+        ("March.15.24", "2024-03-15"),
+        # Left alone: after a comma, two digits are a count as often; "Mar.15.24" is "Mar
+        # 15.24", a decimal as often.
+        ("15 Mar, 24", "2026-03-15"),
+        ("Mar.15.24", "2026-03-15"),
     ]),
     ("a weekday with its date", TODAY, CAL, [
         ("Friday, 15 March 2024", "2024-03-15"),

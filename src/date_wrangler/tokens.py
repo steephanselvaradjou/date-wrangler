@@ -44,10 +44,15 @@ class Token:
         self.tight = tight
 
 
-#: A number with its ordinal suffix ("1st", unless letters run on), a number, a word, or
-#: one mark. The suffix is never optional in the first branch: an optional one let the
-#: number give back a digit, and "15MAR2024" came out as 1, 5, MAR.
-_LEX = re.compile(r"\d+(?:st|nd|rd|th)(?![a-z])|\d+|[a-z]+|\S", re.IGNORECASE)
+#: A number with its ordinal suffix ("1st", unless letters run on -- but a month name may:
+#: "15thMarch"), a number, a word, or one mark. The suffix is never optional in the first
+#: branch: an optional one let the number give back a digit, and "15MAR2024" came out as 1,
+#: 5, MAR. REGRESSION: "15thMarch 2024" was "15" and "thMarch", and nothing was read.
+_LEX = re.compile(
+    rf"\d+(?:st|nd|rd|th)(?:(?![a-z])|(?=(?:{'|'.join(sorted(MONTHS, key=len, reverse=True))})"
+    r"(?![a-z])))|\d+|[a-z]+|\S",
+    re.IGNORECASE,
+)
 
 
 def tokenize(text: str) -> list[Token]:
@@ -65,7 +70,9 @@ def tokenize(text: str) -> list[Token]:
 #: not split into tokens at all. Most questions with a date in them have no month name:
 #: "Q1 2024", "from 2012 to 2013".
 _MAY_HOLD = re.compile(
-    r"(?<![a-z])(?:" + "|".join(sorted(MONTHS, key=len, reverse=True)) + r")(?![a-z])",
+    r"(?:(?<![a-z])|(?<=\d(?:st|nd|rd|th)))(?:"
+    + "|".join(sorted(MONTHS, key=len, reverse=True))
+    + r")(?![a-z])",
     re.IGNORECASE,
 )
 
@@ -213,6 +220,27 @@ class _Pieces:
             return None, None, offset, k + 2
         return None
 
+    def two_digit_year(self, j: int, cfg: WranglerConfig) -> tuple[int, int] | None:
+        """A two-digit year straight after a day's month, at token ``j``, and the token
+        after it: touching the month ("15 MAR24"), joined by a touching mark ("15 Mar-24",
+        "15-March/24", "15.Mar.24"), or after a space ("15-Mar 24"), whatever joined the day
+        to the month. Not after a comma -- "on 15 Mar, 24 orders shipped" is a count -- nor
+        a spaced dash, which is a span, nor before more of a date or a time. REGRESSION:
+        only the day's own mark or a space would do, so "15 Mar-24" was this year's 15
+        March, the year lost."""
+        t = self.at(j)
+        if t is None:
+            return None
+        k = j
+        if t.text in "-/." and t.tight:
+            k += 1
+            t = self.at(k)
+            if t is None or not t.tight:
+                return None
+        if _two_digits(t) is None or self.date_goes_on(k + 1) or self.is_(k + 1, ":"):
+            return None
+        return _pivot_year(t.low, cfg), k + 1
+
     def year_word(self, k: int) -> tuple[Basis, int] | None:
         """A word saying which kind of year follows, at token ``k``: "FY", "F.Y.", "fiscal
         year", "financial year", "fiscal" before a number, "CY", "C.Y.", "calendar year".
@@ -359,28 +387,43 @@ def _compact_day(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     ) and t is not None and t.tight and t.low.isdigit() and len(t.low) in (2, 4):
         year = _pivot_year(t.low, cfg)
         return "dashed_day", Spec(Kind.ABS_DAY, year=year, month=month, day=day), k + 1
-    if sep is None or p.is_(j, sep, tight=True):
-        return None  # "15-Mar-FY24" is not a day with something stranded after it
+    if sep is None:
+        return None
+    month_end = j
+    if p.is_(j, sep, tight=True):
+        # "15.Mar. 2024": the month's own full stop, the year after a space. Otherwise
+        # "15-Mar-FY24" is not a day with something stranded after it.
+        if sep != "." or p.at(j + 1) is None or p.toks[j + 1].tight:
+            return None
+        j += 1
+    elif p.dot_after_month(j - 1):
+        j += 1  # "15-Mar. 2024"
     # REGRESSION: "15-Mar 2024" was March 2024, the day lost, and "15-Mar" March alone.
     after = p.year_after(j, cfg)
     if after is not None:
         year_, basis, offset, end = after
         spec = Spec(Kind.ABS_DAY, year=year_, month=month, day=day, basis=basis, year_offset=offset)
         return "dashed_day", spec, end
-    return "dashed_day", Spec(Kind.ABS_DAY, month=month, day=day), j
+    two = p.two_digit_year(j, cfg)
+    if two is not None:
+        return "dashed_day", Spec(Kind.ABS_DAY, year=two[0], month=month, day=day), two[1]
+    return "dashed_day", Spec(Kind.ABS_DAY, month=month, day=day), month_end
 
 
 def _dashed_month_day(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     """"Mar-15-2024", and "Mar-15 2024", "Mar-15, 2024": a year after it makes the 15 a
-    day. Alone, "Mar-15" is March 2015 -- the dash settles "jan 24" as a month."""
+    day. Alone, "Mar-15" is March 2015 -- the dash settles "jan 24" as a month. A slash or
+    a full stop the same: "March/15/2024", "March/15th, 2024", "March.15.24". REGRESSION:
+    the first was nothing, the second three dates, and the third this year's 15 March."""
     month = p.month(i)
-    if month is None or not p.is_(i + 1, "-", tight=True):
+    if month is None or not p.is_(i + 1, "-", "/", ".", tight=True):
         return None
+    mark = p.toks[i + 1].text
     day = p.day(i + 2)
     if day is None:
         return None
     t = p.at(i + 4)
-    if p.is_(i + 3, "-", tight=True) and t is not None and t.tight:
+    if p.is_(i + 3, mark, tight=True) and t is not None and t.tight:
         if not t.low.isdigit() or len(t.low) not in (2, 4):
             return None
         year = _pivot_year(t.low, cfg)
@@ -418,6 +461,8 @@ def _year_month_day(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
                 return None
         elif sep != "." or p.at(j) is None or p.toks[j].tight:
             return None  # "2024.Mar.15" reaches here as "2024.Mar 15": normalize ate the dot
+    elif p.is_(j, ".", tight=True) and p.at(j + 1) is not None and p.toks[j + 1].tight:
+        j += 1  # "2024Mar.15": the month's own full stop
     day = p.day(j)
     if day is None or p.number_follows(j + 1) or p.is_(j + 1, ":"):
         return None
@@ -430,16 +475,18 @@ def _day_month_year(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     month = p.month(i + 1)
     if day is None or month is None:
         return None
-    after = p.year_after(i + 2, cfg)
+    # "15 Mar. 2024", "15Mar. 24": the month's own full stop. REGRESSION: it stopped the
+    # year being read.
+    j = i + 3 if p.dot_after_month(i + 1) else i + 2
+    after = p.year_after(j, cfg)
     if after is not None:
-        year, basis, offset, j = after
+        year, basis, offset, end = after
         spec = Spec(Kind.ABS_DAY, year=year, month=month, day=day, basis=basis, year_offset=offset)
-        return "day_month_year", spec, j
-    two = p.at(i + 2)
-    if two is not None and not two.tight and _two_digits(two) is not None and not p.is_(i + 3, ":"):
-        # "15 Mar 24": the day is filled, so a bare two-digit number can only be the year.
-        spec = Spec(Kind.ABS_DAY, year=_pivot_year(two.low, cfg), month=month, day=day)
-        return "day_month_year", spec, i + 3
+        return "day_month_year", spec, end
+    # "15 Mar 24": the day is filled, so a two-digit number after the month is its year.
+    two = p.two_digit_year(j, cfg)
+    if two is not None:
+        return "day_month_year", Spec(Kind.ABS_DAY, year=two[0], month=month, day=day), two[1]
     return "day_month_year", Spec(Kind.ABS_DAY, month=month, day=day), i + 2
 
 

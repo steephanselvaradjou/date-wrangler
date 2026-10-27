@@ -30,6 +30,15 @@ The full notes for each release, with examples, are on the
 - `by the end of 2024-03` was refused as two calendar years, and `end of 2024-03-15` was
   the end of 2024; a month in numbers can now have a part taken out of it.
 - `a month from the 15th of March` was flagged as partly read; it is 15 April.
+- A day's two-digit year was dropped whenever the mark changed between its parts: `15
+  Mar-24`, `15-March 24`, `15/March.24`, `15 MAR24` and `15 of March 24` were 15 March of
+  this year. `15 of March24` was the 24th of this March; `15thMarch 2024` and
+  `March/15/2024` were nothing, `March/15th, 2024` three dates, `15Mar. 2024` this year's
+  15 March. Each is 15 March 2024. Left alone on purpose: two digits after a comma (`on
+  15 Mar, 24 orders shipped`) and `Mar.15.24`, a decimal as often once the month's full
+  stop is read.
+- `tests/test_day_spellings.py` now holds 2,620 spellings of a day, its month and year,
+  and 288 left alone on purpose; 823 of its cases failed in 2.3.0.
 - `tests/test_bound_spellings.py`: 627 spellings of open-ended periods, bounds, counts
   from a date and "as of"; 166 of its cases failed in 2.3.0. Left alone on purpose:
   `post March` without its hyphen, which is a verb as often, and `forward` or `on`

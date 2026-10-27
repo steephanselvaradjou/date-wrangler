@@ -147,6 +147,9 @@ PHRASES = [
     "not later than March 2024", "w.e.f. 1 April 2024", ">= 2024-03-15", "pre 2012",
     "beginning March 2024", "by the end of 2024-03", "3 days earlier than 15 March 2024",
     "1 April 2024 + 2 weeks", "3 business days before 18 March 2024",
+    # a day, its two-digit year whatever the marks
+    "15 Mar-24", "15-March 24", "15 of March24", "15thMarch 2024", "March/15/2024",
+    "15 Mar, 24",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",
