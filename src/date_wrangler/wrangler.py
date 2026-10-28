@@ -705,7 +705,9 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
             )
         ):
             name, spec, lo, hi, reason = d
-            if spec is not None:
+            if isinstance(spec, list):
+                out.extend(_Raw(name, s, s_lo, s_hi) for s, s_lo, s_hi in spec)
+            elif spec is not None:
                 out.append(_Raw(name, spec, lo, hi))
             elif diags is not None:
                 diags.append(Diagnostic(text[lo:hi], (lo, hi), name, reason or ""))

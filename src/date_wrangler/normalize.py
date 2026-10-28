@@ -14,7 +14,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from .vocab import UNIT_WORDS
+from .vocab import MONTHS, UNIT_WORDS, alt
 
 __all__ = ["Normalized", "normalize"]
 
@@ -45,9 +45,17 @@ _FOLD = {
 
 #: The full stop of an abbreviated month before a number: "Sept. 2013", "Mar. 15",
 #: "FEB.2018". It becomes a space -- the same length, so every offset still holds -- and
-#: only before a number, so a month that ends a sentence keeps its full stop.
+#: only before a number, so a month that ends a sentence keeps its full stop. Or before
+#: what joins it to the next date -- a comma, "&", a spaced dash, or a word in lower case,
+#: as no sentence opens: "Mar. - Apr. 2024", "15 of Mar. to 20 of Apr.". REGRESSION: the
+#: full stop parted them, and the first was this year's or lost. A dash touching it only
+#: before the next month or a day of it -- "Mar.-Apr.", "15 of Mar.-20 of Apr." -- since
+#: "Mar.-2024" is March 2024, and spaced it would be a span.
 _ABBREV_DOT = re.compile(
-    r"\b(jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\.(?=\s*,?\s*'?\d)", re.IGNORECASE
+    r"\b(jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\."
+    r"(?=\s*,?\s*'?\d|\s*[,&]|\s+-|\s+(?-i:to|till|until|through|thru|and|or|vs|versus)\b"
+    rf"|-(?:\d{{1,2}}(?:st|nd|rd|th)?[\s-]*(?:of\s+)?)?{alt(MONTHS)}\b)",
+    re.IGNORECASE,
 )
 
 

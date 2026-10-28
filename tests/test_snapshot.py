@@ -152,6 +152,10 @@ PHRASES = [
     "15 Mar, 24",
     # labels and years run together
     "Qtr 3-24", "2024QTR3", "FY2024-25QTR3", "2024March", "MarchFY24", "FY2024-25March",
+    # days sharing a month or a year
+    "15-20 Mar-24", "15-20 June FY25", "2024 March 15th-20th", "15 of March-20 of April 2024",
+    "15 Mar. - 20 Apr. 2024", "15, 16 and 20 March-2024", "15 Mar, 24 - 20 Apr, 24",
+    "Mar.-Apr. 2024",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

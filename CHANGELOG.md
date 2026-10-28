@@ -44,6 +44,20 @@ The full notes for each release, with examples, are on the
   lower-case digit-first `3q` or `1h` is still a quarter or half only with a year straight
   after it -- `1h` is an hour as often. `tests/test_label_years.py` adds them; 32 of its
   cases failed in 2.3.0.
+- Days sharing a month or a year read their year as a single day does. In one month,
+  `15-20 Mar-24`, `15-20 MAR 24` and `15-20 March.2024` were this year's March; `15-20
+  June FY25` was June 2025, the FY dropped; `15-20March 2024` was the 20th alone; `2024
+  March 15-20` the 15th, and `2024 March 15th-20th` a run to the 20th of this month;
+  `between the 15th and the 20th of March` the 20th. Across two months, `15 March
+  2024-20 April 2024` lost its first year; `15-March-20-April-2024` began in March 2020;
+  `15 Mar. - 20 Apr. 2024` and `Mar.-Apr. 2024` lost the first month to its full stop.
+  In a list, `15, 16 and 20 March-2024` ran the 20th to the end of 2024. Each is now the
+  days written. A two-digit year after a comma is still a count at the end -- `15-20
+  Mar, 24` is this year's -- but a year before the next date, where no count can be:
+  `15 Mar, 24 - 20 Apr, 24`. A day's match now takes in its abbreviated month's full stop,
+  `15 Mar.`, and `15-1 March` is refused with a reason rather than without one.
+- `tests/test_day_range_spellings.py`: 6,821 runs and lists of days, each part of the
+  spelling varied against the others; 2,520 of its cases failed in 2.3.0.
 - `tests/test_day_spellings.py` now holds 2,620 spellings of a day, its month and year,
   and 288 left alone on purpose; 823 of its cases failed in 2.3.0.
 - `tests/test_bound_spellings.py`: 627 spellings of open-ended periods, bounds, counts
