@@ -7,9 +7,12 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
-## Unreleased
+## 2.4.0 — 2026-10-28
 
-**Changes answers.**
+Open-ended periods and bounds, a day and its year, labels run together with their year,
+and days sharing a month or a year: each family measured with every way people write it,
+and read the way the plainest spelling is. `AY` is the assessment year. The API is
+unchanged. **Changes answers.**
 
 ### Changed
 - `AY` is the assessment year, as tax returns in India and Bangladesh name it: always the
