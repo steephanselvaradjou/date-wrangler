@@ -3,11 +3,14 @@
 A recurrence, a vague time, a season, a season's label and an hour are not periods this
 library answers. A reading of any of them answers a question nobody asked, so each
 spelling here must come back with nothing -- and, where a rule exists for it, a reason.
-In 2.1.0 eight of them were answered: "every first Monday of the month" as this month's
-first Monday, "the summer months of 2024" as the whole year, and "AY 2015-16", "SY
-2015-16", "the 2015-16 NBA season", "the 2015-16 Premier League season", "the 2015-16
-campaign" and "the 2015-16 term" each as two calendar years. And "a while back" and
-"some time back" never reached the rule that names them.
+In 2.1.0 seven of them were answered: "every first Monday of the month" as this month's
+first Monday, "the summer months of 2024" as the whole year, and "SY 2015-16", "the
+2015-16 NBA season", "the 2015-16 Premier League season", "the 2015-16 campaign" and "the
+2015-16 term" each as two calendar years. And "a while back" and "some time back" never
+reached the rule that names them.
+
+"AY" is not here: it is the assessment year, the fiscal year after the one it assesses,
+and is read -- see tests/test_formats.py. "academic year" is written out.
 """
 
 from __future__ import annotations
@@ -81,7 +84,6 @@ DECLINED: dict[str, list[str]] = {
         "the 2015-2016 season",
         "the 2015-16 academic year",
         "school year 2015-16",
-        "AY 2015-16",
         "SY 2015-16",
         "the 2015-16 NBA season",
         "the 2015-16 Premier League season",

@@ -156,6 +156,8 @@ PHRASES = [
     "15-20 Mar-24", "15-20 June FY25", "2024 March 15th-20th", "15 of March-20 of April 2024",
     "15 Mar. - 20 Apr. 2024", "15, 16 and 20 March-2024", "15 Mar, 24 - 20 Apr, 24",
     "Mar.-Apr. 2024",
+    # the assessment year: the fiscal year after the one it assesses
+    "A.Y. 2025-26", "AY26", "Q1 AY 2025-26", "income for FY 2024-25 (AY 2025-26)",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",

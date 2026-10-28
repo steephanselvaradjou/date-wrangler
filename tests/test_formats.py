@@ -236,6 +236,17 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the year ended 31 March 2024", "2023-04..2024-03"),
         ("FY ending June 30, 2024", "2023-07..2024-06"),
         ("FY22-24", "!"),  # not one fiscal year
+        # The assessment year is always the one after the fiscal year it assesses: A.Y.
+        # 2025-26 is F.Y. 2024-25. In 2.3.0 "AY 2025-26" was declined as an academic year.
+        ("A.Y. 2025-26", "2024-04..2025-03"),
+        ("AY 2025-26", "2024-04..2025-03"),
+        ("AY 2025-2026", "2024-04..2025-03"),
+        ("AY25-26", "2024-04..2025-03"),
+        ("assessment year 2025-26", "2024-04..2025-03"),
+        ("AY26", "2024-04..2025-03"),
+        ("Q1 AY 2025-26", "2024-04..2024-06"),
+        ("AY 2023-24 to AY 2025-26", "2022-04..2025-03"),
+        ("AY 2025-27", "!"),
         # With no FY, year_basis decides: on the calendar, two years. Fiscal is below.
         ("2024-25", "2024..2025"),
         ("sales 2024-25", "2024..2025"),
@@ -731,7 +742,7 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("2015–2016", "2015..2016"),  # with no such word, still the years
         # Each was two calendar years, or the whole of 2024, in 2.1.0.
         ("the summer months of 2024", "!"),
-        ("AY 2015-16", "!"),
+        ("SY 2015-16", "!"),
         ("the 2015-16 NBA season", "!"),
         ("the 2015-16 campaign", "!"),
         ("2015-16 sales by season", "2015..2016"),  # the years, by season

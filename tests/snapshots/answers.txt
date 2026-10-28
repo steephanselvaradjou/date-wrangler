@@ -361,6 +361,10 @@ default 2026-10-08 | 15 Mar. - 20 Apr. 2024 | '15 Mar. - 20 Apr. 2024' 2024-03-1
 default 2026-10-08 | 15, 16 and 20 March-2024 | '15' 2024-03-15..2024-03-15 day calendar c=0.8 +list+ '16' 2024-03-16..2024-03-16 day calendar c=0.8 +list+ '20 March-2024' 2024-03-20..2024-03-20 day calendar c=0.8
 default 2026-10-08 | 15 Mar, 24 - 20 Apr, 24 | '15 Mar, 24 - 20 Apr' 2024-03-15..2024-04-20 day calendar c=1 ends 2024-03-15..2024-03-15|2024-04-20..2024-04-20
 default 2026-10-08 | Mar.-Apr. 2024 | 'Mar.-Apr. 2024' 2024-03-01..2024-04-30 month calendar c=1 ends 2024-03-01..2024-03-31|2024-04-01..2024-04-30
+default 2026-10-08 | A.Y. 2025-26 | 'A.Y. 2025-26' 2024-04-01..2025-03-31 year fiscal c=1
+default 2026-10-08 | AY26 | 'AY26' 2024-04-01..2025-03-31 year fiscal c=1
+default 2026-10-08 | Q1 AY 2025-26 | 'Q1 AY 2025-26' 2024-04-01..2024-06-30 quarter fiscal c=1
+default 2026-10-08 | income for FY 2024-25 (AY 2025-26) | 'FY 2024-25' 2024-04-01..2025-03-31 year fiscal c=1 ; 'AY 2025-26' 2024-04-01..2025-03-31 year fiscal c=1
 default 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 default 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
@@ -770,6 +774,10 @@ default 2026-03-31 | 15 Mar. - 20 Apr. 2024 | '15 Mar. - 20 Apr. 2024' 2024-03-1
 default 2026-03-31 | 15, 16 and 20 March-2024 | '15' 2024-03-15..2024-03-15 day calendar c=0.8 +list+ '16' 2024-03-16..2024-03-16 day calendar c=0.8 +list+ '20 March-2024' 2024-03-20..2024-03-20 day calendar c=0.8
 default 2026-03-31 | 15 Mar, 24 - 20 Apr, 24 | '15 Mar, 24 - 20 Apr' 2024-03-15..2024-04-20 day calendar c=1 ends 2024-03-15..2024-03-15|2024-04-20..2024-04-20
 default 2026-03-31 | Mar.-Apr. 2024 | 'Mar.-Apr. 2024' 2024-03-01..2024-04-30 month calendar c=1 ends 2024-03-01..2024-03-31|2024-04-01..2024-04-30
+default 2026-03-31 | A.Y. 2025-26 | 'A.Y. 2025-26' 2024-04-01..2025-03-31 year fiscal c=1
+default 2026-03-31 | AY26 | 'AY26' 2024-04-01..2025-03-31 year fiscal c=1
+default 2026-03-31 | Q1 AY 2025-26 | 'Q1 AY 2025-26' 2024-04-01..2024-06-30 quarter fiscal c=1
+default 2026-03-31 | income for FY 2024-25 (AY 2025-26) | 'FY 2024-25' 2024-04-01..2025-03-31 year fiscal c=1 ; 'AY 2025-26' 2024-04-01..2025-03-31 year fiscal c=1
 default 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 default 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 default 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1
@@ -1179,6 +1187,10 @@ fiscal 2026-10-08 | 15 Mar. - 20 Apr. 2024 | '15 Mar. - 20 Apr. 2024' 2024-03-15
 fiscal 2026-10-08 | 15, 16 and 20 March-2024 | '15' 2024-03-15..2024-03-15 day calendar c=0.8 +list+ '16' 2024-03-16..2024-03-16 day calendar c=0.8 +list+ '20 March-2024' 2024-03-20..2024-03-20 day calendar c=0.8
 fiscal 2026-10-08 | 15 Mar, 24 - 20 Apr, 24 | '15 Mar, 24 - 20 Apr' 2024-03-15..2024-04-20 day calendar c=1 ends 2024-03-15..2024-03-15|2024-04-20..2024-04-20
 fiscal 2026-10-08 | Mar.-Apr. 2024 | 'Mar.-Apr. 2024' 2024-03-01..2024-04-30 month calendar c=1 ends 2024-03-01..2024-03-31|2024-04-01..2024-04-30
+fiscal 2026-10-08 | A.Y. 2025-26 | 'A.Y. 2025-26' 2024-04-01..2025-03-31 year fiscal c=1
+fiscal 2026-10-08 | AY26 | 'AY26' 2024-04-01..2025-03-31 year fiscal c=1
+fiscal 2026-10-08 | Q1 AY 2025-26 | 'Q1 AY 2025-26' 2024-04-01..2024-06-30 quarter fiscal c=1
+fiscal 2026-10-08 | income for FY 2024-25 (AY 2025-26) | 'FY 2024-25' 2024-04-01..2025-03-31 year fiscal c=1 ; 'AY 2025-26' 2024-04-01..2025-03-31 year fiscal c=1
 fiscal 2026-10-08 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
 fiscal 2026-10-08 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter fiscal c=1
@@ -1588,6 +1600,10 @@ fiscal 2026-03-31 | 15 Mar. - 20 Apr. 2024 | '15 Mar. - 20 Apr. 2024' 2024-03-15
 fiscal 2026-03-31 | 15, 16 and 20 March-2024 | '15' 2024-03-15..2024-03-15 day calendar c=0.8 +list+ '16' 2024-03-16..2024-03-16 day calendar c=0.8 +list+ '20 March-2024' 2024-03-20..2024-03-20 day calendar c=0.8
 fiscal 2026-03-31 | 15 Mar, 24 - 20 Apr, 24 | '15 Mar, 24 - 20 Apr' 2024-03-15..2024-04-20 day calendar c=1 ends 2024-03-15..2024-03-15|2024-04-20..2024-04-20
 fiscal 2026-03-31 | Mar.-Apr. 2024 | 'Mar.-Apr. 2024' 2024-03-01..2024-04-30 month calendar c=1 ends 2024-03-01..2024-03-31|2024-04-01..2024-04-30
+fiscal 2026-03-31 | A.Y. 2025-26 | 'A.Y. 2025-26' 2024-04-01..2025-03-31 year fiscal c=1
+fiscal 2026-03-31 | AY26 | 'AY26' 2024-04-01..2025-03-31 year fiscal c=1
+fiscal 2026-03-31 | Q1 AY 2025-26 | 'Q1 AY 2025-26' 2024-04-01..2024-06-30 quarter fiscal c=1
+fiscal 2026-03-31 | income for FY 2024-25 (AY 2025-26) | 'FY 2024-25' 2024-04-01..2025-03-31 year fiscal c=1 ; 'AY 2025-26' 2024-04-01..2025-03-31 year fiscal c=1
 fiscal 2026-03-31 | in 2013 | '2013' 2012-04-01..2013-03-31 year fiscal c=0.8
 fiscal 2026-03-31 | sales for the year 2013 | 'the year 2013' 2012-04-01..2013-03-31 year fiscal c=1
 fiscal 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter fiscal c=1
@@ -1997,6 +2013,10 @@ us 2026-10-08 | 15 Mar. - 20 Apr. 2024 | '15 Mar. - 20 Apr. 2024' 2024-03-15..20
 us 2026-10-08 | 15, 16 and 20 March-2024 | '15' 2024-03-15..2024-03-15 day calendar c=0.8 +list+ '16' 2024-03-16..2024-03-16 day calendar c=0.8 +list+ '20 March-2024' 2024-03-20..2024-03-20 day calendar c=0.8
 us 2026-10-08 | 15 Mar, 24 - 20 Apr, 24 | '15 Mar, 24 - 20 Apr' 2024-03-15..2024-04-20 day calendar c=1 ends 2024-03-15..2024-03-15|2024-04-20..2024-04-20
 us 2026-10-08 | Mar.-Apr. 2024 | 'Mar.-Apr. 2024' 2024-03-01..2024-04-30 month calendar c=1 ends 2024-03-01..2024-03-31|2024-04-01..2024-04-30
+us 2026-10-08 | A.Y. 2025-26 | 'A.Y. 2025-26' 2024-10-01..2025-09-30 year fiscal c=1
+us 2026-10-08 | AY26 | 'AY26' 2025-10-01..2026-09-30 year fiscal c=1
+us 2026-10-08 | Q1 AY 2025-26 | 'Q1 AY 2025-26' 2024-10-01..2024-12-31 quarter fiscal c=1
+us 2026-10-08 | income for FY 2024-25 (AY 2025-26) | 'FY 2024-25' 2024-10-01..2025-09-30 year fiscal c=1 ; 'AY 2025-26' 2024-10-01..2025-09-30 year fiscal c=1
 us 2026-10-08 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 us 2026-10-08 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-10-08 | sales for the last quarter | 'the last quarter' 2026-07-01..2026-09-30 quarter calendar c=1
@@ -2406,6 +2426,10 @@ us 2026-03-31 | 15 Mar. - 20 Apr. 2024 | '15 Mar. - 20 Apr. 2024' 2024-03-15..20
 us 2026-03-31 | 15, 16 and 20 March-2024 | '15' 2024-03-15..2024-03-15 day calendar c=0.8 +list+ '16' 2024-03-16..2024-03-16 day calendar c=0.8 +list+ '20 March-2024' 2024-03-20..2024-03-20 day calendar c=0.8
 us 2026-03-31 | 15 Mar, 24 - 20 Apr, 24 | '15 Mar, 24 - 20 Apr' 2024-03-15..2024-04-20 day calendar c=1 ends 2024-03-15..2024-03-15|2024-04-20..2024-04-20
 us 2026-03-31 | Mar.-Apr. 2024 | 'Mar.-Apr. 2024' 2024-03-01..2024-04-30 month calendar c=1 ends 2024-03-01..2024-03-31|2024-04-01..2024-04-30
+us 2026-03-31 | A.Y. 2025-26 | 'A.Y. 2025-26' 2024-10-01..2025-09-30 year fiscal c=1
+us 2026-03-31 | AY26 | 'AY26' 2025-10-01..2026-09-30 year fiscal c=1
+us 2026-03-31 | Q1 AY 2025-26 | 'Q1 AY 2025-26' 2024-10-01..2024-12-31 quarter fiscal c=1
+us 2026-03-31 | income for FY 2024-25 (AY 2025-26) | 'FY 2024-25' 2024-10-01..2025-09-30 year fiscal c=1 ; 'AY 2025-26' 2024-10-01..2025-09-30 year fiscal c=1
 us 2026-03-31 | in 2013 | '2013' 2013-01-01..2013-12-31 year calendar c=0.8
 us 2026-03-31 | sales for the year 2013 | 'the year 2013' 2013-01-01..2013-12-31 year calendar c=1
 us 2026-03-31 | sales for the last quarter | 'the last quarter' 2025-10-01..2025-12-31 quarter calendar c=1

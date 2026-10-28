@@ -990,6 +990,28 @@ def _p_year(text: str, cfg: WranglerConfig) -> Spec | None:
     return Spec(Kind.ABS_YEAR, year=year, basis=basis)
 
 
+#: The year a fiscal year's income is assessed in, as tax returns in India and Bangladesh
+#: name it: always the year after. "AY 2025-26" is the fiscal year 2024-25.
+_AY_WORD = r"(?:a\.?y\.?|assessment\s+year)"
+
+
+def _p_assessment_year(text: str, cfg: WranglerConfig) -> Spec | None:
+    """"AY 2025-26", "A.Y. 2025-26", "assessment year 2025-26", "AY26": the fiscal year
+    before it, whose income it assesses, on the configured fiscal calendar.
+
+    REGRESSION: "AY 2015-16" was declined as an academic year, which is written out --
+    "academic year 2015-16" -- where AY names the tax year.
+    """
+    digits = re.sub(rf"^\s*{_AY_WORD}", "", text, flags=re.IGNORECASE)
+    try:
+        label, _ = parse_year_token(f"FY{digits.strip(' -')}", cfg)
+    except ValueError:
+        raise ValueError(_not_one_fiscal_year(text)) from None
+    if label is None:
+        return None
+    return Spec(Kind.ABS_YEAR, year=label - 1, basis=Basis.FISCAL)
+
+
 def _p_bare_year(text: str, cfg: WranglerConfig) -> Spec | None:
     m = re.fullmatch(rf"\s*({_BARE_YEAR})\s*", text)
     if not m:
@@ -1874,16 +1896,21 @@ RULES: tuple[Rule, ...] = (
     # dates. A season runs over months of its own, so 2015 to 2016 overstates it by a year
     # and the calendar cannot say which months. REGRESSION: read as Jan 2015 to Dec 2016,
     # where the data held it as a label. Ahead of every rule that would take the years.
-    # "the 2015-16 campaign" and "the 2015-16 term" as well, and "AY 2015-16", "SY 2015-16"
-    # for an academic or school year. REGRESSION: each was two calendar years.
+    # "the 2015-16 campaign" and "the 2015-16 term" as well, and "SY 2015-16" for a school
+    # year. REGRESSION: each was two calendar years.
     Rule(
         "season_label",
         rf"\b(?:the\s+)?{_YEAR_RUN}\s+{_SEASON_OWNER}(?:{_SEASON_WORD}|campaign|term)s?\b"
-        rf"|\b(?:{_SEASON_WORD}|ay|sy)\s+(?:of\s+)?{_YEAR_RUN}\b",
+        rf"|\b(?:{_SEASON_WORD}|sy)\s+(?:of\s+)?{_YEAR_RUN}\b",
         _p_decline(
             "{text!r} names a season, which runs over months of its own -- a sport's, a "
             "school's -- so it is read as a label, not as dates"
         ),
+    ),
+    Rule(
+        "assessment_year",
+        rf"\b{_AY_WORD}{_SEP}'?\d{{2,4}}(?:[-/]'?\d{{2,4}})?(?![\d/])",
+        _p_assessment_year,
     ),
     # "2023-24 financial year": the fiscal year written before its name.
     Rule(

@@ -11,6 +11,14 @@ The full notes for each release, with examples, are on the
 
 **Changes answers.**
 
+### Changed
+- `AY` is the assessment year, as tax returns in India and Bangladesh name it: always the
+  year after the fiscal year whose income it assesses. `A.Y. 2025-26`, `AY 2025-2026`,
+  `AY25-26`, `assessment year 2025-26` and `AY26` are F.Y. 2024-25, on the configured
+  fiscal calendar; `Q1 AY 2025-26` is its first quarter, and `AY 2023-24 to AY 2025-26` a
+  span. In 2.3.0 `AY 2015-16` was declined as an academic year, which is now declined
+  only written out, as `SY` for a school year still is.
+
 ### Fixed
 - `not later than March 2024` was *after* March, the "not" unread; it is up to the end
   of March. `on and after 15 March` began on the 16th, and `on and before` ended on the
