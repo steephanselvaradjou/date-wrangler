@@ -195,12 +195,17 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
             )
         if spec.shift is not None:
             # "3 days before 15 March", "a year after March 2024": the period, moved.
-            if base.start is None or base.end is None:
+            first, after = base.start, base.end
+            if first is None or after is None:
                 raise UnresolvableSpec("cannot move an unbounded range")
             n, unit = spec.shift
-            base = DateRange(
-                _shift(base.start, unit, n), _shift(base.end, unit, n), base.grain, base.basis
-            )
+            if spec.business and unit is Grain.DAY and after - first == timedelta(days=1):
+                # "3 business days before 15 March": working days, stepping over weekends
+                # and holidays. Only from one day -- a period has no single day to count from.
+                base = day_range(add_business_days(first, n, cfg.weekend, cfg.holidays))
+            else:
+                moved = _shift(first, unit, n), _shift(after, unit, n)
+                base = DateRange(*moved, base.grain, base.basis)
     except (ValueError, OverflowError) as exc:
         if isinstance(exc, UnresolvableSpec):
             raise

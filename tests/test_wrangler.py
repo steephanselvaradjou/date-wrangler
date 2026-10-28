@@ -690,7 +690,7 @@ def test_rules_without_a_pattern_are_exactly_the_ones_the_token_reader_returns()
     from date_wrangler.rules import RULES
 
     source = Path(tokens.__file__).read_text("utf-8")
-    returned = set(re.findall(r'"(\w+)", (?:Spec\(|spec, )', source))
+    returned = set(re.findall(r'"(\w+)", (?:Spec\(|spec, |parts, )', source))
     assert {r.name for r in RULES if r.pattern is None} == returned
 
 
@@ -766,7 +766,9 @@ def test_stopping_at_a_month_name_date_changes_no_match():
                 or (d[2] == m.start() and _ORDER[d[0]] < _ORDER[m.lastgroup or ""])
             ):
                 name, spec, lo, hi, reason = d
-                if spec is not None:
+                if isinstance(spec, list):
+                    out.extend(_Raw(name, s, s_lo, s_hi) for s, s_lo, s_hi in spec)
+                elif spec is not None:
                     out.append(_Raw(name, spec, lo, hi))
                 else:
                     diags.append(Diagnostic(text[lo:hi], (lo, hi), name, reason or ""))

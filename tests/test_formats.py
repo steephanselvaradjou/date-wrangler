@@ -136,6 +136,23 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         # after the day is a span, as after any label.
         ("Mar-15", "2015-03"),
         ("15 Mar - 2024", "2024-03-15..2024-12-31"),
+        # A two-digit year whatever the marks. Each was this year's 15 March in 2.3.0.
+        ("15 Mar-24", "2024-03-15"),
+        ("15-March 24", "2024-03-15"),
+        ("15/March.24", "2024-03-15"),
+        ("15 MAR24", "2024-03-15"),
+        ("15 of March 24", "2024-03-15"),
+        ("15 of March24", "2024-03-15"),  # was 24 March this year
+        ("15Mar. 2024", "2024-03-15"),
+        # Each was nothing, or three dates, in 2.3.0.
+        ("15thMarch 2024", "2024-03-15"),
+        ("March/15/2024", "2024-03-15"),
+        ("March/15th, 2024", "2024-03-15"),
+        ("March.15.24", "2024-03-15"),
+        # Left alone: after a comma, two digits are a count as often; "Mar.15.24" is "Mar
+        # 15.24", a decimal as often.
+        ("15 Mar, 24", "2026-03-15"),
+        ("Mar.15.24", "2026-03-15"),
     ]),
     ("a weekday with its date", TODAY, CAL, [
         ("Friday, 15 March 2024", "2024-03-15"),
@@ -147,6 +164,11 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("Monday, 15 March 2024", "~"),  # 15 March 2024 was a Friday
     ]),
     ("months", TODAY, CAL, [
+        # Run together. Each was nothing, or a span to the 25th of March, in 2.3.0.
+        ("2024March", "2024-03"),
+        ("MarchFY24", "2024-03"),  # the March inside FY24, as "March FY24" is
+        ("FY2024-25March", "2025-03"),
+        ("CY2024Mar", "2024-03"),
         ("March 2024", "2024-03"),
         ("Mar 2024", "2024-03"),
         ("Mar-2024", "2024-03"),
@@ -214,6 +236,17 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the year ended 31 March 2024", "2023-04..2024-03"),
         ("FY ending June 30, 2024", "2023-07..2024-06"),
         ("FY22-24", "!"),  # not one fiscal year
+        # The assessment year is always the one after the fiscal year it assesses: A.Y.
+        # 2025-26 is F.Y. 2024-25. In 2.3.0 "AY 2025-26" was declined as an academic year.
+        ("A.Y. 2025-26", "2024-04..2025-03"),
+        ("AY 2025-26", "2024-04..2025-03"),
+        ("AY 2025-2026", "2024-04..2025-03"),
+        ("AY25-26", "2024-04..2025-03"),
+        ("assessment year 2025-26", "2024-04..2025-03"),
+        ("AY26", "2024-04..2025-03"),
+        ("Q1 AY 2025-26", "2024-04..2024-06"),
+        ("AY 2023-24 to AY 2025-26", "2022-04..2025-03"),
+        ("AY 2025-27", "!"),
         # With no FY, year_basis decides: on the calendar, two years. Fiscal is below.
         ("2024-25", "2024..2025"),
         ("sales 2024-25", "2024..2025"),
@@ -240,6 +273,11 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the 2015-16 season", "!"),  # a season is not a fiscal year either
     ]),
     ("quarters and halves", TODAY, CAL, [
+        # Written out, or run together. Each was nothing, this year's Q3, or FY2024, in 2.3.0.
+        ("Qtr 3-24", "2024-07..2024-09"),
+        ("2024QTR3", "2024-07..2024-09"),
+        ("FY-24Q3", "2023-10..2023-12"),
+        ("FY2024-25QTR3", "2024-10..2024-12"),
         ("Q1 2024", "2024-01..2024-03"),
         ("Q1-2024", "2024-01..2024-03"),
         ("Q1/2024", "2024-01..2024-03"),
@@ -347,6 +385,10 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the 12-month period ended March 2024", "2023-04..2024-03"),
         # Unchanged: "starting" without "of" is since; a plural unit is not a period.
         ("starting March 2024", "2024-03.."),
+        # And so is "beginning" without "of": as a notice says "beginning 1 April". It was
+        # 1-10 March in 2.3.0.
+        ("beginning March 2024", "2024-03.."),
+        ("the beginning of March 2024", "2024-03-01..2024-03-10"),
         ("the first Monday in months", "-"),
     ]),
     ("spans of years", TODAY, CAL, [
@@ -404,6 +446,21 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the period from 1 April 2023 to 31 March 2024", "2023-04-01..2024-03-31"),
         ("between the 1st and 15th of March 2024", "2024-03-01..2024-03-15"),
         ("between March 1st and March 15th, 2024", "2024-03-01..2024-03-15"),
+        # Days sharing a month or a year: the year read as a single day's is.
+        ("15-20 Mar-24", "2024-03-15..2024-03-20"),
+        ("15-20 MAR 24", "2024-03-15..2024-03-20"),
+        ("15-20March 2024", "2024-03-15..2024-03-20"),
+        ("15-20 June FY25", "2024-06-15..2024-06-20"),
+        ("March 15-20 '24", "2024-03-15..2024-03-20"),
+        ("2024 March 15th-20th", "2024-03-15..2024-03-20"),
+        ("between the 15th and the 20th of March 2024", "2024-03-15..2024-03-20"),
+        ("15 March 2024-20 April 2024", "2024-03-15..2024-04-20"),
+        ("15-March-20-April-2024", "2024-03-15..2024-04-20"),
+        ("15 of March-20 of April 2024", "2024-03-15..2024-04-20"),
+        ("15 Mar. - 20 Apr. 2024", "2024-03-15..2024-04-20"),
+        ("15 Mar, 24 - 20 Apr, 24", "2024-03-15..2024-04-20"),
+        ("28 Dec - 3 Jan 2024", "2023-12-28..2024-01-03"),
+        ("Mar.-Apr. 2024", "2024-03..2024-04"),
         ("from start of 2012 to end of 2013", "2012..2013"),
         ("June, 2013 to August, 2013", "2013-06..2013-08"),
         ("Jun FY25 - 15 March", "2024-06-01..2025-03-15"),
@@ -487,6 +544,23 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("before 2000-01-01", "..1999-12-31"),
         ("after 2012-08-15", "2012-08-16.."),
         ("on or after 1 April 2024", "2024-04-01.."),
+        # Each was wrong, or the period alone with its bound dropped, in 2.3.0.
+        ("not later than March 2024", "..2024-03"),  # was after March
+        ("on and after 15 March 2024", "2024-03-15.."),  # was from the 16th
+        ("w.e.f. 1 April 2024", "2024-04-01.."),
+        ("with effect from Q1 FY25", "2024-04.."),
+        ("as from 2012", "2012.."),
+        ("from 2012 forward", "2012.."),
+        ("til March 2024", "..2024-03"),
+        ("pre 2012", "..2011"),
+        ("beyond 2012", "2013.."),
+        ("subsequent to 2012", "2013.."),
+        (">= 2024-03-15", "2024-03-15.."),
+        ("< 2024-03-15", "..2024-03-14"),
+        ("by the end of 2024-03", "..2024-03"),
+        ("beginning March 2024", "2024-03.."),  # was 1-10 March
+        # Left alone: "post" without its hyphen is a verb as often.
+        ("post March 2024 figures", "2024-03"),
     ]),
     ("lists", TODAY, CAL, [
         ("2012, 2013 and 2014", "2012 ; 2013 ; 2014"),
@@ -632,6 +706,15 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the month before March 2024", "2024-02"),
         ("the week before 15 March 2024", "~"),
         ("within 30 days of 15 March 2024", "~"),
+        # Each counted from today, or dropped its count, in 2.3.0.
+        ("3 days earlier than 15 March 2024", "2024-03-12"),
+        ("3 days ahead of 15 March 2024", "2024-03-12"),
+        ("two weeks later than 1 April 2024", "2024-04-15"),
+        ("two weeks from 1 April 2024", "2024-04-15"),
+        ("1 April 2024 + 2 weeks", "2024-04-15"),
+        ("15 March 2024 minus 3 days", "2024-03-12"),
+        ("3 business days before 18 March 2024", "2024-03-13"),
+        ("a year from March", "~"),  # March next year, or twelve months from March?
     ]),
     ("decades and seasons", TODAY, CAL, [
         ("the 1990s", "1990..1999"),
@@ -659,7 +742,7 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("2015–2016", "2015..2016"),  # with no such word, still the years
         # Each was two calendar years, or the whole of 2024, in 2.1.0.
         ("the summer months of 2024", "!"),
-        ("AY 2015-16", "!"),
+        ("SY 2015-16", "!"),
         ("the 2015-16 NBA season", "!"),
         ("the 2015-16 campaign", "!"),
         ("2015-16 sales by season", "2015..2016"),  # the years, by season

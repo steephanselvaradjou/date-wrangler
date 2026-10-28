@@ -36,7 +36,6 @@ SPELLINGS: dict[str, list[str]] = {
     "beginning of March 2024": [
         "start of March 2024",
         "the start of March 2024",
-        "beginning March 2024",
         "beginning of Mar 2024",
         "start of Mar-24",
         "begin of March 2024",

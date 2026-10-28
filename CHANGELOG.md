@@ -7,6 +7,75 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## 2.4.0 — 2026-10-28
+
+Open-ended periods and bounds, a day and its year, labels run together with their year,
+and days sharing a month or a year: each family measured with every way people write it,
+and read the way the plainest spelling is. `AY` is the assessment year. The API is
+unchanged. **Changes answers.**
+
+### Changed
+- `AY` is the assessment year, as tax returns in India and Bangladesh name it: always the
+  year after the fiscal year whose income it assesses. `A.Y. 2025-26`, `AY 2025-2026`,
+  `AY25-26`, `assessment year 2025-26` and `AY26` are F.Y. 2024-25, on the configured
+  fiscal calendar; `Q1 AY 2025-26` is its first quarter, and `AY 2023-24 to AY 2025-26` a
+  span. In 2.3.0 `AY 2015-16` was declined as an academic year, which is now declined
+  only written out, as `SY` for a school year still is.
+
+### Fixed
+- `not later than March 2024` was *after* March, the "not" unread; it is up to the end
+  of March. `on and after 15 March` began on the 16th, and `on and before` ended on the
+  14th; both keep the day.
+- These were the period alone, the bound dropped: `w.e.f.`, `wef`, `with effect from`,
+  `as from`, `til`, `untill`, `uptil`, `until and including`, `pre March 2024`, `ahead
+  of`, `preceding`, `older than`, `subsequent to`, `beyond`, `from 2012 forward`, `from
+  Q1 on`, and as a query writes them, `>=`, `<=`, `>`, `<`, `≥`, `≤`.
+- `3 days earlier than 15 March 2024`, `3 days ahead of 15 March 2024`, `two weeks later
+  than 1 April 2024` and `3 business days before 15 March 2024` counted from today, with
+  the date beside them a second answer; `two weeks from 1 April 2024`, `1 April 2024 + 2
+  weeks` and `15 March 2024 minus 3 days` were the date alone. Each is the date moved by
+  the count, business days stepping over weekends and holidays. `a year from March` is
+  still flagged: it may be the twelve months starting in March.
+- `beginning March 2024` was 1–10 March; it is March 2024 onwards, as a notice says
+  "beginning 1 April". `the beginning of March` is still the start of March.
+- `by the end of 2024-03` was refused as two calendar years, and `end of 2024-03-15` was
+  the end of 2024; a month in numbers can now have a part taken out of it.
+- `a month from the 15th of March` was flagged as partly read; it is 15 April.
+- A day's two-digit year was dropped whenever the mark changed between its parts: `15
+  Mar-24`, `15-March 24`, `15/March.24`, `15 MAR24` and `15 of March 24` were 15 March of
+  this year. `15 of March24` was the 24th of this March; `15thMarch 2024` and
+  `March/15/2024` were nothing, `March/15th, 2024` three dates, `15Mar. 2024` this year's
+  15 March. Each is 15 March 2024. Left alone on purpose: two digits after a comma (`on
+  15 Mar, 24 orders shipped`) and `Mar.15.24`, a decimal as often once the month's full
+  stop is read.
+- A quarter, half or month run together with its year, or written out before one: `Qtr
+  3-24` was this year's Q3; `2024QTR3`, `FY24Qtr3`, `FY-24Q3`, `FY-24H1`, `2024March`,
+  `MarchFY24`, `FY24March` and `CY2024Mar` were nothing; `FY2024-25QTR3` was FY2024, and
+  `FY2024-25March` a span from FY2024 to the 25th of March. Each is its period. A
+  lower-case digit-first `3q` or `1h` is still a quarter or half only with a year straight
+  after it -- `1h` is an hour as often. `tests/test_label_years.py` adds them; 32 of its
+  cases failed in 2.3.0.
+- Days sharing a month or a year read their year as a single day does. In one month,
+  `15-20 Mar-24`, `15-20 MAR 24` and `15-20 March.2024` were this year's March; `15-20
+  June FY25` was June 2025, the FY dropped; `15-20March 2024` was the 20th alone; `2024
+  March 15-20` the 15th, and `2024 March 15th-20th` a run to the 20th of this month;
+  `between the 15th and the 20th of March` the 20th. Across two months, `15 March
+  2024-20 April 2024` lost its first year; `15-March-20-April-2024` began in March 2020;
+  `15 Mar. - 20 Apr. 2024` and `Mar.-Apr. 2024` lost the first month to its full stop.
+  In a list, `15, 16 and 20 March-2024` ran the 20th to the end of 2024. Each is now the
+  days written. A two-digit year after a comma is still a count at the end -- `15-20
+  Mar, 24` is this year's -- but a year before the next date, where no count can be:
+  `15 Mar, 24 - 20 Apr, 24`. A day's match now takes in its abbreviated month's full stop,
+  `15 Mar.`, and `15-1 March` is refused with a reason rather than without one.
+- `tests/test_day_range_spellings.py`: 6,821 runs and lists of days, each part of the
+  spelling varied against the others; 2,520 of its cases failed in 2.3.0.
+- `tests/test_day_spellings.py` now holds 2,620 spellings of a day, its month and year,
+  and 288 left alone on purpose; 823 of its cases failed in 2.3.0.
+- `tests/test_bound_spellings.py`: 627 spellings of open-ended periods, bounds, counts
+  from a date and "as of"; 166 of its cases failed in 2.3.0. Left alone on purpose:
+  `post March` without its hyphen, which is a verb as often, and `forward` or `on`
+  without a `from` before the date.
+
 ## 2.3.0 — 2026-10-23
 
 Two periods joined as the words between them say, whatever the words: comparisons, lists

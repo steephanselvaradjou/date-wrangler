@@ -143,6 +143,21 @@ PHRASES = [
     "difference between Q1 and Q3 2024", "Q1 2024 vs the same period last year",
     "YTD vs LY", "March 2024 vs a year earlier", "Q1 FY25 as well as Q1 FY26",
     "the same period last year",
+    # open-ended, and counted from a date
+    "not later than March 2024", "w.e.f. 1 April 2024", ">= 2024-03-15", "pre 2012",
+    "beginning March 2024", "by the end of 2024-03", "3 days earlier than 15 March 2024",
+    "1 April 2024 + 2 weeks", "3 business days before 18 March 2024",
+    # a day, its two-digit year whatever the marks
+    "15 Mar-24", "15-March 24", "15 of March24", "15thMarch 2024", "March/15/2024",
+    "15 Mar, 24",
+    # labels and years run together
+    "Qtr 3-24", "2024QTR3", "FY2024-25QTR3", "2024March", "MarchFY24", "FY2024-25March",
+    # days sharing a month or a year
+    "15-20 Mar-24", "15-20 June FY25", "2024 March 15th-20th", "15 of March-20 of April 2024",
+    "15 Mar. - 20 Apr. 2024", "15, 16 and 20 March-2024", "15 Mar, 24 - 20 Apr, 24",
+    "Mar.-Apr. 2024",
+    # the assessment year: the fiscal year after the one it assesses
+    "A.Y. 2025-26", "AY26", "Q1 AY 2025-26", "income for FY 2024-25 (AY 2025-26)",
     # "the" and what goes before it
     "in 2013", "sales for the year 2013", "sales for the last quarter", "the March figures",
     "the 15 March meeting", "since the last quarter", "before the last week",
