@@ -11,6 +11,14 @@ The full notes for each release, with examples, are on the
 
 **Changes answers.**
 
+### Faster
+- `parse()` is 8 to 23 per cent faster than in 2.4.0 on every kind of text, with the same
+  answers: at each word only the rules that can open with its first two characters are
+  tried, where an alternation of all 64 was tried at every word.
+- `import date_wrangler` takes about 0.1 second instead of 0.7 to 1.2: the scanning
+  patterns are compiled when first needed, and the case-insensitive one only for text
+  that is not ASCII. The first parse pays about 0.2 second for them.
+
 ### Fixed
 - `Jan-Mar 24` ran from January to 24 March of this year. Two digits after the last month
   of a span or list of months are its year, as `Jan-Mar 2024` and `Jan-Mar'24` are:
