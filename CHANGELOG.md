@@ -7,6 +7,27 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## Unreleased
+
+**Changes answers.**
+
+### Fixed
+- `Jan-Mar 24` ran from January to 24 March of this year. Two digits after the last month
+  of a span or list of months are its year, as `Jan-Mar 2024` and `Jan-Mar'24` are:
+  `Jan to Mar 24`, `Jan, Feb and Mar 24` and `Q1 to Mar 24` are of 2024 too. Left as a
+  day on purpose: `Mar 24` on its own (as `month_number` says), beside a partner with a
+  day (`Jan 15 - Mar 24`), with the month first (`Mar 24 to June`), and the month's last
+  day (`Jan-Mar 31`), which ends the span where the month does.
+- `Jan-Mar 2024 vs Jan-Mar 2025`, `Q1-Q3 2024 vs Q1-Q3 2025` and `Jan-Mar 2024 and
+  Apr-Jun 2025` gave the first span's start the other side's year, and the span fell
+  apart into two dates; wrong since 2.1.0 at least. A span that states a year keeps it.
+- After `compare`, a dash or `through` inside a span was taken for the comparison:
+  `compare Jan-Mar 2024 with Jan-Mar 2025` was four dates. Only `to` and `and` can carry
+  a comparison, and only where no plainer word does: in `compare Jan to Mar 2024 with Apr
+  to Jun 2024` each `to` is a span; `compare 2023 to 2024` still compares.
+- `Mar/24` was nothing, where `Mar-24`, `Mar/2024` and `Q3/24` were read; it is March 2024.
+- `tests/test_span_years.py`: 437 cases; 145 failed in 2.4.0.
+
 ## 2.4.0 — 2026-10-28
 
 Open-ended periods and bounds, a day and its year, labels run together with their year,

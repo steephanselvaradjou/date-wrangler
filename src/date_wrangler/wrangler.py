@@ -11,6 +11,7 @@ resolved.
 from __future__ import annotations
 
 import re
+from calendar import monthrange
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, tzinfo
@@ -19,7 +20,7 @@ from typing import Any
 from .config import DEFAULT_CONFIG, WranglerConfig
 from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
-from .rules import _DAY_WORDS, RULES, Rule
+from .rules import _DAY_WORDS, RULES, Rule, _pivot_year
 from .spec import Kind, Part, Spec
 from .tokens import Reader
 from .types import Anchor, DateMatch, DateRange, Grain, Mod, grain_rank
@@ -1053,8 +1054,10 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
             links.append("range")  # "2024-25" on a calendar basis: 2024 to 2025
         elif strong or weak:
             lead = _lead(text, a.start)
-            if _COMPARISON_LEAD.search(lead):
-                links.append("compare")
+            if _COMPARISON_LEAD.search(lead) and (weak or _BARE_TO.match(gap)):
+                # Only "to" and "and" can carry a comparison: a dash or "through" after
+                # "compare" is still a span. Settled with the rest of the run below.
+                links.append("to?" if strong else "and?")
             elif weak and not _BETWEEN_LEAD.search(lead[-24:]):
                 # "and" lists periods; only "between ... and" makes a span. "Q1 and Q3" is
                 # two quarters -- one range for both would hold Q2, which nobody named.
@@ -1072,7 +1075,36 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
             links.append("compare")
         else:
             links.append(None)
-    return links
+    return _settle_led_links(links)
+
+
+#: A bare "to" between two periods, which after "compare" may be the comparison itself.
+_BARE_TO = re.compile(r"^\s*to\s*$", re.IGNORECASE)
+
+
+def _settle_led_links(links: list[str | None]) -> list[str | None]:
+    """After "compare", which "to" or "and" compares, run by run.
+
+    Whichever word says it most plainly does: "with", "vs" or "against" over "and", and
+    "and" over "to"; the weaker words are then the spans or lists they are elsewhere. So
+    "compare 2023 to 2024" compares, and in "compare Jan to Mar 2024 with Apr to Jun 2024"
+    each "to" is a span. REGRESSION: every "to", dash and "through" after "compare"
+    compared, and "compare Jan-Mar 2024 with Jan-Mar 2025" fell apart into four dates.
+    """
+    if "to?" not in links and "and?" not in links:
+        return links
+    out = list(links)
+    for lo, hi in _runs(links, lambda k: k is not None):
+        run = links[lo:hi]
+        if "compare" in run:
+            settled = {"to?": "range", "and?": "and"}
+        elif "and?" in run:
+            settled = {"to?": "range", "and?": "compare"}
+        else:
+            settled = {"to?": "compare"}
+        for k in range(lo, hi):
+            out[k] = settled.get(out[k] or "", out[k])
+    return out
 
 
 def _lead(text: str, start: int) -> str:
@@ -1111,6 +1143,53 @@ def _demote_lists(links: list[str | None]) -> list[str | None]:
     return out
 
 
+#: A month and two bare digits: "Mar 24" -- the 24th, or March 2024.
+_MONTH_TWO_DIGITS = re.compile(rf"(?:{alt(MONTH_NAMES)})\.?\s+(\d{{2}})", re.IGNORECASE)
+#: Periods written with no day of their own: a month, a quarter, a half, a year.
+_DAYLESS = frozenset({Kind.ABS_MONTH, Kind.ABS_QUARTER, Kind.ABS_HALF, Kind.ABS_YEAR})
+
+
+def _month_years_at_the_end(
+    raws: list[_Raw], links: list[str | None], text: str, cfg: WranglerConfig
+) -> None:
+    """Two digits after the last month of a span or list of months are its year: "Jan-Mar
+    24", "Jan to Mar 24", "Jan, Feb and Mar 24" are of 2024, as "Jan-Mar 2024" is.
+
+    On its own "Mar 24" stays what month_number says, the 24th by default. Beside a period
+    with no day, a span from a whole month to the 24th of another is nobody's, and a year
+    written once at the end is how a span of months is written. REGRESSION: "Jan-Mar 24"
+    ran from January to 24 March of this year.
+
+    Not where the partner has a day -- "Jan 15 - Mar 24", "15 Jan - Mar 24" -- nor a month
+    written first, "Mar 24 to June", nor the month's last day: "Jan-Mar 31" ends where March
+    does, and 2031 was never meant.
+    """
+    for i, link in enumerate(links):
+        raw, before = raws[i + 1], raws[i]
+        if link is None or raw.rule != "month_day_year":
+            continue
+        last = i + 1 == len(links) or links[i + 1] in (None, "compare")
+        if link is None or (link != "range" and not last):
+            continue  # inside a list: its year is written once, at the end
+        spec = raw.spec
+        if (
+            raw.rule != "month_day_year" or spec.kind is not Kind.ABS_DAY
+            or spec.year is not None or spec.year_offset is not None or spec.month is None
+            or before.spec.kind not in _DAYLESS or before.spec.day_span is not None
+            or before.spec.day_of_period is not None
+        ):
+            continue
+        m = _MONTH_TWO_DIGITS.fullmatch(text[raw.start : raw.end])
+        if m is None or _ends_the_month(spec.month, int(m.group(1))):
+            continue
+        raw.spec = spec.with_(kind=Kind.ABS_MONTH, day=None, year=_pivot_year(m.group(1), cfg))
+
+
+def _ends_the_month(month: int, day: int) -> bool:
+    """Whether ``day`` is the month's last, in some year: the 28th or 29th of February."""
+    return day >= (28 if month == 2 else monthrange(2001, month)[1])
+
+
 def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
     """Share one stated year across a list, or across a comparison.
 
@@ -1124,13 +1203,31 @@ def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
     Each side of a comparison shares its own year first, and only a side with none left
     takes one from across it. REGRESSION: "Q1 and Q3 2024 vs 2023" gave Q1 the 2023 on the
     far side of the "vs", when 2024 was written beside it.
+
+    A span that states a year keeps it, for its start as well as its end: REGRESSION --
+    in "Jan-Mar 2024 vs Jan-Mar 2025" and "Q1-Q3 2024 vs Q1-Q3 2025" the first span's start
+    took the 2025, and the span fell apart into two dates.
     """
+    if not any(k in ("and", "list", "compare") for k in links):
+        return
+    own = _spans_with_a_year(raws, links)
     for lo, hi in _runs(links, lambda k: k is not None and k != "compare"):
         if any(k in ("and", "list") for k in links[lo:hi]):
-            _share_year(raws[lo : hi + 1])
+            _share_year(raws[lo : hi + 1], own)
     for lo, hi in _runs(links, lambda k: k is not None):
         if "compare" in links[lo:hi]:
-            _share_year(raws[lo : hi + 1])
+            _share_year(raws[lo : hi + 1], own)
+
+
+def _spans_with_a_year(raws: list[_Raw], links: list[str | None]) -> set[int]:
+    """The matches of every span that states a year -- "Jan-Mar 2024" -- by identity. The
+    range step gives the start that year; a list or comparison around it must not."""
+    own: set[int] = set()
+    for lo, hi in _runs(links, lambda k: k == "range"):
+        span = raws[lo : hi + 1]
+        if any(r.spec.year is not None for r in span):
+            own.update(id(r) for r in span)
+    return own
 
 
 def _runs(
@@ -1150,14 +1247,15 @@ def _runs(
         i = j
 
 
-def _share_year(members: list[_Raw]) -> None:
-    """Give the last year stated among ``members``, and its basis, to those with none."""
+def _share_year(members: list[_Raw], own: set[int]) -> None:
+    """Give the last year stated among ``members``, and its basis, to those with none --
+    but not to a span's start whose span states a year of its own (``own``)."""
     stated = [r.spec for r in members if r.spec.year is not None]
     if not stated:
         return
     year, basis = stated[-1].year, stated[-1].basis
     for r in members:
-        if r.spec.year is None and not r.spec.is_relative:
+        if r.spec.year is None and not r.spec.is_relative and id(r) not in own:
             r.spec = r.spec.with_(year=year)
             if r.spec.basis is None and basis is not None:
                 r.spec = r.spec.with_(basis=basis)
@@ -1360,6 +1458,7 @@ def parse(
     raws = _short_years_back(raws, body)
 
     links = _demote_lists(_link_kinds(raws, body))
+    _month_years_at_the_end(raws, links, body, config)
     _propagate_year(raws, links)
     moved_back = _periods_moved_back(raws, links, body)
     anchors = _anchors(raws, links, body, day, config, moved_back)

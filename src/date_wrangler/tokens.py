@@ -804,11 +804,12 @@ def _month_ordinal_word(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None
 
 def _month_year(p: _Pieces, i: int, cfg: WranglerConfig) -> _Read | None:
     """"March 2024", "June, 2013", "March of 2024", "Mar'24", "June' 2018", "Mar-24",
-    "June FY25", "March last year"."""
+    "Mar/24", "June FY25", "March last year". A slash settles "Mar/24" as a month as a
+    hyphen does: REGRESSION -- it was nothing, where "Mar/2024" and "Q3/24" were read."""
     month = p.month(i)
     if month is None:
         return None
-    if p.is_(i + 1, "-", tight=True):
+    if p.is_(i + 1, "-", "/", tight=True):
         t = p.at(i + 2)
         if t is not None and t.tight and t.low.isdigit() and len(t.low) in (2, 4):
             dashed = _pivot_year(t.low, cfg)
