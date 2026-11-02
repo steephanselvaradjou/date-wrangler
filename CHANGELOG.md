@@ -27,6 +27,20 @@ The full notes for each release, with examples, are on the
   to Jun 2024` each `to` is a span; `compare 2023 to 2024` still compares.
 - `Mar/24` was nothing, where `Mar-24`, `Mar/2024` and `Q3/24` were read; it is March 2024.
 - `tests/test_span_years.py`: 437 cases; 145 failed in 2.4.0.
+- A period of the fiscal year named from this one was read on the calendar, with the
+  fiscal year a second, unrelated date: `Q1 last FY` was January to March 2026, and `Q4
+  of this fiscal year` and `the last quarter of this fiscal year` October to December
+  2026. `June of this fiscal year`, `June last FY` -- and on the calendar `June previous
+  year` -- lost June altogether. Each is now that period of that year: with an April
+  year and today in FY27, `Q1 last FY` is April to June 2025, `Q4 of this fiscal year`
+  January to March 2027. `the previous`, `the following` and `prior` work as `last` and
+  `next` do, and `the fiscal year` alone is the one in progress.
+- `the last month of the fiscal year` was last month, `the end of the fiscal year`
+  nothing, and `the last day of the fiscal year` yesterday; a part of `the fiscal year`,
+  `the financial year` or `the FY` is taken from the fiscal year in progress. `same
+  quarter last FY` was all of FY26; it is today's fiscal quarter a year back, and `same
+  half last FY` the fiscal half, where `same half last year` stays the calendar one.
+- `tests/test_fiscal_relative.py`: 444 cases; 382 failed in 2.4.0.
 
 ## 2.4.0 — 2026-10-28
 

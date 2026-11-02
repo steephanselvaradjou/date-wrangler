@@ -117,7 +117,15 @@ _BARE_YEAR = r"(?:19|20|21)\d{2}"
 #: "last year", "next year", "this year" -- a year named by offset rather than by number.
 #: Without this "Q1 last year" scans as two separate matches and the Q1 keeps the current
 #: year, which is silently wrong rather than merely unrecognised.
-_REL_YEAR = rf"(?:{_DIRWORD}|this|current)\s+year"
+#:
+#: And a fiscal or calendar one: "Q1 last FY", "June of this fiscal year", "H2 of the
+#: financial year". REGRESSION: each was the calendar period with the fiscal year a second,
+#: unrelated date, and "June of this fiscal year" lost June altogether.
+_FC_Y = r"[fc]\.?y\.?(?![\w'])(?!\s*-?\s*'?\d)"  # "FY", "CY" with no number after
+_REL_YEAR = (
+    rf"(?:(?:the\s+)?(?:{_DIRWORD}|this|current)\s+(?:(?:{_BASIS_WORD}\s+)?year|{_FC_Y})"
+    rf"|the\s+(?:{_BASIS_WORD}\s+year|{_FC_Y}))"
+)
 
 #: A marked year may abut ("Q1FY24"); an unmarked one may not, or "Q12024" splits. An
 #: apostrophe may stand in for the space: "may'18", and "June' 2018" as statements write it.
@@ -142,8 +150,13 @@ _WEEKDAY_RE = re.compile(rf"\b({alt(WEEKDAY_NAMES)})\b")
 _PAST_RE = re.compile(rf"\s*{_PAST}\b")
 _FUTURE_RE = re.compile(rf"\s*{_FUTURE}\b")
 _YEAR_TAIL_RE = re.compile(rf"\s*(?:of\s+)?'?\s*({_YEAR})\s*$", re.IGNORECASE)
+#: The same, read back: the direction word, and the basis the year states.
 _REL_YEAR_TAIL_RE = re.compile(
-    rf"\s*(?:of\s+)?({_DIRWORD}|this|current)\s+year\s*$", re.IGNORECASE
+    rf"\s*(?:of\s+)?(?:(?:the\s+)?(?P<dir>{_DIRWORD}|this|current)\s+"
+    rf"(?:(?P<basis>{_BASIS_WORD})\s+)?year"
+    rf"|(?:(?:the\s+)?(?P<dir2>{_DIRWORD}|this|current)|the)\s+"
+    rf"(?:(?P<basis2>{_BASIS_WORD})\s+year|(?P<fc>[fc])\.?y\.?))\s*$",
+    re.IGNORECASE,
 )
 _OF_RE = re.compile(r"\bof\b", re.IGNORECASE)
 
@@ -278,23 +291,34 @@ def _year_from_suffix(text: str, cfg: WranglerConfig) -> tuple[int | None, Basis
     return year, basis
 
 
-def _year_offset_from_suffix(text: str) -> int | None:
-    """"Q1 last year" -> -1. None when no relative year is named."""
+def _relative_year_of_suffix(text: str) -> tuple[int, Basis | None] | None:
+    """"Q1 last year" -> (-1, None), "Q1 last FY" -> (-1, FISCAL), "Q3 of the fiscal
+    year" -> (0, FISCAL). None when no relative year is named."""
     m = _REL_YEAR_TAIL_RE.search(text)
     if not m:
         return None
-    word = m.group(1).lower()
-    if word in ("this", "current"):
-        return 0
-    return _direction_of(word)
+    word = (m.group("dir") or m.group("dir2") or "this").lower()
+    offset = 0 if word in ("this", "current") else _direction_of(word)
+    said = m.group("basis") or m.group("basis2") or m.group("fc")
+    return offset, _basis_of(said)
+
+
+def _year_offset_from_suffix(text: str) -> int | None:
+    """"Q1 last year" -> -1. None when no relative year is named."""
+    rel = _relative_year_of_suffix(text)
+    return None if rel is None else rel[0]
 
 
 def _period_suffix(text: str, cfg: WranglerConfig) -> tuple[int | None, Basis | None, int | None]:
-    """The year, basis and year-offset trailing a period phrase. At most one year form."""
+    """The year, basis and year-offset trailing a period phrase. At most one year form. A
+    relative year keeps the basis it states: "Q1 last FY" is a fiscal quarter."""
     year, basis = _year_from_suffix(text, cfg)
     if year is not None:
         return year, basis, None
-    return None, basis, _year_offset_from_suffix(text)
+    rel = _relative_year_of_suffix(text)
+    if rel is None:
+        return None, basis, None
+    return None, rel[1] or basis, rel[0]
 
 
 def _unit_of(word: str) -> Grain | None:
@@ -958,8 +982,9 @@ def _p_month(text: str, cfg: WranglerConfig) -> Spec | None:
     month = find_month(text)
     if month is None:
         return None
-    year, _, offset = _period_suffix(text, cfg)
-    basis = _month_year_basis(text) if year is not None else None
+    year, rel_basis, offset = _period_suffix(text, cfg)
+    # "June of this fiscal year": the June inside the fiscal year in progress.
+    basis = _month_year_basis(text) if year is not None else rel_basis
     return Spec(Kind.ABS_MONTH, year=year, month=month, year_offset=offset, basis=basis)
 
 
@@ -1182,13 +1207,26 @@ _MONTH_JOINED_YEAR = (
     rf"\.?(?:[-/.]?(?:\d{{4}}|\d{{2}}(?![-/.\s]*(?:of\s+)?{_MONTH}\b))(?!\d)"
     rf"|\s+\d{{2}}(?=\s*(?:[,.;:!?)]|$)|{_NEXT_DAY})|\s*,\s*\d{{2}}(?={_NEXT_DAY}))"
 )
+#: The fiscal or calendar year with nothing to say which -- "the fiscal year", "the
+#: financial quarter", "the FY" -- as a period something is taken from: the one in
+#: progress, as "this fiscal year" is. REGRESSION: "the last month of the fiscal year" was
+#: last month, and "the end of the fiscal year" nothing.
+_THE_BASIS_UNIT = (
+    rf"(?:{_BASIS_WORD}\s+{_UNIT}|{_FY_WORD}|{_CY_WORD})(?![\w'])(?!\s*-?\s*'?\d)"
+)
+_FULL_YEAR_WORD = {"f": "fiscal year", "c": "calendar year"}
+#: The same, named from this one: "the fiscal year", "last FY", "the following FY".
+_NAMED_BASIS_UNIT = (
+    rf"(?:(?:the\s+)?(?:{_DIRWORD}|this|current)\s+|the\s+)?{_THE_BASIS_UNIT}"
+)
 _PART_TARGET = (
     rf"(?:{_MONTH}(?:{_MONTH_JOINED_YEAR}|{_YEAR_SUFFIX})"
     rf"|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}|[1-4]\s*q(?![a-z]){_YEAR_SUFFIX}"
     rf"|(?:the\s+)?{_ORD}\s+(?:quarter|qtr){_YEAR_SUFFIX}"
     rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_DECADE}|{_NUMERIC_MONTH}|{_YEAR}(?![-/.]\d)"
     rf"|(?:the\s+)?{_DIRWORD}\s+(?:{_BASIS_WORD}\s+)?{_UNIT}"
-    rf"|(?:the\s+)?(?:this|current)\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|(?:the\s+)?{_UNIT})"
+    rf"|(?:the\s+)?(?:this|current)\s+(?:{_BASIS_WORD}\s+)?{_UNIT}"
+    rf"|{_NAMED_BASIS_UNIT}|(?:the\s+)?{_UNIT})"
 )
 
 
@@ -1241,6 +1279,15 @@ def _target_spec(tail: str, cfg: WranglerConfig) -> Spec | None:
         spec = reader(tail, cfg)
         if spec is not None:
             return spec
+    named = re.fullmatch(
+        rf"\s*(?:({_DIRWORD}|this|current)\s+)?({_THE_BASIS_UNIT})\s*", tail, re.IGNORECASE
+    )
+    if named:
+        # "the fiscal year" is the one in progress; "last FY" the fiscal year before it.
+        word, unit = (named.group(1) or "this").lower(), named.group(2)
+        unit = re.sub(r"(?i)^([fc])\.?y\.?$", lambda f: _FULL_YEAR_WORD[f.group(1).lower()], unit)
+        reader = _p_this if word in ("this", "current") else _p_relative
+        return reader(f"{word} {unit}", cfg)
     year, basis = _year_from_suffix(tail, cfg)
     if year is not None:
         # This is always a year with a part taken out of it -- "the second half of 2024",
@@ -1292,6 +1339,7 @@ _NTH_TARGET = (
     rf"(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d){_YEAR_SUFFIX}"
     rf"|h\s*[12](?!\d){_YEAR_SUFFIX}|{_NUMERIC_MONTH}|{_YEAR}(?![-/.]\d)"
     rf"|(?:the\s+)?(?:{_DIRWORD}|this|current)\s+(?:{_BASIS_WORD}\s+)?{_UNIT}|the\s+{_UNIT}"
+    rf"|{_NAMED_BASIS_UNIT}"
     # A single unit needs no article: "last day of month". REGRESSION: it fell through to
     # "last day" -- yesterday. Plurals still do: "the first Monday in months" is not a date.
     r"|(?:month|mth|quarter|qtr|year|yr|week|wk)(?![a-z]))"
@@ -1639,17 +1687,24 @@ def _p_same_period(text: str, cfg: WranglerConfig) -> Spec | None:
     year back, and the wrangler fills that in. Here it is a THIS_PERIOD with no unit.
     """
     m = re.match(
-        rf"\s*(?:the\s+)?same\s+({_UNIT}|period)\s+{_SAME_YEAR_BACK}", text, re.IGNORECASE
+        rf"\s*(?:the\s+)?same\s+(?:(?P<basis>{_BASIS_WORD})\s+)?(?P<unit>{_UNIT}|period)\s+"
+        rf"{_SAME_YEAR_BACK}",
+        text,
+        re.IGNORECASE,
     )
     if m:
-        if m.group(1).lower() == "period":
-            offset = _direction_of(m.group(2)) if m.group(2) else -1
+        offset = _direction_of(m.group("dir")) if m.group("dir") else -1  # "a year ago", "LY"
+        if m.group("unit").lower() == "period":
             return Spec(Kind.THIS_PERIOD, year_offset=offset)
-        unit = _unit_of(m.group(1))
+        unit = _unit_of(m.group("unit"))
         if unit is None:
             return None
-        offset = _direction_of(m.group(2)) if m.group(2) else -1  # "a year ago", "LY"
-        return Spec(Kind.THIS_PERIOD, unit=unit, year_offset=offset)
+        # "same quarter last FY" is today's fiscal quarter a year back. REGRESSION: it was
+        # all of last FY, the "same quarter" unread.
+        word = m.group("basis") or m.group("ybasis") or ("fiscal" if m.group("fy") else None)
+        return Spec(
+            Kind.THIS_PERIOD, unit=unit, year_offset=offset, basis=_period_basis(word, unit)
+        )
     m2 = re.match(rf"\s*this\s+time\s+({_DIRWORD})\s+year\b", text, re.IGNORECASE)
     if not m2:
         return None
@@ -1689,8 +1744,12 @@ _DAY_WORDS: dict[str, int] = {
 _YESTERDAY = alt(w for w, n in _DAY_WORDS.items() if n == -1)
 _TOMORROW = alt(w for w, n in _DAY_WORDS.items() if n == 1)
 #: The year back in "same month last year", "same quarter of last year", "same month a year
-#: ago", "same month LY". The direction word is captured; the other two are a year back.
-_SAME_YEAR_BACK = rf"(?:of\s+)?(?:({_DIRWORD})\s+year|a\s+year\s+ago|ly|py)\b"
+#: ago", "same month LY" -- and a fiscal one: "same quarter last FY", "same quarter of the
+#: previous fiscal year". The direction word is captured; the others are a year back.
+_SAME_YEAR_BACK = (
+    rf"(?:of\s+)?(?:(?:the\s+)?(?P<dir>{_DIRWORD})\s+(?:(?P<ybasis>{_BASIS_WORD})\s+)?"
+    rf"(?:year|(?P<fy>f\.?y))|a\s+year\s+ago|ly|py)\b"
+)
 
 
 def _p_day_keyword(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -2055,7 +2114,8 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "same_period",
-        rf"\b(?:the\s+)?(?:same\s+(?:{_UNIT}|period)\s+(?:of\s+)?(?:{_DIRWORD}\s+year"
+        rf"\b(?:the\s+)?(?:same\s+(?:{_BASIS_WORD}\s+)?(?:{_UNIT}|period)\s+(?:of\s+)?"
+        rf"(?:(?:the\s+)?{_DIRWORD}\s+(?:(?:{_BASIS_WORD}\s+)?year|f\.?y)"
         rf"|a\s+year\s+ago|ly|py)|this\s+time\s+{_DIRWORD}\s+year)\b",
         _p_same_period,
     ),

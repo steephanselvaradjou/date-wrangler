@@ -21,7 +21,7 @@ from .config import MonthNumber, WranglerConfig
 from .rules import _fy_label_of_span, _not_one_fiscal_year, _pivot_year, parse_year_token
 from .spec import Kind, Spec
 from .types import Basis
-from .vocab import MONTH_DISPLAY, MONTHS, ORDINALS
+from .vocab import FUTURE_WORDS, MONTH_DISPLAY, MONTHS, ORDINALS, PAST_WORDS
 
 __all__ = ["Declined", "Reader", "Token", "read", "tokenize"]
 
@@ -88,6 +88,14 @@ _MAY_HOLD = re.compile(
 # ---------------------------------------------------------------------------
 
 _DAY = re.compile(r"(\d{1,2})(st|nd|rd|th)?")
+#: The words that place a year before or after this one, as the rules' direction words do:
+#: "June last year", "June of the previous fiscal year", "June next FY".
+_YEAR_DIRECTIONS = {
+    **{w: -1 for w in PAST_WORDS if w.isalpha() and w not in ("trailing", "rolling")},
+    **{w: 1 for w in FUTURE_WORDS},
+    "this": 0,
+    "current": 0,
+}
 #: What joins one date to the next: a run, a list or a comparison.
 _DATE_JOINS = frozenset(
     {"-", "to", "till", "until", "through", "thru", "and", "&", "or", "vs", "versus"}
@@ -226,9 +234,19 @@ class _Pieces:
             if quarter_check and self._quarter_follows(end):
                 return None
             return fy, fy_basis, None, end
-        if not comma and t.low in ("last", "next", "this", "current") and self.is_(k + 1, "year"):
-            offset = {"last": -1, "next": 1}.get(t.low, 0)
-            return None, None, offset, k + 2
+        nxt = self.at(k + 1)
+        if not comma and t.low == "the" and nxt is not None and nxt.low in _YEAR_DIRECTIONS:
+            k, t = k + 1, nxt  # "June of the previous year"
+        if not comma and (t.low in _YEAR_DIRECTIONS or t.low == "the"):
+            offset = _YEAR_DIRECTIONS.get(t.low, 0)
+            if t.low != "the" and self.is_(k + 1, "year"):
+                return None, None, offset, k + 2
+            # "June last FY", "June of this fiscal year", "June of the financial year": the
+            # month inside that fiscal year. REGRESSION: June was lost, and only the
+            # fiscal year read -- as with "June previous year", only the year.
+            word = self.year_word(k + 1)
+            if word is not None and not self.number_follows(word[1]):
+                return None, word[0], offset, word[1]
         return None
 
     def two_digit_year(self, j: int, cfg: WranglerConfig) -> tuple[int, int] | None:

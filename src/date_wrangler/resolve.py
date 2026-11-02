@@ -460,9 +460,12 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         # Months are calendar facts; only the *year* they land in is in question. With a
         # fiscal label it is the one inside that fiscal year: April-start "June FY25" is
         # June 2024.
-        if spec.basis is Basis.FISCAL and spec.year is not None:
+        if spec.basis is Basis.FISCAL and (spec.year is not None or spec.year_offset is not None):
+            # With no label, "June of this fiscal year" and "June last FY": the fiscal year
+            # in progress, which year_offset then moves.
+            label = spec.year if spec.year is not None else fiscal_year_of(today, cfg.fiscal)
             index = (spec.month - cfg.fiscal.start_month) % 12 + 1
-            return fiscal_month_range(spec.year, index, cfg.fiscal)
+            return fiscal_month_range(label, index, cfg.fiscal)
         if spec.year is None and spec.nearest is not None:
             # "last March" is the latest March before this month, "next March" the first
             # after it; "this March" is this year's, either side of today.

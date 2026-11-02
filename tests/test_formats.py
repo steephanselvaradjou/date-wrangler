@@ -247,6 +247,16 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("Q1 AY 2025-26", "2024-04..2024-06"),
         ("AY 2023-24 to AY 2025-26", "2022-04..2025-03"),
         ("AY 2025-27", "!"),
+        # A period of the fiscal year named from this one, TODAY being in FY27.
+        ("Q1 last FY", "2025-04..2025-06"),
+        ("Q4 of this fiscal year", "2027-01..2027-03"),
+        ("H2 of the following FY", "2027-10..2028-03"),
+        ("June of this fiscal year", "2026-06"),
+        ("June previous year", "2025-06"),
+        ("the last month of the fiscal year", "2027-03"),
+        ("the last quarter of this fiscal year", "2027-01..2027-03"),
+        ("the last day of the fiscal year", "2027-03-31"),
+        ("same quarter last FY", "2025-10..2025-12"),
         # With no FY, year_basis decides: on the calendar, two years. Fiscal is below.
         ("2024-25", "2024..2025"),
         ("sales 2024-25", "2024..2025"),
