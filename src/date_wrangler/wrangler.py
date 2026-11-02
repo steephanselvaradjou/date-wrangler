@@ -15,7 +15,7 @@ from calendar import monthrange
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, tzinfo
-from functools import cache
+from functools import cache, partial
 from typing import Any
 
 from .config import DEFAULT_CONFIG, WranglerConfig
@@ -229,6 +229,171 @@ def _scanner(*, cased: bool, hop: bool) -> re.Pattern[str]:
         found = re.compile(rf"\b(?:{body})", 0 if cased else re.IGNORECASE)
         _SCANNERS[(cased, hop)] = found
     return found
+
+
+#: Every place a word starts or ends: each rule opens with \b, so it can match only there.
+_BOUNDARY = re.compile(r"\b")
+_ASCII = [chr(c) for c in range(128)]
+#: What a class like \d or \s matches among ASCII characters, asked of the engine itself.
+_CATEGORY_CHARS = {
+    category: frozenset(c for c in _ASCII if re.fullmatch(probe, c))
+    for category, probe in (
+        (_sre.CATEGORY_DIGIT, r"\d"), (_sre.CATEGORY_NOT_DIGIT, r"\D"),
+        (_sre.CATEGORY_SPACE, r"\s"), (_sre.CATEGORY_NOT_SPACE, r"\S"),
+        (_sre.CATEGORY_WORD, r"\w"), (_sre.CATEGORY_NOT_WORD, r"\W"),
+    )
+}  # fmt: skip
+#: How far a rule's openings are worked out: two characters.
+_OPEN_DEPTH = 2
+
+
+class _TooWide(Exception):
+    """A pattern whose openings cannot be told: its rule is tried at every word."""
+
+
+def _openings(pattern: str) -> frozenset[str] | None:
+    """Every way a match of ``pattern`` can begin, to two characters, among ASCII -- a
+    shorter one where it may end sooner -- or None where that cannot be told.
+
+    A superset of what the rule accepts: a lookaround or \\b takes up nothing and is passed
+    over, so the rule may be tried where it then refuses, but never left out where it
+    would match. A test holds the rules tried this way to the scanner.
+    """
+    try:
+        found = _follow(_sre.parse(pattern), {""})
+    except _TooWide:
+        return None
+    return None if "" in found else frozenset(found)
+
+
+def _chars(op: Any, av: Any) -> set[str] | None:
+    """The characters one item matches, both cases, or None if it is not one character."""
+    if op is _sre.LITERAL:
+        return {chr(av), chr(av).lower()} if av < 128 else set()
+    if op is _sre.NOT_LITERAL:
+        return {c for c in _ASCII if c != chr(av)}
+    if op is _sre.ANY:
+        return {c for c in _ASCII if c != "\n"}
+    if op is not _sre.IN:
+        return None
+    found: set[str] = set()
+    negate = False
+    for o, a in av:
+        if o is _sre.NEGATE:
+            negate = True
+        elif o is _sre.LITERAL:
+            found.update((chr(a), chr(a).lower()) if a < 128 else ())
+        elif o is _sre.RANGE:
+            found.update(chr(c) for c in range(a[0], min(a[1], 127) + 1))
+        elif o is _sre.CATEGORY and a in _CATEGORY_CHARS:
+            found |= _CATEGORY_CHARS[a]
+        else:
+            raise _TooWide(o)
+    found |= {c.lower() for c in found}
+    return set(_ASCII) - found if negate else found
+
+
+def _follow(items: Any, prefixes: set[str]) -> set[str]:
+    """``prefixes`` carried on through ``items``, each until it is two characters long."""
+    for op, av in items:
+        short = {p for p in prefixes if len(p) < _OPEN_DEPTH}
+        if not short:
+            break
+        prefixes = (prefixes - short) | _step(op, av, short)
+    return prefixes
+
+
+def _step(op: Any, av: Any, prefixes: set[str]) -> set[str]:
+    chars = _chars(op, av)
+    if chars is not None:
+        return {p + c for p in prefixes for c in chars}
+    if op is _sre.SUBPATTERN:
+        return _follow(av[-1], prefixes)
+    if op is _sre.BRANCH:
+        out: set[str] = set()
+        for branch in av[1]:
+            out |= _follow(branch, prefixes)
+        return out
+    if op in (_sre.MAX_REPEAT, _sre.MIN_REPEAT):
+        low, high, item = av
+        out = set(prefixes) if low == 0 else set()
+        current = prefixes
+        for n in range(1, _OPEN_DEPTH + 1):
+            current = _follow(item, current)
+            # Repeated enough, or two characters already: either way, openings.
+            if n >= low or all(len(p) >= _OPEN_DEPTH for p in current):
+                out |= current
+            if n >= high:
+                break
+        return out
+    if op in (_sre.AT, _sre.ASSERT, _sre.ASSERT_NOT):
+        return prefixes
+    raise _TooWide(op)
+
+
+#: The rules to try at one place, each compiled, with its name.
+_Tries = tuple[tuple[re.Pattern[str], str], ...]
+
+
+@cache
+def _dispatch() -> tuple[dict[str, _Tries], dict[str, _Tries], _Tries]:
+    """Each rule compiled on its own, and which to try where a word opens with which two
+    characters -- then with which one, for a rule that may end after it, and the rules
+    whose openings cannot be told, which are tried everywhere. Each list in RULES order,
+    so of two rules matching at one place the earlier wins, as in the alternation."""
+    rules = [(rule.name, rule.pattern) for rule in _PATTERN_RULES if rule.pattern is not None]
+    compiled = [re.compile(pattern) for _, pattern in rules]
+    by_two: dict[str, set[int]] = {}
+    by_one: dict[str, set[int]] = {}
+    anywhere: set[int] = set()
+    for k, (_, pattern) in enumerate(rules):
+        found = _openings(pattern)
+        if found is None:
+            anywhere.add(k)
+            continue
+        for opening in found:
+            (by_two if len(opening) == 2 else by_one).setdefault(opening, set()).add(k)
+
+    def tries(ks: set[int]) -> _Tries:
+        return tuple((compiled[k], rules[k][0]) for k in sorted(ks))
+
+    one = {c: tries(ks | anywhere) for c, ks in by_one.items()}
+    two = {
+        key: tries(ks | by_one.get(key[0], set()) | anywhere) for key, ks in by_two.items()
+    }
+    return two, one, tries(anywhere)
+
+
+def _next_rule(target: str, pos: int, stop: int) -> tuple[int, int, str] | None:
+    """The first rule match at or after ``pos`` in lowered ASCII ``target``: its start, end
+    and rule. Past ``stop`` -- where the token reader's next date opens -- a hop there
+    instead, for that date comes first.
+
+    Only the rules that can open with a word's first two characters are tried there.
+    The one alternation over every rule tried each at every word, and most words open
+    none: about forty rules let in at "the", "to" or "sales" by their first letter, there
+    to fail. REGRESSION: scanning was over a third of parse().
+    """
+    two, one, anywhere = _dispatch()
+    for boundary in _BOUNDARY.finditer(target, pos):
+        at = boundary.start()
+        if at > stop:
+            return stop, stop, "_hop"
+        key = target[at : at + 2]
+        for pattern, name in two.get(key) or one.get(key[:1], anywhere):
+            m = pattern.match(target, at)
+            if m is not None:
+                return at, m.end(), name
+    return (stop, stop, "_hop") if stop <= len(target) else None
+
+
+def _next_in(
+    scanner: re.Pattern[str], target: str, pos: int, stop: int
+) -> tuple[int, int, str] | None:
+    """The same from the one alternation, for text that is not ASCII. Its own hop branch
+    marks where a date read from tokens opens."""
+    m = scanner.search(target, pos)
+    return None if m is None else (m.start(), m.end(), m.lastgroup or "")
 
 
 #: The scanners by name, as the tests hold them to the rules: compiled when asked for.
@@ -716,40 +881,39 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
     the next date first takes it, and of two starting at the same place the one whose rule
     comes first in RULES -- exactly what one alternation over every rule does.
 
-    Scanning is where most of the time goes, and IGNORECASE over an alternation this size
-    costs roughly half as much again as a plain match -- so ASCII text is lowered once and
-    matched case-sensitively instead. Offsets survive because lowering ASCII cannot change
-    a string's length; anything else falls back to the case-insensitive pattern, where that
+    ASCII text -- nearly all of it -- is lowered once, and at each word only the rules that
+    can open with its first two characters are tried, each compiled on its own: see
+    :func:`_next_rule`. Offsets survive because lowering ASCII cannot change a string's
+    length; anything else falls back to the one case-insensitive alternation, where that
     guarantee does not hold. Either way the *fragment* is sliced from the original, so the
     rules still see the writer's capitals.
 
-    Where the text names a month, the scanner has one more branch, ``_hop``: it stops where
-    a date read from tokens opens and no rule matches, rather than working on through it.
-    A hop at or after the start of the reader's next date means no rule matches before the
-    hop, so that date comes first: it is taken, and scanning resumes after it. A hop with
-    no reader's date at or before it means only that no rule matches there, and scanning
-    goes on from the next character.
+    The rules stop where a date read from tokens opens and no rule matches there, rather
+    than working on through it: a hop. A hop at or after the start of the reader's next
+    date means no rule matches before it, so that date comes first: it is taken, and
+    scanning resumes after it. A hop with no reader's date at or before it -- the
+    alternation's own hop branch, at a month name the reader does not take -- means only
+    that no rule matches there, and scanning goes on from the next character.
     """
     reader = Reader(text, cfg)
     if text.isascii():
-        target, scanner = text.lower(), _scanner(cased=True, hop=reader.names_a_month)
+        target, find = text.lower(), _next_rule
     else:
-        target, scanner = text, _scanner(cased=False, hop=reader.names_a_month)
+        target = text
+        find = partial(_next_in, _scanner(cased=False, hop=reader.names_a_month))
+    beyond = len(target) + 1  # no date of the reader's to stop at
     out: list[_Raw] = []
     pos = 0
-    m = scanner.search(target, pos)
     d = reader.next_date(pos)
+    m = find(target, pos, beyond if d is None else d[2])
     while m is not None or d is not None:
-        if m is not None and m.lastgroup == "_hop" and (d is None or d[2] > m.start()):
-            m = scanner.search(target, m.start() + 1)
+        if m is not None and m[2] == "_hop" and (d is None or d[2] > m[0]):
+            m = find(target, m[0] + 1, beyond if d is None else d[2])
             continue
         if d is not None and (
             m is None
-            or d[2] < m.start()
-            or (
-                d[2] == m.start()
-                and (m.lastgroup == "_hop" or _ORDER[d[0]] < _ORDER[m.lastgroup or ""])
-            )
+            or d[2] < m[0]
+            or (d[2] == m[0] and (m[2] == "_hop" or _ORDER[d[0]] < _ORDER[m[2]]))
         ):
             name, spec, lo, hi, reason = d
             if isinstance(spec, list):
@@ -761,12 +925,12 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
             pos = hi
         else:
             assert m is not None
-            pos = m.end()
-            _read_match(m, text, cfg, out, diags)
-        if m is not None and m.start() < pos:
-            m = scanner.search(target, pos)
+            pos = m[1]
+            _read_match(m[2], m[0], m[1], text, cfg, out, diags)
         if d is not None and d[2] < pos:
             d = reader.next_date(pos)
+        if m is not None and m[0] < pos:
+            m = find(target, pos, beyond if d is None else d[2])
     return out
 
 
@@ -805,34 +969,37 @@ def _reading(rule: Rule, fragment: str, cfg: WranglerConfig) -> _Reading:
 
 
 def _read_match(
-    m: re.Match[str],
+    name: str,
+    start: int,
+    end: int,
     text: str,
     cfg: WranglerConfig,
     out: list[_Raw],
     diags: list[Diagnostic] | None,
 ) -> None:
-    """Hand one regular-expression match to its rule, and keep what it reads."""
-    name = m.lastgroup
-    rule = _RULES_BY_NAME.get(name) if name is not None else None
-    if name is None or rule is None or rule.parse is None:
+    """Hand one rule's match, ``text[start:end]``, to the rule, and keep what it reads."""
+    rule = _RULES_BY_NAME.get(name)
+    if rule is None or rule.parse is None:
         return
-    fragment = text[m.start() : m.end()]
+    fragment = text[start:end]
     read, spec = _reading(rule, fragment, cfg)
     if not read:
         # The rule said why; that reason alone, not a second, vaguer one beside it.
         if diags is not None:
-            diags.append(Diagnostic(fragment, m.span(), name, spec))
+            diags.append(Diagnostic(fragment, (start, end), name, spec))
         return
     if spec is None:
         if diags is not None:
-            diags.append(Diagnostic(fragment, m.span(), name, "matched but could not be read"))
+            diags.append(
+                Diagnostic(fragment, (start, end), name, "matched but could not be read")
+            )
         return
     if isinstance(spec, list):
         # Several dates in one fragment -- "1st and 15th March" -- each with its own span,
         # so they link as a list like any other.
-        out.extend(_Raw(name, s, m.start() + lo, m.start() + hi) for s, lo, hi in spec)
+        out.extend(_Raw(name, s, start + lo, start + hi) for s, lo, hi in spec)
         return
-    out.append(_Raw(name, spec, m.start(), m.end()))
+    out.append(_Raw(name, spec, start, end))
 
 
 def _passes_strictness(
