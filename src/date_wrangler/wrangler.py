@@ -15,6 +15,7 @@ from calendar import monthrange
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, tzinfo
+from functools import cache
 from typing import Any
 
 from .config import DEFAULT_CONFIG, WranglerConfig
@@ -179,29 +180,75 @@ def _guarded(rule: Rule) -> str:
 
 #: The rules read by a regular expression. The rest are read from tokens (tokens.py).
 _PATTERN_RULES = [rule for rule in RULES if rule.pattern is not None]
-_SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{_guarded(rule)})" for rule in _PATTERN_RULES)
+
+
+@cache
+def _scan_pattern() -> str:
+    """Every rule's pattern, guarded, as one alternation. Built on first use, with the
+    scanner: working out the guards reads every pattern through the regex parser."""
+    return "|".join(f"(?P<{rule.name}>{_guarded(rule)})" for rule in _PATTERN_RULES)
+
+
 #: Where each rule stands in RULES: of two dates starting at the same place, the earlier
 #: rule's wins, whichever of the two readers found it.
 _ORDER: dict[str, int] = {rule.name: k for k, rule in enumerate(RULES)}
-#: Every rule opens with \b, so it is checked once, ahead of the alternation, instead of
-#: once per rule at every position. Most positions are inside a word and fail it, and they
-#: now fail after one test rather than forty-eight -- about a third of scanning time, with
-#: nothing able to match differently, since each branch still begins with its own \b. A
-#: test holds every rule to that opening, because one without it would quietly lose matches.
-_SCANNER = re.compile(rf"\b(?:{_SCAN_PATTERN})", re.IGNORECASE)
-#: The same rules, case-sensitive, for the lowered-ASCII fast path in :func:`_scan`. Every
-#: rule pattern is written in lower case, so the two accept exactly the same fragments.
-_SCANNER_CS = re.compile(rf"\b(?:{_SCAN_PATTERN})")
-#: One more branch, last, for text that names a month: where a date read from tokens opens
-#: -- "March", "15 March", "15mar" -- and no rule matches. Without it the scanner, finding
-#: nothing at "15 March 2024", works on through "March" and on to "2024", a year by itself,
-#: which the token reader's date then swallows: searched for, found and thrown away. With
-#: it the scanner stops there, and starts again after the date. Being last, it matches
-#: only where no rule does, so it changes where scanning stops, never what it finds; a
-#: test holds _scan to the plain scanner over every phrase the tests hold.
+#: One more branch, last: where a date read from tokens opens -- "March", "15 March",
+#: "15mar" -- and no rule matches. Without it the scanner, finding nothing at "15 March
+#: 2024", works on through "March" and on to "2024", a year by itself, which the token
+#: reader's date then swallows: searched for, found and thrown away. With it the scanner
+#: stops there, and starts again after the date. Being last, it matches only where no rule
+#: does, so it changes where scanning stops, never what it finds; a test holds _scan to the
+#: plain scanner over every phrase the tests hold. Only for text that names a month:
+#: elsewhere it never matches, and trying it at every word cost text dense with dates two
+#: per cent.
 _HOP = rf"(?P<_hop>(?=[a-z\d])(?:\d{{1,4}}(?:st|nd|rd|th)?[ \-/.]?)?{alt(MONTH_NAMES)}(?![a-z]))"
-_HOP_SCANNER = re.compile(rf"\b(?:{_SCAN_PATTERN}|{_HOP})", re.IGNORECASE)
-_HOP_SCANNER_CS = re.compile(rf"\b(?:{_SCAN_PATTERN}|{_HOP})")
+#: The scanners compiled so far, by (case-sensitive, with the hop branch).
+_SCANNERS: dict[tuple[bool, bool], re.Pattern[str]] = {}
+
+
+def _scanner(*, cased: bool, hop: bool) -> re.Pattern[str]:
+    """The rules as one regular expression, compiled the first time it is asked for.
+
+    Every rule opens with \\b, so it is checked once, ahead of the alternation, instead of
+    once per rule at every position. Most positions are inside a word and fail it, and they
+    fail after one test rather than forty-eight -- about a third of scanning time, with
+    nothing able to match differently, since each branch still begins with its own \\b. A
+    test holds every rule to that opening, because one without it would quietly lose
+    matches.
+
+    ``cased`` is the case-sensitive one, for the lowered-ASCII fast path in :func:`_scan`:
+    every rule pattern is written in lower case, so the two accept exactly the same
+    fragments. The other is only for text that is not ASCII. Each, with the hop branch or
+    without it, takes a sixth of a second to compile, and all four were compiled on import,
+    which was nearly all of import's time: most programs need two, and only once they are
+    asked to read something. REGRESSION: importing the package took 1.3 seconds.
+    """
+    found = _SCANNERS.get((cased, hop))
+    if found is None:
+        body = f"{_scan_pattern()}|{_HOP}" if hop else _scan_pattern()
+        found = re.compile(rf"\b(?:{body})", 0 if cased else re.IGNORECASE)
+        _SCANNERS[(cased, hop)] = found
+    return found
+
+
+#: The scanners by name, as the tests hold them to the rules: compiled when asked for.
+_SCANNER_NAMES = {
+    "_SCANNER": (False, False),
+    "_SCANNER_CS": (True, False),
+    "_HOP_SCANNER": (False, True),
+    "_HOP_SCANNER_CS": (True, True),
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _SCANNER_NAMES:
+        cased, hop = _SCANNER_NAMES[name]
+        return _scanner(cased=cased, hop=hop)
+    if name == "_SCAN_PATTERN":
+        return _scan_pattern()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 
 
@@ -685,10 +732,9 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
     """
     reader = Reader(text, cfg)
     if text.isascii():
-        target = text.lower()
-        scanner = _HOP_SCANNER_CS if reader.names_a_month else _SCANNER_CS
+        target, scanner = text.lower(), _scanner(cased=True, hop=reader.names_a_month)
     else:
-        target, scanner = text, _HOP_SCANNER if reader.names_a_month else _SCANNER
+        target, scanner = text, _scanner(cased=False, hop=reader.names_a_month)
     out: list[_Raw] = []
     pos = 0
     m = scanner.search(target, pos)
@@ -1165,9 +1211,9 @@ def _month_years_at_the_end(
     does, and 2031 was never meant.
     """
     for i, link in enumerate(links):
-        raw, before = raws[i + 1], raws[i]
-        if link is None or raw.rule != "month_day_year":
+        if link is None or raws[i + 1].rule != "month_day_year":
             continue
+        raw, before = raws[i + 1], raws[i]
         last = i + 1 == len(links) or links[i + 1] in (None, "compare")
         if link is None or (link != "range" and not last):
             continue  # inside a list: its year is written once, at the end
@@ -1208,7 +1254,7 @@ def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
     in "Jan-Mar 2024 vs Jan-Mar 2025" and "Q1-Q3 2024 vs Q1-Q3 2025" the first span's start
     took the 2025, and the span fell apart into two dates.
     """
-    if not any(k in ("and", "list", "compare") for k in links):
+    if "and" not in links and "list" not in links and "compare" not in links:
         return
     own = _spans_with_a_year(raws, links)
     for lo, hi in _runs(links, lambda k: k is not None and k != "compare"):
@@ -1223,6 +1269,8 @@ def _spans_with_a_year(raws: list[_Raw], links: list[str | None]) -> set[int]:
     """The matches of every span that states a year -- "Jan-Mar 2024" -- by identity. The
     range step gives the start that year; a list or comparison around it must not."""
     own: set[int] = set()
+    if "range" not in links:
+        return own
     for lo, hi in _runs(links, lambda k: k == "range"):
         span = raws[lo : hi + 1]
         if any(r.spec.year is not None for r in span):
