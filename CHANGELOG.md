@@ -7,7 +7,10 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
-## Unreleased
+## 2.4.2 — 2026-11-03
+
+The README, corrected and brought up to 2.4.1, so the project page on PyPI shows it. The
+code is as in 2.4.1: the same answers, at the same speed.
 
 ### Documentation
 - The README listed `AY 2015-16` among the phrases left unread; since 2.4.0 it is the
