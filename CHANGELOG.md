@@ -7,9 +7,12 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
-## Unreleased
+## 2.4.1 — 2026-11-03
 
-**Changes answers.**
+A year written once at the end of months, spans compared side by side, and a period of
+the fiscal year named from this one -- each read as written, where 2.4.0 lost the year or
+read the calendar. And parsing is faster: 8 to 23 per cent, with import about ten times
+quicker. The API is unchanged. **Changes answers.**
 
 ### Faster
 - `parse()` is 8 to 23 per cent faster than in 2.4.0 on every kind of text, with the same
