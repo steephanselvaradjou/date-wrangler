@@ -401,6 +401,11 @@ The setting only decides that ambiguous middle. Everything else settles itself:
 | `jan 2024` | January 2024 | four digits |
 | `jan 87` | January 1987 | above 31, so it cannot be a day |
 | `january 15, 2024` | 15 January 2024 | the year is already stated |
+| `jan-24`, `jan/24` | January 2024 | a hyphen or slash joins a month to its year |
+| `Jan-Mar 24`, `Jan to Mar 24` | January to March 2024 | months with no day of their own: the two digits are the year they are written with |
+
+Beside a day it stays a day: `Jan 15 - Mar 24` is 15 January to 24 March. And `Jan-Mar 31`
+ends where March does, whichever way it is read, so it is read as the day.
 
 ## Parsing text
 
@@ -456,8 +461,9 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | | |
 |---|---|
 | Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `Q1 FY2024-25`, `FY2024-25 Q3`, `fiscal 2024`, `2023-24 financial year`, `fy-24`, `F.Y. 2024`, `FY ending June 30, 2024` |
+| Assessment year | `A.Y. 2025-26`, `AY 2025-26`, `assessment year 2025-26`, `Q1 AY 2025-26` — always the fiscal year before it, whose income it assesses: `A.Y. 2025-26` is F.Y. 2024-25 |
 | Split years | `2024-25`, `2012/13` with no FY follow `year_basis`, as any year does: on a fiscal basis the fiscal year 2024-25 (and `Q3 2024-25` its third quarter); on a calendar basis the years 2024 to 2025, of which `Q3 2024-25` is not one period, so `diagnose` says to write `FY2024-25`. `2011-12` is a fiscal year on a fiscal basis and December 2011 on a calendar one |
-| Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `1HFY24`, `fiscal Q3`, `Q3 FY` — and a quarter, half or month beside its year: `Q3 in 2024`, `Q3/FY24`, `FY 2024 Qtr 3`, `2024 - third quarter`, `June in 2024`, `Mar/2024`, `2024 March`. A spaced dash after the label is a span, as `June - FY25` always was; before it, a heading: `FY24 - Q3`, `2024 - March` |
+| Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `1HFY24`, `fiscal Q3`, `Q3 FY` — and a quarter, half or month beside its year: `Q3 in 2024`, `Q3/FY24`, `FY 2024 Qtr 3`, `2024 - third quarter`, `June in 2024`, `Mar/2024`, `2024 March`, and run together: `2024QTR3`, `FY2024-25QTR3`, `Qtr 3-24`, `2024March`, `MarchFY24`. A spaced dash after the label is a span, as `June - FY25` always was; before it, a heading: `FY24 - Q3`, `2024 - March` |
 | Years and labelled periods | `2024`, `the year 2024`, `Q1 of 2024`, `January 2024`, `CY2024` — see [which calendar](#configuration) for how a year is read |
 | Fiscal month index | `third month of FY24`, `twelfth month` |
 | Month of a fiscal year | `June FY25`, `Jun-FY25`, `FY25 June`, `June FY 2024-25`, `Oct to Mar FY25` — the June *inside* FY25, so June 2024 with an April year; `June 2025` stays June 2025 |
@@ -472,32 +478,32 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | A comma or weekday inside the date | `June, 2013`, `12 March, 2014`, `Q1, 2024`, `Friday, 15 March 2024` — one date, and a weekday that does not match it is flagged |
 | Months as numbers | `2024-03`, `2024/03`, `03/2024`, `03-2024` |
 | Abbreviations and run-together forms | `Sept. 2013`, `Mar. 15, 2024`, `FEB.2018`, `15MAR2024`, `13june2018`, `01may 2018`, `may'18`, `June' 2018`, `Mar-15-2024` |
-| Ranges | `Q1 to Q2`, `Jan–Mar`, `from April to September 2024`, `Nov to Feb` (wraps), `2024-03-15/2024-03-20`, `1-4-2018-31-5-2018`, `the years 2012 through 2014` |
+| Ranges | `Q1 to Q2`, `Jan–Mar`, `from April to September 2024`, `Nov to Feb` (wraps), `2024-03-15/2024-03-20`, `1-4-2018-31-5-2018`, `the years 2012 through 2014`, and a year written once at the end: `Jan-Mar 24`, `Nov-Feb 24` (November 2023 to February 2024). Two spans side by side each keep their own year: `Q1-Q3 2024 vs Q1-Q3 2025`, `compare Jan-Mar 2024 with Jan-Mar 2025` |
 | Up to today | `01/06/2018 to till date`, `from 01/06/2018 till date`, `April 2015 to till date`, `1st march 2018 to as on date`, `from 2012 to present`, `2012-present`, `1 June 2018 up till now`, `June 2018 till present`, `1 June 2018 to-date`, `as on date`, `as of now`. A `from` or `since` day with an end written after it ends there, not open-ended |
-| Open-ended | `since March`, `from Q1 onwards`, `up to March 2024`, `before 2024`, `after FY24`, `prior to 2012`, `pre-2012`, `post-2012`, `2012 and later`, `in or after 2012`, `starting 2012` |
-| Counted from a date | `3 days before 15 March 2024`, `two weeks after 1 April`, `a year after March 2024`, `the day after 15 March` |
+| Open-ended | `since March`, `from Q1 onwards`, `up to March 2024`, `before 2024`, `after FY24`, `prior to 2012`, `pre-2012`, `pre 2012`, `post-2012`, `2012 and later`, `in or after 2012`, `starting 2012`, `beginning March 2024` (March onwards), `not later than March 2024`, `w.e.f. 1 April 2024`, and as a query writes them: `>= 2024-03-15` |
+| Counted from a date | `3 days before 15 March 2024`, `two weeks after 1 April`, `a year after March 2024`, `the day after 15 March`, `3 days earlier than 15 March 2024`, `1 April 2024 + 2 weeks`, `3 business days before 18 March 2024` |
 | Two back | `the month before last`, `the year before last`, `the week before last` |
 | The nearest month | `last March`, `this March`, `next March` |
 | Weekdays of a week | `Friday last week`, `last week Friday`, `last week's Fri`, `Fri. last week`, `Monday to Friday last week`, `Monday next` |
 | Decades | `the 1990s`, `the 1990's`, `the '90s`, `the 90s`, `the nineties`, `the early 1990s`, `mid-1990s`, `the late 90s` |
 | Reporting periods | `9M 2024`, `9M FY24` (the first nine months), `the March quarter 2024` (the quarter ending March), `the first 3 quarters of 2024`, `first fortnight of March` |
 | Point-in-time | `as of 31 March 2024` |
-| Relative year | `Q1 last year`, `March last year`, `H2 next year` |
+| Relative year | `Q1 last year`, `March last year`, `June previous year`, `H2 next year` — and a fiscal one, the period inside it: `Q1 last FY`, `Q4 of this fiscal year`, `June of this fiscal year`, `H2 of the following FY` |
 | Part of a period | `first half of March`, `early 2024`, `mid March`, `end of Q1` |
-| Day in a period | `1st of next month`, `15th of March`, `the last day of the month` |
-| Runs of days | `1-15 March`, `March 1-15, 2024`, `1st to 15th March` |
-| Unit of a period | `the first week of April`, `first wk of April`, `the last week of March`, `the last 3 months of the year`, `last 3 mths of 2024`, `the last quarter of 2024` |
+| Day in a period | `1st of next month`, `15th of March`, `the last day of the month`, `the last day of the fiscal year` |
+| Runs of days | `1-15 March`, `March 1-15, 2024`, `1st to 15th March`, `15-20 Mar-24`, `2024 March 15th-20th`, `between the 15th and the 20th of March 2024`, `15-20 June FY25`, and across months: `15 March 2024-20 April 2024`, `28 Dec - 3 Jan 2024`. Days listed, `15, 16 and 20 March 2024`, are each a date of their own |
+| Unit of a period | `the first week of April`, `first wk of April`, `the last week of March`, `the last 3 months of the year`, `last 3 mths of 2024`, `the last quarter of 2024`, `the last month of the fiscal year`, `the last quarter of this fiscal year` |
 | Deadlines | `by 31 March`, `on or before 31 March`, `no later than Friday`, `not before 1 April` |
 | Nth weekday | `first Monday of March`, `last Friday of the month`, `last Friday of month`, `3rd Thursday of November`, `the 3rd Thurs. of Nov.` |
 | Week numbers | `week 42`, `2026-W42`, `CW42`, `KW 42`, `week 42 of 2026`, `2026 week 42`, `W42-2026`, `week no. 42`, `weeks 42-43 2026` |
 | Business days | `5 business days ago`, `next business day`, `last business day of the month`, `last 5 biz days`, `next workday` |
-| Same period back | `same quarter last year`, `same month of last year`, `same quarter LY`, `this time last year` |
+| Same period back | `same quarter last year`, `same month of last year`, `same quarter LY`, `this time last year`, and on the fiscal calendar: `same quarter last FY` |
 | Weekend | `this weekend`, `next weekend`, `last weekend` |
 | Period edges | `month end`, `EOM`, `E.O.M.`, `end-of-month`, `EOQ`, `end of the quarter`, `end of 1Q 2024`, `year start`, `last day of month`, `last workday of the month` |
 | Ahead | `in 3 days`, `2 weeks from now`, `3 months from today` |
 | Fortnights | `a fortnight ago`, `last fortnight`, `next fortnight` |
 | Day idioms | `day before yesterday`, `day after tomorrow` |
-| Written formats | `15-Mar-2024`, `15 Mar 24`, `Mar-24`, `15.03.2024`, `2024/03/15` |
+| Written formats | `15-Mar-2024`, `15 Mar 24`, `Mar-24`, `Mar/24`, `15.03.2024`, `2024/03/15`, and a day's parts joined any way: `15 Mar-24`, `15-March 24`, `15thMarch 2024`, `March/15/2024` |
 | Timestamps | `2024-03-15T14:30:00Z`, `Mar 15 14:30:00`, `Wed, 15 Mar 2024 14:30:00 GMT` |
 | Chat and email | `EOD`, `COB Friday`, `on the 15th`, `meet Thursday` |
 
@@ -541,7 +547,7 @@ date, so these are left alone on purpose:
 | `within 30 days of the Effective Date` | a duration with no anchor to measure from |
 | `bake for 30 minutes` | durations and times of day are out of scope |
 | `summer 2024`, `last winter` | seasons fall in different months either side of the equator |
-| `the 2015–2016 season`, `academic year 2015-16`, `the 2015-16 NBA season`, `AY 2015-16` | a name with months of its own, not the two years it spans — kept as a label. `2015–2016` on its own is still the years, and so is `2015-16 sales by season` |
+| `the 2015–2016 season`, `academic year 2015-16`, `the 2015-16 NBA season`, `SY 2015-16` | a name with months of its own, not the two years it spans — kept as a label. `2015–2016` on its own is still the years, and so is `2015-16 sales by season`. `AY 2015-16` is the assessment year, and is read |
 | `recently`, `a few days ago`, `the other day`, `the past few weeks`, `in recent months`, `a while back` | too vague to name a period |
 | `the year before`, on its own | before what? With a date beside it — `2024 vs the year before` — it is read |
 

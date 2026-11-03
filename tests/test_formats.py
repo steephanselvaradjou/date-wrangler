@@ -74,6 +74,7 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("total 2024.03", "-"),
     ]),
     ("written days", TODAY, CAL, [
+        ("January 15, 2024", "2024-01-15"),
         ("15 March 2024", "2024-03-15"),
         ("15th March 2024", "2024-03-15"),
         ("15th of March 2024", "2024-03-15"),
@@ -222,6 +223,7 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("throughout 2024", "2024"),
     ]),
     ("fiscal years", TODAY, CAL, [
+        ("third month of FY24", "2023-06"),
         ("FY24", "2023-04..2024-03"),
         ("FY 2024", "2023-04..2024-03"),
         ("FY2024-25", "2024-04..2025-03"),
@@ -346,6 +348,8 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("2023 - H2 2024", "2023-01..2024-12"),
     ]),
     ("parts of a period", TODAY, CAL, [
+        ("the last 3 months of the year", "2026-10..2026-12"),
+        ("year start", "2026-01..2026-04"),
         ("early 2024", "2024-01..2024-04"),
         ("mid-2024", "2024-05..2024-08"),
         ("end of March 2024", "2024-03-21..2024-03-31"),
@@ -426,6 +430,8 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("FY22-FY24", "2021-04..2024-03"),
     ]),
     ("spans of months and days", TODAY, CAL, [
+        ("Jan–Mar", "2026-01..2026-03"),
+        ("from April to September 2024", "2024-04..2024-09"),
         ("from March 2012 to May 2013", "2012-03..2013-05"),
         ("Dec 2023 - Jan 2024", "2023-12..2024-01"),
         ("January - March 2024", "2024-01..2024-03"),
@@ -481,6 +487,10 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("compare Jan-Mar 2024 with Jan-Mar 2025", "2024-01..2024-03 ; 2025-01..2025-03"),
         ("Jan 15 - Mar 24", "2026-01-15..2026-03-24"),
         ("Jan-Mar 31", "2026-01..2026-03"),
+        ("Mar/24", "2024-03"),
+        ("jan-24", "2024-01"),
+        ("jan/24", "2024-01"),
+        ("15, 16 and 20 March 2024", "2024-03-15 ; 2024-03-16 ; 2024-03-20"),
         ("from start of 2012 to end of 2013", "2012..2013"),
         ("June, 2013 to August, 2013", "2013-06..2013-08"),
         ("Jun FY25 - 15 March", "2024-06-01..2025-03-15"),
@@ -636,6 +646,14 @@ SECTIONS: list[tuple[str, date, WranglerConfig, list[tuple[str, str]]]] = [
         ("the same period last year", "!"),  # the same as which?
     ]),
     ("relative to today", TODAY, CAL, [
+        # Each shown in the README; TODAY falls in ISO week 42 of 2026 and FY27 Q3.
+        ("last 2 fiscal quarters", "2026-04..2026-09"),
+        ("next calendar year", "2027"),
+        ("last week Friday", "2026-10-09"),
+        ("2026 week 42", "2026-10-12..2026-10-18"),
+        ("W42-2026", "2026-10-12..2026-10-18"),
+        ("week no. 42", "2026-10-12..2026-10-18"),
+        ("weeks 42-43 2026", "2026-10-12..2026-10-25"),
         ("last March", "2026-03"),
         ("this March", "2026-03"),
         ("next March", "2027-03"),
