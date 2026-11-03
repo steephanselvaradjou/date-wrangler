@@ -7,6 +7,18 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## Unreleased
+
+### Documentation
+- The README listed `AY 2015-16` among the phrases left unread; since 2.4.0 it is the
+  assessment year, and is read. It now shows what 2.4.0 and 2.4.1 read: the assessment
+  year, periods of a fiscal year named from this one, a year written once after months,
+  spans side by side, runs and lists of days, labels run together with their year, and
+  the open-ended and counted forms. `jan-24`, `jan/24` and `Jan-Mar 24` join the
+  "`jan 24` — day or year?" table.
+- `tests/test_formats.py` now holds every example the README shows; thirteen were held by
+  no test.
+
 ## 2.4.1 — 2026-11-03
 
 A year written once at the end of months, spans compared side by side, and a period of
