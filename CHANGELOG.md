@@ -7,6 +7,52 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## 2.4.1 — 2026-11-03
+
+A year written once at the end of months, spans compared side by side, and a period of
+the fiscal year named from this one -- each read as written, where 2.4.0 lost the year or
+read the calendar. And parsing is faster: 8 to 23 per cent, with import about ten times
+quicker. The API is unchanged. **Changes answers.**
+
+### Faster
+- `parse()` is 8 to 23 per cent faster than in 2.4.0 on every kind of text, with the same
+  answers: at each word only the rules that can open with its first two characters are
+  tried, where an alternation of all 64 was tried at every word.
+- `import date_wrangler` takes about 0.1 second instead of 0.7 to 1.2: the scanning
+  patterns are compiled when first needed, and the case-insensitive one only for text
+  that is not ASCII. The first parse pays about 0.2 second for them.
+
+### Fixed
+- `Jan-Mar 24` ran from January to 24 March of this year. Two digits after the last month
+  of a span or list of months are its year, as `Jan-Mar 2024` and `Jan-Mar'24` are:
+  `Jan to Mar 24`, `Jan, Feb and Mar 24` and `Q1 to Mar 24` are of 2024 too. Left as a
+  day on purpose: `Mar 24` on its own (as `month_number` says), beside a partner with a
+  day (`Jan 15 - Mar 24`), with the month first (`Mar 24 to June`), and the month's last
+  day (`Jan-Mar 31`), which ends the span where the month does.
+- `Jan-Mar 2024 vs Jan-Mar 2025`, `Q1-Q3 2024 vs Q1-Q3 2025` and `Jan-Mar 2024 and
+  Apr-Jun 2025` gave the first span's start the other side's year, and the span fell
+  apart into two dates; wrong since 2.1.0 at least. A span that states a year keeps it.
+- After `compare`, a dash or `through` inside a span was taken for the comparison:
+  `compare Jan-Mar 2024 with Jan-Mar 2025` was four dates. Only `to` and `and` can carry
+  a comparison, and only where no plainer word does: in `compare Jan to Mar 2024 with Apr
+  to Jun 2024` each `to` is a span; `compare 2023 to 2024` still compares.
+- `Mar/24` was nothing, where `Mar-24`, `Mar/2024` and `Q3/24` were read; it is March 2024.
+- `tests/test_span_years.py`: 437 cases; 145 failed in 2.4.0.
+- A period of the fiscal year named from this one was read on the calendar, with the
+  fiscal year a second, unrelated date: `Q1 last FY` was January to March 2026, and `Q4
+  of this fiscal year` and `the last quarter of this fiscal year` October to December
+  2026. `June of this fiscal year`, `June last FY` -- and on the calendar `June previous
+  year` -- lost June altogether. Each is now that period of that year: with an April
+  year and today in FY27, `Q1 last FY` is April to June 2025, `Q4 of this fiscal year`
+  January to March 2027. `the previous`, `the following` and `prior` work as `last` and
+  `next` do, and `the fiscal year` alone is the one in progress.
+- `the last month of the fiscal year` was last month, `the end of the fiscal year`
+  nothing, and `the last day of the fiscal year` yesterday; a part of `the fiscal year`,
+  `the financial year` or `the FY` is taken from the fiscal year in progress. `same
+  quarter last FY` was all of FY26; it is today's fiscal quarter a year back, and `same
+  half last FY` the fiscal half, where `same half last year` stays the calendar one.
+- `tests/test_fiscal_relative.py`: 444 cases; 382 failed in 2.4.0.
+
 ## 2.4.0 — 2026-10-28
 
 Open-ended periods and bounds, a day and its year, labels run together with their year,

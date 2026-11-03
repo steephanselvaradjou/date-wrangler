@@ -156,6 +156,13 @@ PHRASES = [
     "15-20 Mar-24", "15-20 June FY25", "2024 March 15th-20th", "15 of March-20 of April 2024",
     "15 Mar. - 20 Apr. 2024", "15, 16 and 20 March-2024", "15 Mar, 24 - 20 Apr, 24",
     "Mar.-Apr. 2024",
+    # a year written once at the end of months, and spans side by side
+    "Jan-Mar 24", "Jan, Feb and Mar 24", "Mar/24", "Jan-Mar 2024 vs Jan-Mar 2025",
+    "compare Q1-Q3 2024 with Q1-Q3 2025", "Jan 15 - Mar 24",
+    # a period of the fiscal year named from this one
+    "Q1 last FY", "Q4 of this fiscal year", "June of this fiscal year", "June previous year",
+    "the last month of the fiscal year", "the end of the fiscal year", "same quarter last FY",
+    "same half last FY",
     # the assessment year: the fiscal year after the one it assesses
     "A.Y. 2025-26", "AY26", "Q1 AY 2025-26", "income for FY 2024-25 (AY 2025-26)",
     # "the" and what goes before it

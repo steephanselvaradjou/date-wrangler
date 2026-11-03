@@ -11,15 +11,17 @@ resolved.
 from __future__ import annotations
 
 import re
+from calendar import monthrange
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, tzinfo
+from functools import cache, partial
 from typing import Any
 
 from .config import DEFAULT_CONFIG, WranglerConfig
 from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
-from .rules import _DAY_WORDS, RULES, Rule
+from .rules import _DAY_WORDS, RULES, Rule, _pivot_year
 from .spec import Kind, Part, Spec
 from .tokens import Reader
 from .types import Anchor, DateMatch, DateRange, Grain, Mod, grain_rank
@@ -178,29 +180,240 @@ def _guarded(rule: Rule) -> str:
 
 #: The rules read by a regular expression. The rest are read from tokens (tokens.py).
 _PATTERN_RULES = [rule for rule in RULES if rule.pattern is not None]
-_SCAN_PATTERN = "|".join(f"(?P<{rule.name}>{_guarded(rule)})" for rule in _PATTERN_RULES)
+
+
+@cache
+def _scan_pattern() -> str:
+    """Every rule's pattern, guarded, as one alternation. Built on first use, with the
+    scanner: working out the guards reads every pattern through the regex parser."""
+    return "|".join(f"(?P<{rule.name}>{_guarded(rule)})" for rule in _PATTERN_RULES)
+
+
 #: Where each rule stands in RULES: of two dates starting at the same place, the earlier
 #: rule's wins, whichever of the two readers found it.
 _ORDER: dict[str, int] = {rule.name: k for k, rule in enumerate(RULES)}
-#: Every rule opens with \b, so it is checked once, ahead of the alternation, instead of
-#: once per rule at every position. Most positions are inside a word and fail it, and they
-#: now fail after one test rather than forty-eight -- about a third of scanning time, with
-#: nothing able to match differently, since each branch still begins with its own \b. A
-#: test holds every rule to that opening, because one without it would quietly lose matches.
-_SCANNER = re.compile(rf"\b(?:{_SCAN_PATTERN})", re.IGNORECASE)
-#: The same rules, case-sensitive, for the lowered-ASCII fast path in :func:`_scan`. Every
-#: rule pattern is written in lower case, so the two accept exactly the same fragments.
-_SCANNER_CS = re.compile(rf"\b(?:{_SCAN_PATTERN})")
-#: One more branch, last, for text that names a month: where a date read from tokens opens
-#: -- "March", "15 March", "15mar" -- and no rule matches. Without it the scanner, finding
-#: nothing at "15 March 2024", works on through "March" and on to "2024", a year by itself,
-#: which the token reader's date then swallows: searched for, found and thrown away. With
-#: it the scanner stops there, and starts again after the date. Being last, it matches
-#: only where no rule does, so it changes where scanning stops, never what it finds; a
-#: test holds _scan to the plain scanner over every phrase the tests hold.
+#: One more branch, last: where a date read from tokens opens -- "March", "15 March",
+#: "15mar" -- and no rule matches. Without it the scanner, finding nothing at "15 March
+#: 2024", works on through "March" and on to "2024", a year by itself, which the token
+#: reader's date then swallows: searched for, found and thrown away. With it the scanner
+#: stops there, and starts again after the date. Being last, it matches only where no rule
+#: does, so it changes where scanning stops, never what it finds; a test holds _scan to the
+#: plain scanner over every phrase the tests hold. Only for text that names a month:
+#: elsewhere it never matches, and trying it at every word cost text dense with dates two
+#: per cent.
 _HOP = rf"(?P<_hop>(?=[a-z\d])(?:\d{{1,4}}(?:st|nd|rd|th)?[ \-/.]?)?{alt(MONTH_NAMES)}(?![a-z]))"
-_HOP_SCANNER = re.compile(rf"\b(?:{_SCAN_PATTERN}|{_HOP})", re.IGNORECASE)
-_HOP_SCANNER_CS = re.compile(rf"\b(?:{_SCAN_PATTERN}|{_HOP})")
+#: The scanners compiled so far, by (case-sensitive, with the hop branch).
+_SCANNERS: dict[tuple[bool, bool], re.Pattern[str]] = {}
+
+
+def _scanner(*, cased: bool, hop: bool) -> re.Pattern[str]:
+    """The rules as one regular expression, compiled the first time it is asked for.
+
+    Every rule opens with \\b, so it is checked once, ahead of the alternation, instead of
+    once per rule at every position. Most positions are inside a word and fail it, and they
+    fail after one test rather than forty-eight -- about a third of scanning time, with
+    nothing able to match differently, since each branch still begins with its own \\b. A
+    test holds every rule to that opening, because one without it would quietly lose
+    matches.
+
+    ``cased`` is the case-sensitive one, for the lowered-ASCII fast path in :func:`_scan`:
+    every rule pattern is written in lower case, so the two accept exactly the same
+    fragments. The other is only for text that is not ASCII. Each, with the hop branch or
+    without it, takes a sixth of a second to compile, and all four were compiled on import,
+    which was nearly all of import's time: most programs need two, and only once they are
+    asked to read something. REGRESSION: importing the package took 1.3 seconds.
+    """
+    found = _SCANNERS.get((cased, hop))
+    if found is None:
+        body = f"{_scan_pattern()}|{_HOP}" if hop else _scan_pattern()
+        found = re.compile(rf"\b(?:{body})", 0 if cased else re.IGNORECASE)
+        _SCANNERS[(cased, hop)] = found
+    return found
+
+
+#: Every place a word starts or ends: each rule opens with \b, so it can match only there.
+_BOUNDARY = re.compile(r"\b")
+_ASCII = [chr(c) for c in range(128)]
+#: What a class like \d or \s matches among ASCII characters, asked of the engine itself.
+_CATEGORY_CHARS = {
+    category: frozenset(c for c in _ASCII if re.fullmatch(probe, c))
+    for category, probe in (
+        (_sre.CATEGORY_DIGIT, r"\d"), (_sre.CATEGORY_NOT_DIGIT, r"\D"),
+        (_sre.CATEGORY_SPACE, r"\s"), (_sre.CATEGORY_NOT_SPACE, r"\S"),
+        (_sre.CATEGORY_WORD, r"\w"), (_sre.CATEGORY_NOT_WORD, r"\W"),
+    )
+}  # fmt: skip
+#: How far a rule's openings are worked out: two characters.
+_OPEN_DEPTH = 2
+
+
+class _TooWide(Exception):
+    """A pattern whose openings cannot be told: its rule is tried at every word."""
+
+
+def _openings(pattern: str) -> frozenset[str] | None:
+    """Every way a match of ``pattern`` can begin, to two characters, among ASCII -- a
+    shorter one where it may end sooner -- or None where that cannot be told.
+
+    A superset of what the rule accepts: a lookaround or \\b takes up nothing and is passed
+    over, so the rule may be tried where it then refuses, but never left out where it
+    would match. A test holds the rules tried this way to the scanner.
+    """
+    try:
+        found = _follow(_sre.parse(pattern), {""})
+    except _TooWide:
+        return None
+    return None if "" in found else frozenset(found)
+
+
+def _chars(op: Any, av: Any) -> set[str] | None:
+    """The characters one item matches, both cases, or None if it is not one character."""
+    if op is _sre.LITERAL:
+        return {chr(av), chr(av).lower()} if av < 128 else set()
+    if op is _sre.NOT_LITERAL:
+        return {c for c in _ASCII if c != chr(av)}
+    if op is _sre.ANY:
+        return {c for c in _ASCII if c != "\n"}
+    if op is not _sre.IN:
+        return None
+    found: set[str] = set()
+    negate = False
+    for o, a in av:
+        if o is _sre.NEGATE:
+            negate = True
+        elif o is _sre.LITERAL:
+            found.update((chr(a), chr(a).lower()) if a < 128 else ())
+        elif o is _sre.RANGE:
+            found.update(chr(c) for c in range(a[0], min(a[1], 127) + 1))
+        elif o is _sre.CATEGORY and a in _CATEGORY_CHARS:
+            found |= _CATEGORY_CHARS[a]
+        else:
+            raise _TooWide(o)
+    found |= {c.lower() for c in found}
+    return set(_ASCII) - found if negate else found
+
+
+def _follow(items: Any, prefixes: set[str]) -> set[str]:
+    """``prefixes`` carried on through ``items``, each until it is two characters long."""
+    for op, av in items:
+        short = {p for p in prefixes if len(p) < _OPEN_DEPTH}
+        if not short:
+            break
+        prefixes = (prefixes - short) | _step(op, av, short)
+    return prefixes
+
+
+def _step(op: Any, av: Any, prefixes: set[str]) -> set[str]:
+    chars = _chars(op, av)
+    if chars is not None:
+        return {p + c for p in prefixes for c in chars}
+    if op is _sre.SUBPATTERN:
+        return _follow(av[-1], prefixes)
+    if op is _sre.BRANCH:
+        out: set[str] = set()
+        for branch in av[1]:
+            out |= _follow(branch, prefixes)
+        return out
+    if op in (_sre.MAX_REPEAT, _sre.MIN_REPEAT):
+        low, high, item = av
+        out = set(prefixes) if low == 0 else set()
+        current = prefixes
+        for n in range(1, _OPEN_DEPTH + 1):
+            current = _follow(item, current)
+            # Repeated enough, or two characters already: either way, openings.
+            if n >= low or all(len(p) >= _OPEN_DEPTH for p in current):
+                out |= current
+            if n >= high:
+                break
+        return out
+    if op in (_sre.AT, _sre.ASSERT, _sre.ASSERT_NOT):
+        return prefixes
+    raise _TooWide(op)
+
+
+#: The rules to try at one place, each compiled, with its name.
+_Tries = tuple[tuple[re.Pattern[str], str], ...]
+
+
+@cache
+def _dispatch() -> tuple[dict[str, _Tries], dict[str, _Tries], _Tries]:
+    """Each rule compiled on its own, and which to try where a word opens with which two
+    characters -- then with which one, for a rule that may end after it, and the rules
+    whose openings cannot be told, which are tried everywhere. Each list in RULES order,
+    so of two rules matching at one place the earlier wins, as in the alternation."""
+    rules = [(rule.name, rule.pattern) for rule in _PATTERN_RULES if rule.pattern is not None]
+    compiled = [re.compile(pattern) for _, pattern in rules]
+    by_two: dict[str, set[int]] = {}
+    by_one: dict[str, set[int]] = {}
+    anywhere: set[int] = set()
+    for k, (_, pattern) in enumerate(rules):
+        found = _openings(pattern)
+        if found is None:
+            anywhere.add(k)
+            continue
+        for opening in found:
+            (by_two if len(opening) == 2 else by_one).setdefault(opening, set()).add(k)
+
+    def tries(ks: set[int]) -> _Tries:
+        return tuple((compiled[k], rules[k][0]) for k in sorted(ks))
+
+    one = {c: tries(ks | anywhere) for c, ks in by_one.items()}
+    two = {
+        key: tries(ks | by_one.get(key[0], set()) | anywhere) for key, ks in by_two.items()
+    }
+    return two, one, tries(anywhere)
+
+
+def _next_rule(target: str, pos: int, stop: int) -> tuple[int, int, str] | None:
+    """The first rule match at or after ``pos`` in lowered ASCII ``target``: its start, end
+    and rule. Past ``stop`` -- where the token reader's next date opens -- a hop there
+    instead, for that date comes first.
+
+    Only the rules that can open with a word's first two characters are tried there.
+    The one alternation over every rule tried each at every word, and most words open
+    none: about forty rules let in at "the", "to" or "sales" by their first letter, there
+    to fail. REGRESSION: scanning was over a third of parse().
+    """
+    two, one, anywhere = _dispatch()
+    for boundary in _BOUNDARY.finditer(target, pos):
+        at = boundary.start()
+        if at > stop:
+            return stop, stop, "_hop"
+        key = target[at : at + 2]
+        for pattern, name in two.get(key) or one.get(key[:1], anywhere):
+            m = pattern.match(target, at)
+            if m is not None:
+                return at, m.end(), name
+    return (stop, stop, "_hop") if stop <= len(target) else None
+
+
+def _next_in(
+    scanner: re.Pattern[str], target: str, pos: int, stop: int
+) -> tuple[int, int, str] | None:
+    """The same from the one alternation, for text that is not ASCII. Its own hop branch
+    marks where a date read from tokens opens."""
+    m = scanner.search(target, pos)
+    return None if m is None else (m.start(), m.end(), m.lastgroup or "")
+
+
+#: The scanners by name, as the tests hold them to the rules: compiled when asked for.
+_SCANNER_NAMES = {
+    "_SCANNER": (False, False),
+    "_SCANNER_CS": (True, False),
+    "_HOP_SCANNER": (False, True),
+    "_HOP_SCANNER_CS": (True, True),
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _SCANNER_NAMES:
+        cased, hop = _SCANNER_NAMES[name]
+        return _scanner(cased=cased, hop=hop)
+    if name == "_SCAN_PATTERN":
+        return _scan_pattern()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 _RULES_BY_NAME: dict[str, Rule] = {rule.name: rule for rule in RULES}
 
 
@@ -668,41 +881,39 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
     the next date first takes it, and of two starting at the same place the one whose rule
     comes first in RULES -- exactly what one alternation over every rule does.
 
-    Scanning is where most of the time goes, and IGNORECASE over an alternation this size
-    costs roughly half as much again as a plain match -- so ASCII text is lowered once and
-    matched case-sensitively instead. Offsets survive because lowering ASCII cannot change
-    a string's length; anything else falls back to the case-insensitive pattern, where that
+    ASCII text -- nearly all of it -- is lowered once, and at each word only the rules that
+    can open with its first two characters are tried, each compiled on its own: see
+    :func:`_next_rule`. Offsets survive because lowering ASCII cannot change a string's
+    length; anything else falls back to the one case-insensitive alternation, where that
     guarantee does not hold. Either way the *fragment* is sliced from the original, so the
     rules still see the writer's capitals.
 
-    Where the text names a month, the scanner has one more branch, ``_hop``: it stops where
-    a date read from tokens opens and no rule matches, rather than working on through it.
-    A hop at or after the start of the reader's next date means no rule matches before the
-    hop, so that date comes first: it is taken, and scanning resumes after it. A hop with
-    no reader's date at or before it means only that no rule matches there, and scanning
-    goes on from the next character.
+    The rules stop where a date read from tokens opens and no rule matches there, rather
+    than working on through it: a hop. A hop at or after the start of the reader's next
+    date means no rule matches before it, so that date comes first: it is taken, and
+    scanning resumes after it. A hop with no reader's date at or before it -- the
+    alternation's own hop branch, at a month name the reader does not take -- means only
+    that no rule matches there, and scanning goes on from the next character.
     """
     reader = Reader(text, cfg)
     if text.isascii():
-        target = text.lower()
-        scanner = _HOP_SCANNER_CS if reader.names_a_month else _SCANNER_CS
+        target, find = text.lower(), _next_rule
     else:
-        target, scanner = text, _HOP_SCANNER if reader.names_a_month else _SCANNER
+        target = text
+        find = partial(_next_in, _scanner(cased=False, hop=reader.names_a_month))
+    beyond = len(target) + 1  # no date of the reader's to stop at
     out: list[_Raw] = []
     pos = 0
-    m = scanner.search(target, pos)
     d = reader.next_date(pos)
+    m = find(target, pos, beyond if d is None else d[2])
     while m is not None or d is not None:
-        if m is not None and m.lastgroup == "_hop" and (d is None or d[2] > m.start()):
-            m = scanner.search(target, m.start() + 1)
+        if m is not None and m[2] == "_hop" and (d is None or d[2] > m[0]):
+            m = find(target, m[0] + 1, beyond if d is None else d[2])
             continue
         if d is not None and (
             m is None
-            or d[2] < m.start()
-            or (
-                d[2] == m.start()
-                and (m.lastgroup == "_hop" or _ORDER[d[0]] < _ORDER[m.lastgroup or ""])
-            )
+            or d[2] < m[0]
+            or (d[2] == m[0] and (m[2] == "_hop" or _ORDER[d[0]] < _ORDER[m[2]]))
         ):
             name, spec, lo, hi, reason = d
             if isinstance(spec, list):
@@ -714,12 +925,12 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
             pos = hi
         else:
             assert m is not None
-            pos = m.end()
-            _read_match(m, text, cfg, out, diags)
-        if m is not None and m.start() < pos:
-            m = scanner.search(target, pos)
+            pos = m[1]
+            _read_match(m[2], m[0], m[1], text, cfg, out, diags)
         if d is not None and d[2] < pos:
             d = reader.next_date(pos)
+        if m is not None and m[0] < pos:
+            m = find(target, pos, beyond if d is None else d[2])
     return out
 
 
@@ -758,34 +969,37 @@ def _reading(rule: Rule, fragment: str, cfg: WranglerConfig) -> _Reading:
 
 
 def _read_match(
-    m: re.Match[str],
+    name: str,
+    start: int,
+    end: int,
     text: str,
     cfg: WranglerConfig,
     out: list[_Raw],
     diags: list[Diagnostic] | None,
 ) -> None:
-    """Hand one regular-expression match to its rule, and keep what it reads."""
-    name = m.lastgroup
-    rule = _RULES_BY_NAME.get(name) if name is not None else None
-    if name is None or rule is None or rule.parse is None:
+    """Hand one rule's match, ``text[start:end]``, to the rule, and keep what it reads."""
+    rule = _RULES_BY_NAME.get(name)
+    if rule is None or rule.parse is None:
         return
-    fragment = text[m.start() : m.end()]
+    fragment = text[start:end]
     read, spec = _reading(rule, fragment, cfg)
     if not read:
         # The rule said why; that reason alone, not a second, vaguer one beside it.
         if diags is not None:
-            diags.append(Diagnostic(fragment, m.span(), name, spec))
+            diags.append(Diagnostic(fragment, (start, end), name, spec))
         return
     if spec is None:
         if diags is not None:
-            diags.append(Diagnostic(fragment, m.span(), name, "matched but could not be read"))
+            diags.append(
+                Diagnostic(fragment, (start, end), name, "matched but could not be read")
+            )
         return
     if isinstance(spec, list):
         # Several dates in one fragment -- "1st and 15th March" -- each with its own span,
         # so they link as a list like any other.
-        out.extend(_Raw(name, s, m.start() + lo, m.start() + hi) for s, lo, hi in spec)
+        out.extend(_Raw(name, s, start + lo, start + hi) for s, lo, hi in spec)
         return
-    out.append(_Raw(name, spec, m.start(), m.end()))
+    out.append(_Raw(name, spec, start, end))
 
 
 def _passes_strictness(
@@ -1053,8 +1267,10 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
             links.append("range")  # "2024-25" on a calendar basis: 2024 to 2025
         elif strong or weak:
             lead = _lead(text, a.start)
-            if _COMPARISON_LEAD.search(lead):
-                links.append("compare")
+            if _COMPARISON_LEAD.search(lead) and (weak or _BARE_TO.match(gap)):
+                # Only "to" and "and" can carry a comparison: a dash or "through" after
+                # "compare" is still a span. Settled with the rest of the run below.
+                links.append("to?" if strong else "and?")
             elif weak and not _BETWEEN_LEAD.search(lead[-24:]):
                 # "and" lists periods; only "between ... and" makes a span. "Q1 and Q3" is
                 # two quarters -- one range for both would hold Q2, which nobody named.
@@ -1072,7 +1288,36 @@ def _link_kinds(raws: list[_Raw], text: str) -> list[str | None]:
             links.append("compare")
         else:
             links.append(None)
-    return links
+    return _settle_led_links(links)
+
+
+#: A bare "to" between two periods, which after "compare" may be the comparison itself.
+_BARE_TO = re.compile(r"^\s*to\s*$", re.IGNORECASE)
+
+
+def _settle_led_links(links: list[str | None]) -> list[str | None]:
+    """After "compare", which "to" or "and" compares, run by run.
+
+    Whichever word says it most plainly does: "with", "vs" or "against" over "and", and
+    "and" over "to"; the weaker words are then the spans or lists they are elsewhere. So
+    "compare 2023 to 2024" compares, and in "compare Jan to Mar 2024 with Apr to Jun 2024"
+    each "to" is a span. REGRESSION: every "to", dash and "through" after "compare"
+    compared, and "compare Jan-Mar 2024 with Jan-Mar 2025" fell apart into four dates.
+    """
+    if "to?" not in links and "and?" not in links:
+        return links
+    out = list(links)
+    for lo, hi in _runs(links, lambda k: k is not None):
+        run = links[lo:hi]
+        if "compare" in run:
+            settled = {"to?": "range", "and?": "and"}
+        elif "and?" in run:
+            settled = {"to?": "range", "and?": "compare"}
+        else:
+            settled = {"to?": "compare"}
+        for k in range(lo, hi):
+            out[k] = settled.get(out[k] or "", out[k])
+    return out
 
 
 def _lead(text: str, start: int) -> str:
@@ -1111,6 +1356,53 @@ def _demote_lists(links: list[str | None]) -> list[str | None]:
     return out
 
 
+#: A month and two bare digits: "Mar 24" -- the 24th, or March 2024.
+_MONTH_TWO_DIGITS = re.compile(rf"(?:{alt(MONTH_NAMES)})\.?\s+(\d{{2}})", re.IGNORECASE)
+#: Periods written with no day of their own: a month, a quarter, a half, a year.
+_DAYLESS = frozenset({Kind.ABS_MONTH, Kind.ABS_QUARTER, Kind.ABS_HALF, Kind.ABS_YEAR})
+
+
+def _month_years_at_the_end(
+    raws: list[_Raw], links: list[str | None], text: str, cfg: WranglerConfig
+) -> None:
+    """Two digits after the last month of a span or list of months are its year: "Jan-Mar
+    24", "Jan to Mar 24", "Jan, Feb and Mar 24" are of 2024, as "Jan-Mar 2024" is.
+
+    On its own "Mar 24" stays what month_number says, the 24th by default. Beside a period
+    with no day, a span from a whole month to the 24th of another is nobody's, and a year
+    written once at the end is how a span of months is written. REGRESSION: "Jan-Mar 24"
+    ran from January to 24 March of this year.
+
+    Not where the partner has a day -- "Jan 15 - Mar 24", "15 Jan - Mar 24" -- nor a month
+    written first, "Mar 24 to June", nor the month's last day: "Jan-Mar 31" ends where March
+    does, and 2031 was never meant.
+    """
+    for i, link in enumerate(links):
+        if link is None or raws[i + 1].rule != "month_day_year":
+            continue
+        raw, before = raws[i + 1], raws[i]
+        last = i + 1 == len(links) or links[i + 1] in (None, "compare")
+        if link is None or (link != "range" and not last):
+            continue  # inside a list: its year is written once, at the end
+        spec = raw.spec
+        if (
+            raw.rule != "month_day_year" or spec.kind is not Kind.ABS_DAY
+            or spec.year is not None or spec.year_offset is not None or spec.month is None
+            or before.spec.kind not in _DAYLESS or before.spec.day_span is not None
+            or before.spec.day_of_period is not None
+        ):
+            continue
+        m = _MONTH_TWO_DIGITS.fullmatch(text[raw.start : raw.end])
+        if m is None or _ends_the_month(spec.month, int(m.group(1))):
+            continue
+        raw.spec = spec.with_(kind=Kind.ABS_MONTH, day=None, year=_pivot_year(m.group(1), cfg))
+
+
+def _ends_the_month(month: int, day: int) -> bool:
+    """Whether ``day`` is the month's last, in some year: the 28th or 29th of February."""
+    return day >= (28 if month == 2 else monthrange(2001, month)[1])
+
+
 def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
     """Share one stated year across a list, or across a comparison.
 
@@ -1124,13 +1416,33 @@ def _propagate_year(raws: list[_Raw], links: list[str | None]) -> None:
     Each side of a comparison shares its own year first, and only a side with none left
     takes one from across it. REGRESSION: "Q1 and Q3 2024 vs 2023" gave Q1 the 2023 on the
     far side of the "vs", when 2024 was written beside it.
+
+    A span that states a year keeps it, for its start as well as its end: REGRESSION --
+    in "Jan-Mar 2024 vs Jan-Mar 2025" and "Q1-Q3 2024 vs Q1-Q3 2025" the first span's start
+    took the 2025, and the span fell apart into two dates.
     """
+    if "and" not in links and "list" not in links and "compare" not in links:
+        return
+    own = _spans_with_a_year(raws, links)
     for lo, hi in _runs(links, lambda k: k is not None and k != "compare"):
         if any(k in ("and", "list") for k in links[lo:hi]):
-            _share_year(raws[lo : hi + 1])
+            _share_year(raws[lo : hi + 1], own)
     for lo, hi in _runs(links, lambda k: k is not None):
         if "compare" in links[lo:hi]:
-            _share_year(raws[lo : hi + 1])
+            _share_year(raws[lo : hi + 1], own)
+
+
+def _spans_with_a_year(raws: list[_Raw], links: list[str | None]) -> set[int]:
+    """The matches of every span that states a year -- "Jan-Mar 2024" -- by identity. The
+    range step gives the start that year; a list or comparison around it must not."""
+    own: set[int] = set()
+    if "range" not in links:
+        return own
+    for lo, hi in _runs(links, lambda k: k == "range"):
+        span = raws[lo : hi + 1]
+        if any(r.spec.year is not None for r in span):
+            own.update(id(r) for r in span)
+    return own
 
 
 def _runs(
@@ -1150,14 +1462,15 @@ def _runs(
         i = j
 
 
-def _share_year(members: list[_Raw]) -> None:
-    """Give the last year stated among ``members``, and its basis, to those with none."""
+def _share_year(members: list[_Raw], own: set[int]) -> None:
+    """Give the last year stated among ``members``, and its basis, to those with none --
+    but not to a span's start whose span states a year of its own (``own``)."""
     stated = [r.spec for r in members if r.spec.year is not None]
     if not stated:
         return
     year, basis = stated[-1].year, stated[-1].basis
     for r in members:
-        if r.spec.year is None and not r.spec.is_relative:
+        if r.spec.year is None and not r.spec.is_relative and id(r) not in own:
             r.spec = r.spec.with_(year=year)
             if r.spec.basis is None and basis is not None:
                 r.spec = r.spec.with_(basis=basis)
@@ -1360,6 +1673,7 @@ def parse(
     raws = _short_years_back(raws, body)
 
     links = _demote_lists(_link_kinds(raws, body))
+    _month_years_at_the_end(raws, links, body, config)
     _propagate_year(raws, links)
     moved_back = _periods_moved_back(raws, links, body)
     anchors = _anchors(raws, links, body, day, config, moved_back)

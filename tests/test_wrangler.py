@@ -729,6 +729,38 @@ def test_the_factored_scanner_finds_exactly_what_the_rules_do():
             assert [(m.span(), m.lastgroup) for m in _SCANNER_CS.finditer(low)] == want, text
 
 
+def test_trying_each_rule_where_it_can_open_finds_what_the_scanner_does():
+    """The rules tried one by one, only where a word opens the way each can, find what the
+    one alternation finds, rule for rule and place for place. A rule's openings are worked
+    out from its pattern, so one they missed would be a date quietly lost; this holds them
+    over every phrase the catalogue, the snapshot, the join sweep and the requests hold."""
+    import sys
+    from pathlib import Path
+
+    from date_wrangler.normalize import normalize
+    from date_wrangler.wrangler import _SCANNER_CS, _next_rule
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    import test_formats
+    import test_join_sweep
+    import test_snapshot
+
+    texts = [p for _, _, _, cases in test_formats.SECTIONS for p, _ in cases]
+    texts += test_formats._bank_lines() + test_snapshot.PHRASES
+    texts += [c[0] for c in test_join_sweep._cases()]
+    texts += ["the 2h drive", "pre-2012", ">= 2024-03-15", "w.e.f. 1 April 2024", "-", "1"]
+    for text in texts:
+        low = normalize(text).text.lower()
+        if not low.isascii():
+            continue
+        want = [(m.start(), m.end(), m.lastgroup) for m in _SCANNER_CS.finditer(low)]
+        got, pos = [], 0
+        while (hit := _next_rule(low, pos, len(low) + 1)) is not None:
+            got.append(hit)
+            pos = hit[1]
+        assert got == want, text
+
+
 def test_stopping_at_a_month_name_date_changes_no_match():
     """_scan's last branch, _hop, only lets the scanner stop at a date the token reader
     takes instead of working through it. Held to the plain scanner taking turns with the
@@ -776,7 +808,7 @@ def test_stopping_at_a_month_name_date_changes_no_match():
             else:
                 assert m is not None
                 pos = m.end()
-                _read_match(m, text, cfg, out, diags)
+                _read_match(m.lastgroup or "", m.start(), m.end(), text, cfg, out, diags)
             if m is not None and m.start() < pos:
                 m = scanner.search(target, pos)
             if d is not None and d[2] < pos:
