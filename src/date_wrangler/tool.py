@@ -109,8 +109,10 @@ INPUT_SCHEMA: dict[str, Any] = {
             "type": "string",
             "enum": [b.value for b in (Basis.CALENDAR, Basis.FISCAL)],
             "description": "How a year or period that does not say fiscal or calendar is "
-                           "read: '2024', 'Q1 2024', 'last quarter', 'YTD'. Default "
-                           "calendar. 'FY24' and 'CY24' always read as written.",
+                           "read: '2024', 'Q1 2024', 'last quarter', 'YTD', 'year end'. "
+                           "Default calendar. 'FY24', 'CY24', 'fiscal week 3' and 'fiscal "
+                           "year end' always read as written. Week numbers ('week 3', "
+                           "'W12') are ISO weeks on either basis.",
         },
         "date_order": {
             "type": "string",
@@ -135,7 +137,9 @@ INPUT_SCHEMA: dict[str, Any] = {
             "enum": list(_WEEKDAYS),
             "description": "The day a week starts, for 'last week', 'this week' and 'this "
                            "Friday'. Default monday; sunday in the US, saturday in parts of "
-                           "the Middle East. Week numbers ('W12') are ISO weeks either way.",
+                           "the Middle East. Week numbers ('W12') are ISO weeks either way, "
+                           "and a fiscal week ('fiscal week 3') or 'the 3rd week of January' "
+                           "is seven days counted from the period's first day.",
         },
         "anchor": {
             "type": "string",
@@ -352,6 +356,11 @@ class _Setting:
     #: not read again for it. None reaches every match.
     reach: str | None
     note: str
+    #: Another setting whose values change what this one's other values read, tried
+    #: together with them when the caller left that one out too -- for finding a
+    #: dependence only, never for the readings shown -- and what to add to the note when
+    #: only that finds it.
+    together: tuple[str, tuple[Any, ...], str] | None = None
 
 
 _DEFAULT_FISCAL_START = DEFAULT_CONFIG.fiscal.start_month
@@ -387,10 +396,18 @@ _SETTINGS = (
         "A fiscal year is taken to be named by the calendar year it ends in. Pass "
         "fiscal_year_label 'start_year' if it is named by the year it starts in.",
     ),
+    # Tried with the fiscal year starting in every month when that is left out too: "last
+    # quarter" reads the same on a fiscal year starting in April as on the calendar, and
+    # three months later on one starting in February.
     _Setting(
         "year_basis", (Basis.FISCAL.value,), True, None,
         "A year or period that does not say fiscal or calendar is read on the calendar "
         "year. Pass year_basis 'fiscal' if it means the fiscal year.",
+        together=(
+            "fiscal_start_month", tuple(range(1, 13)),
+            " Read on the fiscal year, it would also depend on the month that year starts "
+            "in: pass fiscal_start_month as well.",
+        ),
     ),
     _Setting(
         "date_order", (DateOrder.MDY.value, DateOrder.YMD.value), True, "numeric",
@@ -547,30 +564,30 @@ def resolve_dates(
                     f"{clock}. Pass today as the user's date to be sure.",
             "matches": [_where(m) for m, moves in zip(found, relative, strict=True) if moves],
         })
+    read = _Reads(text, day, strictness)
     for setting in _SETTINGS:
         if setting.name in given:
             continue
         reached = _reach(setting.reach, found, relative)
         if not reached:
             continue
-        changed = _changed_by(setting, text, day, chosen, strictness, found, reached)
+        changed, only_together = _changed_by(setting, read, chosen, found, reached, set(given))
         if changed:
+            together_note = setting.together[2] if setting.together and only_together else ""
             assumptions.append({
                 "setting": setting.name,
                 "assumed": chosen[setting.name],
-                "note": setting.note,
+                "note": setting.note + together_note,
                 "matches": changed,
             })
     if "weekend" not in given or "holidays" not in given:
-        business = _business(text, day, chosen, strictness, found)
+        business = _business(read, chosen, found)
         if business and "weekend" not in given:
             assumptions.append({
                 "setting": "weekend",
                 "assumed": chosen["weekend"],
                 "note": _WEEKEND_NOTE,
-                "matches": _otherwise_for(
-                    business, "weekend", [_OTHER_WEEKEND], text, day, chosen, strictness
-                ),
+                "matches": _otherwise_for(business, "weekend", [_OTHER_WEEKEND], read, chosen),
             })
         if business and "holidays" not in given:
             assumptions.append({
@@ -593,6 +610,29 @@ def resolve_dates(
 
 def _readings(text: str, day: date, cfg: WranglerConfig) -> dict[tuple[int, int], DateRange]:
     return {m.span: m.range for m in parse(text, today=day, config=cfg)}
+
+
+class _Reads:
+    """The text read under each set of settings one call tries, once each.
+
+    Two questions can need the same reading: the start month is tried at every month on
+    its own, and year_basis tries each month again as its baseline. Kept for the one call
+    and dropped with it -- nothing is remembered between calls.
+    """
+
+    def __init__(self, text: str, day: date, strictness: str) -> None:
+        self._text, self._day, self._strictness = text, day, strictness
+        self._seen: dict[tuple[tuple[str, Any], ...], dict[tuple[int, int], DateRange]] = {}
+
+    def __call__(self, chosen: Mapping[str, Any]) -> dict[tuple[int, int], DateRange]:
+        key = tuple(
+            (name, tuple(value) if isinstance(value, list) else value)
+            for name, value in sorted(chosen.items())
+        )
+        if key not in self._seen:
+            cfg = _config(chosen, self._strictness)
+            self._seen[key] = _readings(self._text, self._day, cfg)
+        return self._seen[key]
 
 
 def _moved(m: DateMatch, other: Mapping[tuple[int, int], DateRange]) -> DateRange | None:
@@ -649,26 +689,32 @@ def _reach(reach: str | None, found: list[DateMatch], relative: list[bool]) -> l
 
 def _changed_by(
     setting: _Setting,
-    text: str,
-    day: date,
+    read: _Reads,
     chosen: Mapping[str, Any],
-    strictness: str,
     found: list[DateMatch],
     reached: list[DateMatch],
-) -> list[dict[str, Any]]:
-    """The matches whose days depend on ``setting``, each with its other readings.
+    given: set[str],
+) -> tuple[list[dict[str, Any]], bool]:
+    """The matches whose days depend on ``setting``, each with its other readings, and
+    whether any of them was found only by trying ``setting.together``.
 
     Each other reading changes that one setting and keeps the rest as they were: the
     fiscal reading of "Q1 2024" is on the fiscal year as configured, April by default.
+    Where the reading under that one change is the same -- "last quarter", whose fiscal
+    quarters on an April year are the calendar's -- the setting named in ``together`` is
+    tried with it too, if the caller left that out as well: on a February year "last
+    quarter" is three other months. Such a match is listed with no other reading, since
+    its reading depends on two settings, and the note says so.
 
     A setting whose readings are not shown stops as soon as every match it can reach is
     known to depend on it: "Q3 FY24" moves with the first other month tried, and nothing
-    the remaining ten could show would change what is reported.
+    the remaining ten could show would change what is reported. Trying ``together`` stops
+    the same way.
     """
     otherwise: dict[tuple[int, int], list[dict[str, Any]]] = {}
     pending = {m.span for m in reached}
     for value in setting.others:
-        other = _readings(text, day, _config({**chosen, setting.name: value}, strictness))
+        other = read({**chosen, setting.name: value})
         for m in found:
             o = _moved(m, other)
             if o is not None:
@@ -676,18 +722,38 @@ def _changed_by(
                 pending.discard(m.span)
         if not setting.show_otherwise and not pending:
             break
+    together: set[tuple[int, int]] = set()
+    if setting.together is not None and setting.together[0] not in given and pending:
+        name, values, _ = setting.together
+        for other_value in values:
+            if other_value == chosen[name]:
+                continue  # tried above
+            # Against this setting as chosen *at the same other value*, not against the
+            # answer: "FY24 Q1" moves with the start month alone, and that is the start
+            # month's to report, not this setting's. Read only once a difference shows.
+            for value in setting.others:
+                other = read({**chosen, setting.name: value, name: other_value})
+                moved = [m for m in found if m.span in pending and _moved(m, other) is not None]
+                base = read({**chosen, name: other_value}) if moved else {}
+                for m in moved:
+                    o, b = other[m.span], base.get(m.span)
+                    if b is not None and (o.start, o.end) != (b.start, b.end):
+                        together.add(m.span)
+                        pending.discard(m.span)
+            if not pending:
+                break
     out = []
     for m in found:
-        if m.span in otherwise:
+        if m.span in otherwise or m.span in together:
             entry = _where(m)
-            if setting.show_otherwise:
+            if setting.show_otherwise and m.span in otherwise:
                 entry["otherwise"] = otherwise[m.span]
             out.append(entry)
-    return out
+    return out, bool(together)
 
 
 def _business(
-    text: str, day: date, chosen: Mapping[str, Any], strictness: str, found: list[DateMatch]
+    read: _Reads, chosen: Mapping[str, Any], found: list[DateMatch]
 ) -> list[DateMatch]:
     """The matches counted in working days, found by changing the weekend to an odd one.
 
@@ -702,8 +768,7 @@ def _business(
     resting = chosen["weekend"][:1] or ["sunday", "wednesday"]
     hits: set[tuple[int, int]] = set()
     for only_working in resting:
-        odd = [d for d in _WEEKDAYS if d != only_working]
-        other = _readings(text, day, _config({**chosen, "weekend": odd}, strictness))
+        other = read({**chosen, "weekend": [d for d in _WEEKDAYS if d != only_working]})
         hits.update(m.span for m in found if m.span not in other or _moved(m, other))
     return [m for m in found if m.span in hits]
 
@@ -712,16 +777,11 @@ def _otherwise_for(
     matches: list[DateMatch],
     name: str,
     values: list[Any],
-    text: str,
-    day: date,
+    read: _Reads,
     chosen: Mapping[str, Any],
-    strictness: str,
 ) -> list[dict[str, Any]]:
     """``matches``, each with its reading under each of ``values`` that falls on other days."""
-    readings = [
-        (value, _readings(text, day, _config({**chosen, name: value}, strictness)))
-        for value in values
-    ]
+    readings = [(value, read({**chosen, name: value})) for value in values]
     out = []
     for m in matches:
         entry = _where(m)

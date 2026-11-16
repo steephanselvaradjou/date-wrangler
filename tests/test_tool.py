@@ -309,6 +309,11 @@ def test_today_left_out_follows_the_timezone():
         # give the same quarters: only a start in another month of the three moves these.
         "this fiscal quarter",
         "fiscal QTD",
+        # Written the short way round, and read as the long way is.
+        "fiscal week 3 FY25",
+        "month 3 of FY24",
+        "fiscal year end",
+        "FYE 2024",
     ],
 )
 def test_a_date_the_fiscal_calendar_reaches_reports_the_start_month(text):
@@ -341,6 +346,30 @@ def test_a_two_digit_year_reports_the_century_it_assumed():
     (m,) = answer("12/31/68", date_order="MDY", two_digit_pivot=50)["matches"]
     assert m["first_day"] == "1968-12-31"
     assert "two_digit_pivot" not in assumed(answer("12/31/1968", date_order="MDY"))
+
+
+@pytest.mark.parametrize("text", ["last quarter", "this quarter", "QTD"])
+def test_year_basis_is_tried_with_every_start_month_when_both_are_left_out(text):
+    """On an April year, fiscal quarters are the calendar's, so the fiscal reading under
+    the default start month is the same -- and on a February year it is not. With both
+    left out, the answer depends on both, and the tool says so."""
+    entry = assumed(answer(text))["year_basis"]
+    (match,) = entry["matches"]
+    assert "otherwise" not in match, "no single other reading: it takes two settings"
+    assert "fiscal_start_month" in entry["note"]
+    # Given the start month, year_basis is tried at it alone: no difference on April...
+    assert "year_basis" not in assumed(answer(text, fiscal_start_month=4))
+    # ...and on February the fiscal reading is there to give.
+    (match,) = assumed(answer(text, fiscal_start_month=2))["year_basis"]["matches"]
+    assert match["otherwise"][0]["value"] == "fiscal"
+
+
+def test_year_basis_is_not_blamed_for_what_the_start_month_moves():
+    """"FY24 Q1" says fiscal: it moves with the start month, which is reported, and not
+    with year_basis -- tried together, the two are compared at the same start month."""
+    found = assumed(answer("FY24 Q1"))
+    assert "fiscal_start_month" in found and "year_basis" not in found
+    assert "year_basis" not in assumed(answer("15 March 2024 and March 2024"))
 
 
 def test_a_week_start_is_tried_at_saturday_as_well_as_sunday():
@@ -401,6 +430,7 @@ _HARD = [
     "the last month of the fiscal year", "H1 2025 vs H1 2024", "w.e.f. 1 April 2024",
     "03–04–2024 and 03／04／2024", "12/31/68 vs Q1 '85", "the last day of FY2024",
     "this fiscal quarter and fiscal QTD", "this Friday and Monday through Friday",
+    "fiscal week 3 and month 3 of FY24", "FYE 2024 vs fiscal year end", "week 3 of jan",
 ]
 
 
