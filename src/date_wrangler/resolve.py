@@ -560,7 +560,9 @@ def _resolve_weekday(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     if spec.direction == 0:
         week_start = week_range(today, cfg.week_starts_on).start
         assert week_start is not None
-        return day_range(week_start + timedelta(days=spec.index))
+        # spec.index counts from Monday and the week may not: on a Sunday-start week,
+        # Friday is five days in, not four.
+        return day_range(week_start + timedelta(days=(spec.index - cfg.week_starts_on) % 7))
     delta = (spec.index - today.weekday()) % 7
     if spec.direction < 0:
         back = delta - 7 if delta else -7

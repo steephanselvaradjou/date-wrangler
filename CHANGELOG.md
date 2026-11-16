@@ -11,7 +11,9 @@ The full notes for each release, with examples, are on the
 
 For AI agents: one tool, `resolve_dates`, offered three ways -- a definition to hand a
 model, an MCP server, and a skill -- with every decision made in the library, so all three
-give the same answer. Parsing is unchanged: the same answers, at the same speed.
+give the same answer. Parsing is as fast as before, and gives the same answers but one: a
+weekday named on a week that does not start on Monday is now that weekday. **Changes
+answers**, for that setting only.
 
 ### Added
 - `date_wrangler.tool`: the tool's definition (`definition()`, plain JSON Schema that strict
@@ -44,6 +46,14 @@ give the same answer. Parsing is unchanged: the same answers, at the same speed.
   `settings`, `assumptions`, `today` and each match's `first_day`, `last_day`, `reads_as`,
   `notes` and `relative_to_today` are new. The table prints assumptions other than today
   to stderr. New flag `--month-number`; `--week-starts-on` also takes a day's name.
+
+### Fixed
+- With `week_starts_on` set to anything but Monday, a weekday named in the current week
+  fell on the wrong day: on a Sunday-start week "this Tuesday" and "Friday" were the
+  Monday and the Thursday, "Monday through Friday" was Sunday to Thursday, and "COB
+  Friday" a Thursday. The day was counted from the week's first day as if that were
+  always a Monday. A test had pinned the wrong answer; it now holds every weekday under
+  every week start. The default, Monday weeks, was never affected.
 
 ## 2.4.2 — 2026-11-03
 

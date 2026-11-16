@@ -23,6 +23,7 @@ from date_wrangler import (
     WranglerConfig,
     parse_one,
 )
+from date_wrangler.calendars import week_range
 
 TODAY = date(2026, 10, 15)  # a Thursday
 US = WranglerConfig(week_starts_on=6)  # Sunday
@@ -63,9 +64,33 @@ def test_multi_week_spans_follow_it_too():
 
 
 def test_this_weekday_follows_it():
-    """"this Tuesday" is the one in the current week, so which week that is matters."""
+    """"this Tuesday" is the Tuesday of the current week, so which week that is matters.
+    On Sunday 18 October a Sunday week has just begun, and its Tuesday is the 20th; a
+    Monday week is ending, and its Tuesday was the 13th. On Thursday the 15th both weeks
+    hold the 13th.
+
+    REGRESSION: this test once pinned the Sunday week's "this Tuesday" to Monday the 12th.
+    The day was counted from the week's first day as if that were always a Monday."""
+    sunday = date(2026, 10, 18)
+    assert parse_one("this Tuesday", today=sunday).range.start == date(2026, 10, 13)
+    assert parse_one("this Tuesday", today=sunday, config=US).range.start == date(2026, 10, 20)
     assert rng("this Tuesday").start == date(2026, 10, 13)
-    assert rng("this Tuesday", US).start == date(2026, 10, 12)
+    assert rng("this Tuesday", US).start == date(2026, 10, 13)
+
+
+_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+@pytest.mark.parametrize("start", range(7))
+@pytest.mark.parametrize("phrase", ["this {}", "{}"])
+def test_a_weekday_named_is_that_weekday_whatever_day_the_week_starts(start, phrase):
+    cfg = WranglerConfig(week_starts_on=start)
+    week = week_range(TODAY, start)
+    assert week.start is not None and week.end is not None
+    for index, name in enumerate(_DAY_NAMES):
+        r = rng(phrase.format(name), cfg)
+        assert r.start is not None and r.start.weekday() == index, (name, start)
+        assert week.start <= r.start < week.end, (name, start)
 
 
 def test_the_weekend_deliberately_does_not_follow_it():

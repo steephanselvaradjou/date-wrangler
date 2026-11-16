@@ -1797,7 +1797,7 @@ us 2026-10-08 | last YTD | 'last YTD' 2025-01-01..2025-10-08 year calendar c=1
 us 2026-10-08 | March 2024 to date | 'March 2024 to date' 2024-03-01..2026-10-08 month calendar c=1
 us 2026-10-08 | last Monday | 'last Monday' 2026-10-05..2026-10-05 day calendar c=1
 us 2026-10-08 | next Friday | 'next Friday' 2026-10-09..2026-10-09 day calendar c=1
-us 2026-10-08 | this Tuesday | 'this Tuesday' 2026-10-05..2026-10-05 day calendar c=1
+us 2026-10-08 | this Tuesday | 'this Tuesday' 2026-10-06..2026-10-06 day calendar c=1
 us 2026-10-08 | this weekend | 'this weekend' 2026-10-10..2026-10-11 day calendar c=1
 us 2026-10-08 | next weekend | 'next weekend' 2026-10-17..2026-10-18 day calendar c=1
 us 2026-10-08 | first half of March | 'first half of March' 2026-03-01..2026-03-15 day calendar c=0.7
@@ -1847,12 +1847,12 @@ us 2026-10-08 | as of 31 March 2024 | 'as of 31 March 2024' 2024-03-31..2024-03-
 us 2026-10-08 | March 2024 onwards | 'March 2024 onwards' 2024-03-01..... month calendar since c=1
 us 2026-10-08 | on or after 1 April | 'on or after 1 April' 2026-04-01..... day calendar since c=0.7
 us 2026-10-08 | on or before 31 March | 'on or before 31 March' .....2026-03-31 day calendar until c=0.7
-us 2026-10-08 | no later than Friday | 'no later than Friday' .....2026-10-08 day calendar until c=0.8
+us 2026-10-08 | no later than Friday | 'no later than Friday' .....2026-10-09 day calendar until c=0.8
 us 2026-10-08 | day before yesterday | 'day before yesterday' 2026-10-06..2026-10-06 day calendar c=1
 us 2026-10-08 | day after tomorrow | 'day after tomorrow' 2026-10-10..2026-10-10 day calendar c=1
 us 2026-10-08 | EOD | 'EOD' 2026-10-08..2026-10-08 day calendar c=1
 us 2026-10-08 | EOM | 'EOM' 2026-10-21..2026-10-31 day calendar c=1
-us 2026-10-08 | COB Friday | 'COB Friday' 2026-10-08..2026-10-08 day calendar c=1
+us 2026-10-08 | COB Friday | 'COB Friday' 2026-10-09..2026-10-09 day calendar c=1
 us 2026-10-08 | the last quarter of 2024 | 'the last quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
 us 2026-10-08 | the last month of the year | 'the last month of the year' 2026-12-01..2026-12-31 month calendar c=1
 us 2026-10-08 | the last week of March | 'the last week of March' 2026-03-25..2026-03-31 week calendar c=0.7
@@ -1906,9 +1906,9 @@ us 2026-10-08 | Jan 2024 - Mar 2024 | 'Jan 2024 - Mar 2024' 2024-01-01..2024-03-
 us 2026-10-08 | Jan-Mar 2024 | 'Jan-Mar 2024' 2024-01-01..2024-03-31 month calendar c=1 ends 2024-01-01..2024-01-31|2024-03-01..2024-03-31
 us 2026-10-08 | January to March 2024 | 'January to March 2024' 2024-01-01..2024-03-31 month calendar c=1 ends 2024-01-01..2024-01-31|2024-03-01..2024-03-31
 us 2026-10-08 | Q1-Q2 2024 | 'Q1-Q2 2024' 2024-01-01..2024-06-30 quarter calendar c=1 ends 2024-01-01..2024-03-31|2024-04-01..2024-06-30
-us 2026-10-08 | between Monday and Wednesday | 'between Monday and Wednesday' 2026-10-04..2026-10-06 day calendar c=0.8 ends 2026-10-04..2026-10-04|2026-10-06..2026-10-06
-us 2026-10-08 | Monday through Friday | 'Monday through Friday' 2026-10-04..2026-10-08 day calendar c=0.8 ends 2026-10-04..2026-10-04|2026-10-08..2026-10-08
-us 2026-10-08 | Mon-Fri | 'Mon-Fri' 2026-10-04..2026-10-08 day calendar c=0.8 ends 2026-10-04..2026-10-04|2026-10-08..2026-10-08
+us 2026-10-08 | between Monday and Wednesday | 'between Monday and Wednesday' 2026-10-05..2026-10-07 day calendar c=0.8 ends 2026-10-05..2026-10-05|2026-10-07..2026-10-07
+us 2026-10-08 | Monday through Friday | 'Monday through Friday' 2026-10-05..2026-10-09 day calendar c=0.8 ends 2026-10-05..2026-10-05|2026-10-09..2026-10-09
+us 2026-10-08 | Mon-Fri | 'Mon-Fri' 2026-10-05..2026-10-09 day calendar c=0.8 ends 2026-10-05..2026-10-05|2026-10-09..2026-10-09
 us 2026-10-08 | from 1 April to 30 June | 'from 1 April to 30 June' 2026-04-01..2026-06-30 day calendar c=0.7 ends 2026-04-01..2026-04-01|2026-06-30..2026-06-30
 us 2026-10-08 | 1-15 March | '1-15 March' 2026-03-01..2026-03-15 day calendar c=0.7 ends 2026-03-01..2026-03-01|2026-03-15..2026-03-15
 us 2026-10-08 | 1st to 15th March | '1st to 15th March' 2026-03-01..2026-03-15 day calendar c=0.7 ends 2026-03-01..2026-03-01|2026-03-15..2026-03-15
@@ -1936,7 +1936,7 @@ us 2026-10-08 | this morning | 'this morning' 2026-10-08..2026-10-08 day calenda
 us 2026-10-08 | tonight | 'tonight' 2026-10-08..2026-10-08 day calendar c=0.5 !! read 'tonight' as today: date-wrangler answers in whole days
 us 2026-10-08 | tomorrow morning | 'tomorrow' 2026-10-09..2026-10-09 day calendar c=0.5 !! read 'tomorrow' but not 'morning', which changes the period
 us 2026-10-08 | next Monday week | 'next Monday' 2026-10-12..2026-10-12 day calendar c=0.5 !! read 'next Monday' but not 'week', which changes the period
-us 2026-10-08 | a week on Monday | 'Monday' 2026-10-04..2026-10-04 day calendar c=0.5 !! read 'Monday' but not 'a week on', which changes the period
+us 2026-10-08 | a week on Monday | 'Monday' 2026-10-05..2026-10-05 day calendar c=0.5 !! read 'Monday' but not 'a week on', which changes the period
 us 2026-10-08 | Monday next | 'Monday next' 2026-10-12..2026-10-12 day calendar c=1
 us 2026-10-08 | every Monday | (none) !! 'every Monday' recurs; it is not one period, so it is not resolved
 us 2026-10-08 | fortnightly | (none)
@@ -2224,7 +2224,7 @@ us 2026-03-31 | last YTD | 'last YTD' 2025-01-01..2025-03-31 year calendar c=1
 us 2026-03-31 | March 2024 to date | 'March 2024 to date' 2024-03-01..2026-03-31 month calendar c=1
 us 2026-03-31 | last Monday | 'last Monday' 2026-03-30..2026-03-30 day calendar c=1
 us 2026-03-31 | next Friday | 'next Friday' 2026-04-03..2026-04-03 day calendar c=1
-us 2026-03-31 | this Tuesday | 'this Tuesday' 2026-03-30..2026-03-30 day calendar c=1
+us 2026-03-31 | this Tuesday | 'this Tuesday' 2026-03-31..2026-03-31 day calendar c=1
 us 2026-03-31 | this weekend | 'this weekend' 2026-04-04..2026-04-05 day calendar c=1
 us 2026-03-31 | next weekend | 'next weekend' 2026-04-11..2026-04-12 day calendar c=1
 us 2026-03-31 | first half of March | 'first half of March' 2026-03-01..2026-03-15 day calendar c=0.7
@@ -2274,12 +2274,12 @@ us 2026-03-31 | as of 31 March 2024 | 'as of 31 March 2024' 2024-03-31..2024-03-
 us 2026-03-31 | March 2024 onwards | 'March 2024 onwards' 2024-03-01..... month calendar since c=1
 us 2026-03-31 | on or after 1 April | 'on or after 1 April' 2026-04-01..... day calendar since c=0.7
 us 2026-03-31 | on or before 31 March | 'on or before 31 March' .....2026-03-31 day calendar until c=0.7
-us 2026-03-31 | no later than Friday | 'no later than Friday' .....2026-04-02 day calendar until c=0.8
+us 2026-03-31 | no later than Friday | 'no later than Friday' .....2026-04-03 day calendar until c=0.8
 us 2026-03-31 | day before yesterday | 'day before yesterday' 2026-03-29..2026-03-29 day calendar c=1
 us 2026-03-31 | day after tomorrow | 'day after tomorrow' 2026-04-02..2026-04-02 day calendar c=1
 us 2026-03-31 | EOD | 'EOD' 2026-03-31..2026-03-31 day calendar c=1
 us 2026-03-31 | EOM | 'EOM' 2026-03-21..2026-03-31 day calendar c=1
-us 2026-03-31 | COB Friday | 'COB Friday' 2026-04-02..2026-04-02 day calendar c=1
+us 2026-03-31 | COB Friday | 'COB Friday' 2026-04-03..2026-04-03 day calendar c=1
 us 2026-03-31 | the last quarter of 2024 | 'the last quarter of 2024' 2024-10-01..2024-12-31 quarter calendar c=1
 us 2026-03-31 | the last month of the year | 'the last month of the year' 2026-12-01..2026-12-31 month calendar c=1
 us 2026-03-31 | the last week of March | 'the last week of March' 2026-03-25..2026-03-31 week calendar c=0.7
@@ -2333,9 +2333,9 @@ us 2026-03-31 | Jan 2024 - Mar 2024 | 'Jan 2024 - Mar 2024' 2024-01-01..2024-03-
 us 2026-03-31 | Jan-Mar 2024 | 'Jan-Mar 2024' 2024-01-01..2024-03-31 month calendar c=1 ends 2024-01-01..2024-01-31|2024-03-01..2024-03-31
 us 2026-03-31 | January to March 2024 | 'January to March 2024' 2024-01-01..2024-03-31 month calendar c=1 ends 2024-01-01..2024-01-31|2024-03-01..2024-03-31
 us 2026-03-31 | Q1-Q2 2024 | 'Q1-Q2 2024' 2024-01-01..2024-06-30 quarter calendar c=1 ends 2024-01-01..2024-03-31|2024-04-01..2024-06-30
-us 2026-03-31 | between Monday and Wednesday | 'between Monday and Wednesday' 2026-03-29..2026-03-31 day calendar c=0.8 ends 2026-03-29..2026-03-29|2026-03-31..2026-03-31
-us 2026-03-31 | Monday through Friday | 'Monday through Friday' 2026-03-29..2026-04-02 day calendar c=0.8 ends 2026-03-29..2026-03-29|2026-04-02..2026-04-02
-us 2026-03-31 | Mon-Fri | 'Mon-Fri' 2026-03-29..2026-04-02 day calendar c=0.8 ends 2026-03-29..2026-03-29|2026-04-02..2026-04-02
+us 2026-03-31 | between Monday and Wednesday | 'between Monday and Wednesday' 2026-03-30..2026-04-01 day calendar c=0.8 ends 2026-03-30..2026-03-30|2026-04-01..2026-04-01
+us 2026-03-31 | Monday through Friday | 'Monday through Friday' 2026-03-30..2026-04-03 day calendar c=0.8 ends 2026-03-30..2026-03-30|2026-04-03..2026-04-03
+us 2026-03-31 | Mon-Fri | 'Mon-Fri' 2026-03-30..2026-04-03 day calendar c=0.8 ends 2026-03-30..2026-03-30|2026-04-03..2026-04-03
 us 2026-03-31 | from 1 April to 30 June | 'from 1 April to 30 June' 2026-04-01..2026-06-30 day calendar c=0.7 ends 2026-04-01..2026-04-01|2026-06-30..2026-06-30
 us 2026-03-31 | 1-15 March | '1-15 March' 2026-03-01..2026-03-15 day calendar c=0.7 ends 2026-03-01..2026-03-01|2026-03-15..2026-03-15
 us 2026-03-31 | 1st to 15th March | '1st to 15th March' 2026-03-01..2026-03-15 day calendar c=0.7 ends 2026-03-01..2026-03-01|2026-03-15..2026-03-15
@@ -2363,7 +2363,7 @@ us 2026-03-31 | this morning | 'this morning' 2026-03-31..2026-03-31 day calenda
 us 2026-03-31 | tonight | 'tonight' 2026-03-31..2026-03-31 day calendar c=0.5 !! read 'tonight' as today: date-wrangler answers in whole days
 us 2026-03-31 | tomorrow morning | 'tomorrow' 2026-04-01..2026-04-01 day calendar c=0.5 !! read 'tomorrow' but not 'morning', which changes the period
 us 2026-03-31 | next Monday week | 'next Monday' 2026-04-06..2026-04-06 day calendar c=0.5 !! read 'next Monday' but not 'week', which changes the period
-us 2026-03-31 | a week on Monday | 'Monday' 2026-03-29..2026-03-29 day calendar c=0.5 !! read 'Monday' but not 'a week on', which changes the period
+us 2026-03-31 | a week on Monday | 'Monday' 2026-03-30..2026-03-30 day calendar c=0.5 !! read 'Monday' but not 'a week on', which changes the period
 us 2026-03-31 | Monday next | 'Monday next' 2026-04-06..2026-04-06 day calendar c=1
 us 2026-03-31 | every Monday | (none) !! 'every Monday' recurs; it is not one period, so it is not resolved
 us 2026-03-31 | fortnightly | (none)
