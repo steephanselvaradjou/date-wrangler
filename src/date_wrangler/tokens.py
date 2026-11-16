@@ -883,6 +883,26 @@ _OPENING_WITH_A_MONTH: tuple[_ReadFn, ...] = (
 )
 _OPENING_WITH_A_YEAR_WORD: tuple[_ReadFn, ...] = (_fy_month,)
 _OPENING_WITH_BETWEEN: tuple[_ReadFn, ...] = (_between_days,)
+
+#: The rule each reader reads for, where its own name is not one. A reader that declines
+#: is reported -- and ordered against the rules' matches at the same place -- under it.
+#: REGRESSION: a decline went out under the reader's own name, "days_month" say, which no
+#: rule has, and beside a rule's match at the same place parse raised KeyError: " '02
+#: TO1MAR" on a strict configuration.
+_RULE_OF: dict[_ReadFn, str] = {
+    _days_month: "day_span",
+    _month_days: "day_span",
+    _between_days: "day_span",
+    _days_list: "day_list",
+    _month_days_list: "day_list",
+    _compact_day: "dashed_day",
+    _month_alone: "month",
+}
+
+
+def rule_of(reader: _ReadFn) -> str:
+    """The rule ``reader`` reads for: the name its dates, and its declines, go under."""
+    return _RULE_OF.get(reader, reader.__name__.lstrip("_"))
 #: Words a date of this family can open with, besides a number or a month.
 _OPENERS = frozenset({"fy", "f", "fiscal", "financial", "cy", "c", "calendar"})
 
@@ -941,7 +961,7 @@ class Reader:
             try:
                 got = reader(p, i, self.cfg)
             except Declined as no:
-                return reader.__name__.lstrip("_"), None, t.start, p.toks[no.end - 1].end, str(no)
+                return rule_of(reader), None, t.start, p.toks[no.end - 1].end, str(no)
             if got is not None:
                 rule, spec, end = got
                 if isinstance(spec, list):
