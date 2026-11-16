@@ -172,7 +172,9 @@ week boundary, so following the setting would split it.
 
 Nor to **numbered weeks**. `week 42`, `2026-W42`, `CW42` and `KW 42` are ISO 8601 weeks,
 which are Monday to Sunday by definition — renumbering them from Sunday would make one label
-mean different days under different settings. The ISO year is not the calendar year
+mean different days under different settings. A fiscal week is the one exception to ISO:
+`fiscal week 3` and `week 3 of FY25` count seven days at a time from the fiscal year's first
+day, as `the 3rd week of FY25` does, and do not follow this setting either. The ISO year is not the calendar year
 either: `2026-W01` begins on 29 December 2025, and some years have a week 53 and others do
 not. Asking for one that does not exist is refused with a diagnostic, not rounded into the
 next year. A bare `W42` is treated like a bare month name and needs a cue (`in W42`),
@@ -466,7 +468,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Split years | `2024-25`, `2012/13` with no FY follow `year_basis`, as any year does: on a fiscal basis the fiscal year 2024-25 (and `Q3 2024-25` its third quarter); on a calendar basis the years 2024 to 2025, of which `Q3 2024-25` is not one period, so `diagnose` says to write `FY2024-25`. `2011-12` is a fiscal year on a fiscal basis and December 2011 on a calendar one |
 | Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `1HFY24`, `fiscal Q3`, `Q3 FY` — and a quarter, half or month beside its year: `Q3 in 2024`, `Q3/FY24`, `FY 2024 Qtr 3`, `2024 - third quarter`, `June in 2024`, `Mar/2024`, `2024 March`, and run together: `2024QTR3`, `FY2024-25QTR3`, `Qtr 3-24`, `2024March`, `MarchFY24`. A spaced dash after the label is a span, as `June - FY25` always was; before it, a heading: `FY24 - Q3`, `2024 - March` |
 | Years and labelled periods | `2024`, `the year 2024`, `Q1 of 2024`, `January 2024`, `CY2024` — see [which calendar](#configuration) for how a year is read |
-| Fiscal month index | `third month of FY24`, `twelfth month` |
+| Fiscal month index | `third month of FY24`, `twelfth month`, `month 3 of FY24`, `FY24 month 3`, `FY24 M3`, `fiscal month 3` |
 | Month of a fiscal year | `June FY25`, `Jun-FY25`, `FY25 June`, `June FY 2024-25`, `Oct to Mar FY25` — the June *inside* FY25, so June 2024 with an April year; `June 2025` stays June 2025 |
 | Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` — and spelt short: `last 3months`, `3mos ago`, `last mth`, `prev quarter`, `a couple of weeks ago`, `yday`, `tmrw`. A single letter for a unit (`3m`) is not read: it is minutes or millions as often as months |
 | Stated basis | `this fiscal year`, `this FY`, `last 2 fiscal quarters`, `next calendar year` |
@@ -474,7 +476,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | To-date | `YTD`, `MTD`, `QTD`, `WTD`, `year-to-date`, `Y-T-D`, `so far this year`; `FYTD`, `fiscal YTD`, `FY to date` (from the fiscal year's start), `CYTD`; `last YTD`, `LYTD`, `YTD last year` (the same window a year earlier), `last MTD`, `LMTD` (the same days of last month), `last year's MTD`; `YTD 2024`, `2024-YTD`, `YTD through March 2024`, `March 2024 YTD` |
 | Period to date | `this year to date`, `Q3 to date`, `October to date`, `March 2024 to date` |
 | Reporting shorthand | `TTM`, `LTM`, `T12M`, `L3M`, `trailing 12 months`, `rolling 3 months` |
-| Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024`, and as reports abbreviate them: `QE June 2024`, `YE March 2024`, `FYE March 2024`, `12M to March 2024`, `6M to June 2024` |
+| Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024`, and as reports abbreviate them: `QE June 2024`, `YE March 2024`, `FYE March 2024`, `12M to March 2024`, `6M to June 2024`. `FYE 2024` and `fiscal year end 2024` are the fiscal year that ends in 2024, April 2023 to March 2024 with an April year |
 | Absolute | `2024-03-15`, `15 January 2024`, `January 15, 2024`, `March 15 2024`, `2024 March 15`, `03/04/2024`, `01-04-2018`, `13.06.18` |
 | A comma or weekday inside the date | `June, 2013`, `12 March, 2014`, `Q1, 2024`, `Friday, 15 March 2024` — one date, and a weekday that does not match it is flagged |
 | Months as numbers | `2024-03`, `2024/03`, `03/2024`, `03-2024` |
@@ -493,14 +495,15 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Part of a period | `first half of March`, `early 2024`, `mid March`, `end of Q1` |
 | Day in a period | `1st of next month`, `15th of March`, `the last day of the month`, `the last day of the fiscal year` |
 | Runs of days | `1-15 March`, `March 1-15, 2024`, `1st to 15th March`, `15-20 Mar-24`, `2024 March 15th-20th`, `between the 15th and the 20th of March 2024`, `15-20 June FY25`, and across months: `15 March 2024-20 April 2024`, `28 Dec - 3 Jan 2024`. Days listed, `15, 16 and 20 March 2024`, are each a date of their own |
-| Unit of a period | `the first week of April`, `first wk of April`, `the last week of March`, `the last 3 months of the year`, `last 3 mths of 2024`, `the last quarter of 2024`, `the last month of the fiscal year`, `the last quarter of this fiscal year` |
+| Unit of a period | `the first week of April`, `first wk of April`, `the last week of March`, `the last 3 months of the year`, `last 3 mths of 2024`, `the last quarter of 2024`, `the last month of the fiscal year`, `the last quarter of this fiscal year`, `week 3 of January`, `the 20th week of FY25`. A week of a month or year is seven days counted from its first day: `the 3rd week of January` is the 15th to the 21st, whatever day the week starts on |
 | Deadlines | `by 31 March`, `on or before 31 March`, `no later than Friday`, `not before 1 April` |
 | Nth weekday | `first Monday of March`, `last Friday of the month`, `last Friday of month`, `3rd Thursday of November`, `the 3rd Thurs. of Nov.` |
 | Week numbers | `week 42`, `2026-W42`, `CW42`, `KW 42`, `week 42 of 2026`, `2026 week 42`, `W42-2026`, `week no. 42`, `weeks 42-43 2026` |
+| Fiscal weeks | `fiscal week 3`, `week 3 of FY25`, `FY25 week 3`, `fiscal weeks 3-5 FY25` — counted from the fiscal year's first day, as `the 3rd week of FY25` is: 15 to 21 April 2024 with an April year |
 | Business days | `5 business days ago`, `next business day`, `last business day of the month`, `last 5 biz days`, `next workday` |
 | Same period back | `same quarter last year`, `same month of last year`, `same quarter LY`, `this time last year`, and on the fiscal calendar: `same quarter last FY` |
 | Weekend | `this weekend`, `next weekend`, `last weekend` |
-| Period edges | `month end`, `EOM`, `E.O.M.`, `end-of-month`, `EOQ`, `end of the quarter`, `end of 1Q 2024`, `year start`, `last day of month`, `last workday of the month` |
+| Period edges | `month end`, `EOM`, `E.O.M.`, `end-of-month`, `EOQ`, `end of the quarter`, `end of 1Q 2024`, `year start`, `last day of month`, `last workday of the month`, and of the fiscal year: `fiscal year end`, `FY end`, `FYE`, `fiscal year start` |
 | Ahead | `in 3 days`, `2 weeks from now`, `3 months from today` |
 | Fortnights | `a fortnight ago`, `last fortnight`, `next fortnight` |
 | Day idioms | `day before yesterday`, `day after tomorrow` |
@@ -840,7 +843,10 @@ reports nothing. The settings tried are the fiscal start month (all twelve) and 
 year basis, the date order, what `jan 24` means, the century of a two-digit year (against
 the 1930-2029 that Windows and Excel use), the week start (Monday, Sunday, Saturday),
 anchoring, today, and, for business days, the weekend and holidays. Each other reading
-changes that one setting and keeps the rest. `first_day` and
+changes that one setting and keeps the rest. The year basis is also tried with the fiscal
+year starting in every month, when the start month was left out too: `last quarter` is the
+calendar's on an April year and three other months on a February one, so it is listed,
+with no single other reading to give and a note to pass both. `first_day` and
 `last_day` are inclusive, for quoting; `range.end` stays exclusive, for code. Arguments a
 model gets wrong raise `ToolInputError` with a message naming what to change, to hand back
 as the tool's error result. `tool.OUTPUT_SCHEMA` describes the answer as JSON Schema.
