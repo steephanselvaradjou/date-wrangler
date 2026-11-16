@@ -34,6 +34,7 @@ pip install date-wrangler
 
 Python 3.10+. No runtime dependencies, except `tzdata` on Windows — which ships no system
 timezone database, so the standard library needs it for the optional `tz=` argument.
+`pip install "date-wrangler[mcp]"` adds the [MCP server](#an-mcp-server) for AI agents.
 
 ## The core model
 
@@ -797,15 +798,130 @@ $ date-wrangler --today 2025-09-04 "revenue since Q1 FY25"
    SQL: d >= '2024-04-01'
 ```
 
-`--json` for machine-readable output; `--fiscal-start`, `--year-basis`, `--date-order` and
-`--strictness` to try configurations.
+`--fiscal-start`, `--label-by`, `--year-basis`, `--date-order`, `--month-number`,
+`--week-starts-on`, `--anchor` and `--strictness` to try configurations. A setting you
+leave out that changed an answer is reported on stderr. `--json` prints the same answer an
+agent's tool call gets: see below.
+
+## From an AI agent
+
+Models get date arithmetic wrong in quiet ways: a fiscal year that starts in April, "last
+week" starting on a Sunday, an exclusive end read as the last day. `date-wrangler` gives an
+agent one tool, `resolve_dates`, that does the arithmetic and says what it assumed. Every
+decision is made in the library; the tool definition, the MCP server and the skill below
+only expose it, so all three give the same answer.
+
+`Q3 FY24`, with nothing but today given, comes back as (shortened):
+
+```json
+{
+  "matches": [
+    {"text": "Q3 FY24", "first_day": "2023-10-01", "last_day": "2023-12-31",
+     "reads_as": "October 2023 to December 2023", "confidence": 1.0, "notes": [],
+     "relative_to_today": false, "range": {"start": "2023-10-01", "end": "2024-01-01", "...": "..."}}
+  ],
+  "assumptions": [
+    {"setting": "fiscal_start_month", "assumed": 4,
+     "note": "The fiscal year is taken to start in April. Pass fiscal_start_month if ...",
+     "matches": [{"text": "Q3 FY24", "span": [0, 7]}]},
+    {"setting": "fiscal_year_label", "assumed": "end_year", "note": "...",
+     "matches": [{"text": "Q3 FY24", "span": [0, 7], "otherwise": [
+       {"value": "start_year", "reads_as": "October 2024 to December 2024",
+        "first_day": "2024-10-01", "last_day": "2024-12-31"}]}]}
+  ],
+  "diagnostics": []
+}
+```
+
+An assumption is listed only when it changed an answer: the text is read again with the
+setting at its other values, and a default that moved no date is not reported. `03/04/2024`
+reports the day-first order and the US reading; `13/04/2024`, which has only one reading,
+reports nothing. `first_day` and `last_day` are inclusive, for quoting; `range.end` stays
+exclusive, for code. Arguments a model gets wrong raise `ToolInputError` with a message
+naming what to change, to hand back as the tool's error result.
+
+### A tool for your own agent
+
+`date_wrangler.tool` holds the definition, plain JSON Schema inside what strict tool use
+accepts, and `call()`, which runs it on the arguments a model sends:
+
+```python
+import json
+
+import anthropic
+from date_wrangler import tool
+
+client = anthropic.Anthropic()
+messages = [{"role": "user", "content": "What are the dates of Q3 FY24? Our year starts in July."}]
+while True:
+    response = client.beta.messages.create(
+        model="claude-opus-5-5",
+        max_tokens=16000,
+        tools=[{**tool.definition(), "strict": True}],
+        messages=messages,
+        # If a request is declined, it is retried on a fallback model.
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+    )
+    if response.stop_reason != "tool_use":
+        break
+    messages.append({"role": "assistant", "content": response.content})
+    results = []
+    for block in response.content:
+        if block.type == "tool_use":
+            try:
+                content, is_error = json.dumps(tool.call(block.input)), False
+            except tool.ToolInputError as exc:
+                content, is_error = str(exc), True
+            results.append({"type": "tool_result", "tool_use_id": block.id,
+                            "content": content, "is_error": is_error})
+    messages.append({"role": "user", "content": results})
+print("".join(b.text for b in response.content if b.type == "text"))
+```
+
+Other model APIs take the same schema under their own key: `parameters` for OpenAI-style
+function calling, `inputSchema` for MCP. Frameworks that build a tool from a function's
+signature can wrap `tool.resolve_dates`, which takes the same arguments as keywords.
+
+### An MCP server
+
+```bash
+pip install "date-wrangler[mcp]"
+```
+
+installs `date-wrangler-mcp`, a stdio MCP server with the one tool. The extra brings the MCP
+SDK and its web stack; a plain install still has none of it. In Claude Code:
+
+```bash
+claude mcp add --transport stdio --scope user date-wrangler -- date-wrangler-mcp
+```
+
+Claude Desktop and other clients take it in their MCP configuration:
+
+```json
+{"mcpServers": {"date-wrangler": {"command": "date-wrangler-mcp"}}}
+```
+
+Or without installing anything first: `uvx --from "date-wrangler[mcp]" date-wrangler-mcp`.
+The server takes today from the machine it runs on unless the model passes `today`.
+
+### A skill
+
+[`skills/date-wrangler`](skills/date-wrangler/SKILL.md) is an Agent Skill: it tells Claude
+when to resolve dates, which flags carry an organisation's settings, and how to read and
+report the answer, using the command line. It holds no date logic of its own. For Claude
+Code, copy the folder into `~/.claude/skills/` for yourself, or into a project's
+`.claude/skills/`; it can also be uploaded through the Skills API. Wherever it runs needs
+`pip install date-wrangler`.
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,mcp]"
 pytest
 ```
+
+Without the `mcp` extra the MCP server's tests are skipped and everything else runs.
 
 ## License
 

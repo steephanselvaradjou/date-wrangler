@@ -22,7 +22,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]"
+      # The MCP extra too: mypy checks the server against it, and its tests run.
+      - run: pip install -e ".[dev,mcp]"
       - name: Gate on the full suite
         run: |
           ruff check src tests

@@ -17,7 +17,7 @@ authors = [{ name = "Steephan Selvaradjou" }]
 keywords = [
     "date", "dates", "date-parser", "date-range", "datetime", "parsing",
     "natural-language", "nlp", "period", "quarter", "fiscal", "fiscal-year",
-    "ytd", "analytics", "finance",
+    "ytd", "analytics", "finance", "llm", "agents", "tool-use", "mcp",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -46,9 +46,15 @@ dependencies = ['tzdata; platform_system == "Windows"']
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "mypy>=1.11"]
+# The MCP server only. The SDK brings a web stack with it (Starlette, uvicorn, pydantic,
+# JWT), which is why it is an extra and not a dependency: everyone who only parses dates
+# keeps an install with nothing in it. Held to one major version, because 2.0 replaced
+# the server API that 1.x servers were written against.
+mcp = ["mcp>=2.3,<3"]
 
 [project.scripts]
 date-wrangler = "date_wrangler.__main__:main"
+date-wrangler-mcp = "date_wrangler.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/steephanselvaradjou/date-wrangler"
@@ -67,7 +73,7 @@ packages = ["src/date_wrangler"]
 # Ship the source and the tests, nothing else. Without an explicit list hatchling sweeps
 # in whatever is lying around -- the Hypothesis example database alone added ~600 files.
 [tool.hatch.build.targets.sdist]
-only-include = ["src", "tests", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
+only-include = ["src", "tests", "skills", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
 exclude = ["**/.hypothesis", "**/__pycache__", "**/*.pyc"]
 
 [tool.pytest.ini_options]

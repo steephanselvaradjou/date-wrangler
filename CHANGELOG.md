@@ -7,6 +7,35 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## Unreleased
+
+For AI agents: one tool, `resolve_dates`, offered three ways -- a definition to hand a
+model, an MCP server, and a skill -- with every decision made in the library, so all three
+give the same answer. Parsing is unchanged: the same answers, at the same speed.
+
+### Added
+- `date_wrangler.tool`: the tool's definition (`definition()`, plain JSON Schema that strict
+  tool use accepts) and `call(arguments)`, which runs it on arguments as a model sent them.
+  `resolve_dates()` is the same for Python callers. Each match comes back with `first_day`
+  and `last_day` (inclusive), `reads_as`, `confidence`, `notes` saying why a confidence is
+  below 1, and `relative_to_today`, beside everything `DateMatch.to_dict()` gives.
+- Assumptions. Each setting the caller left out -- the fiscal start month and label, the
+  year basis, the date order, what `jan 24` means, the week start, anchoring, and today --
+  is tried at its other values, and listed only when that reads a date differently, with
+  the dates it would be otherwise. `03/04/2024` reports the day-first order it assumed and
+  the US reading; `13/04/2024`, which has one reading, reports nothing.
+- Arguments a model gets wrong come back as `ToolInputError`, a message naming what to
+  change: an unknown argument, a month of 13, a date that is not `YYYY-MM-DD`.
+- `date-wrangler-mcp`, an MCP server over stdio with the one tool, for Claude Desktop,
+  Claude Code and other MCP clients. It needs the new extra, `pip install
+  "date-wrangler[mcp]"`; a plain install is unchanged and pulls in none of it.
+- `skills/date-wrangler`, an Agent Skill: when to resolve dates and how to read the answer,
+  using the CLI.
+- The CLI's `--json` is now the tool's answer. Every key it printed before is still there;
+  `settings`, `assumptions`, `today` and each match's `first_day`, `last_day`, `reads_as`,
+  `notes` and `relative_to_today` are new. The table prints assumptions other than today
+  to stderr. New flag `--month-number`; `--week-starts-on` also takes a day's name.
+
 ## 2.4.2 — 2026-11-03
 
 The README, corrected and brought up to 2.4.1, so the project page on PyPI shows it. The
