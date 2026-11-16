@@ -799,9 +799,9 @@ $ date-wrangler --today 2025-09-04 "revenue since Q1 FY25"
 ```
 
 `--fiscal-start`, `--label-by`, `--year-basis`, `--date-order`, `--month-number`,
-`--week-starts-on`, `--anchor` and `--strictness` to try configurations. A setting you
-leave out that changed an answer is reported on stderr. `--json` prints the same answer an
-agent's tool call gets: see below.
+`--week-starts-on`, `--anchor`, `--weekend`, `--holidays` and `--strictness` to try
+configurations. A setting you leave out that changed an answer is reported on stderr.
+`--json` prints the same answer an agent's tool call gets: see below.
 
 ## From an AI agent
 
@@ -836,9 +836,17 @@ only expose it, so all three give the same answer.
 An assumption is listed only when it changed an answer: the text is read again with the
 setting at its other values, and a default that moved no date is not reported. `03/04/2024`
 reports the day-first order and the US reading; `13/04/2024`, which has only one reading,
-reports nothing. `first_day` and `last_day` are inclusive, for quoting; `range.end` stays
-exclusive, for code. Arguments a model gets wrong raise `ToolInputError` with a message
-naming what to change, to hand back as the tool's error result.
+reports nothing. The settings tried are the fiscal start month (all twelve) and label, the
+year basis, the date order, what `jan 24` means, the century of a two-digit year (against
+the 1930-2029 that Windows and Excel use), the week start (Monday, Sunday, Saturday),
+anchoring, today, and, for business days, the weekend and holidays. Each other reading
+changes that one setting and keeps the rest. `first_day` and
+`last_day` are inclusive, for quoting; `range.end` stays exclusive, for code. Arguments a
+model gets wrong raise `ToolInputError` with a message naming what to change, to hand back
+as the tool's error result. `tool.OUTPUT_SCHEMA` describes the answer as JSON Schema.
+
+A call reads the text several times where `parse()` reads it once: a few milliseconds,
+nothing beside a model's turn, but `parse()` is the one for bulk work.
 
 ### A tool for your own agent
 
@@ -903,16 +911,20 @@ Claude Desktop and other clients take it in their MCP configuration:
 ```
 
 Or without installing anything first: `uvx --from "date-wrangler[mcp]" date-wrangler-mcp`.
-The server takes today from the machine it runs on unless the model passes `today`.
+The server takes today from the machine it runs on unless the model passes `today`. It
+declares the answer's shape as the tool's output schema, and returns it as structured
+content and as JSON text.
 
 ### A skill
 
-[`skills/date-wrangler`](skills/date-wrangler/SKILL.md) is an Agent Skill: it tells Claude
+[`skills/date-wrangler`](https://github.com/steephanselvaradjou/date-wrangler/tree/main/skills/date-wrangler)
+is an Agent Skill: it tells Claude
 when to resolve dates, which flags carry an organisation's settings, and how to read and
 report the answer, using the command line. It holds no date logic of its own. For Claude
 Code, copy the folder into `~/.claude/skills/` for yourself, or into a project's
 `.claude/skills/`; it can also be uploaded through the Skills API. Wherever it runs needs
-`pip install date-wrangler`.
+`date-wrangler` installed, or a way to install it: in a sandbox with no network access,
+use the tool definition or the MCP server instead.
 
 ## Development
 

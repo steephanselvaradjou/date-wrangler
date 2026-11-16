@@ -19,6 +19,8 @@ pytest.importorskip("mcp")
 import anyio  # noqa: E402
 from mcp import Client  # noqa: E402
 from mcp.client.stdio import StdioServerParameters  # noqa: E402
+from mcp.shared.exceptions import MCPError  # noqa: E402
+from mcp.types import INVALID_PARAMS  # noqa: E402
 
 import date_wrangler  # noqa: E402
 from date_wrangler import tool  # noqa: E402
@@ -42,6 +44,7 @@ def test_the_server_lists_the_library_tool_unchanged():
     assert only.name == spec["name"]
     assert only.description == spec["description"]
     assert only.input_schema == spec["input_schema"]
+    assert only.output_schema == tool.OUTPUT_SCHEMA
     assert only.annotations.read_only_hint is True
     assert only.annotations.destructive_hint is False
 
@@ -63,10 +66,44 @@ def test_bad_arguments_come_back_as_a_tool_error_the_model_can_read():
     assert "1-12" in result.content[0].text
 
 
-def test_an_unknown_tool_name_is_an_error_that_names_the_real_one():
-    result = in_process(lambda client: client.call_tool("parse_dates", {"text": "Q1"}))
-    assert result.is_error is True
-    assert tool.NAME in result.content[0].text
+def test_a_fault_in_the_library_comes_back_as_a_tool_error(monkeypatch):
+    """Not a protocol error and not a dead server: the model is told the call failed, and
+    the next call is served."""
+
+    def broken(arguments: object) -> dict:
+        raise RuntimeError("something inside broke")
+
+    real_call = tool.call
+    monkeypatch.setattr(tool, "call", broken)
+
+    async def work(client: Client) -> Any:
+        failed = await client.call_tool(tool.NAME, {"text": "Q1"})
+        monkeypatch.setattr(tool, "call", real_call)
+        served = await client.call_tool(tool.NAME, {"text": "Q1", "today": TODAY})
+        return failed, served
+
+    failed, served = in_process(work)
+    assert failed.is_error is True
+    assert "RuntimeError: something inside broke" in failed.content[0].text
+    assert served.is_error is False
+
+
+async def _call_unknown_tool(client: Client) -> MCPError | None:
+    # Caught here, inside the client's task group, which would otherwise wrap it.
+    try:
+        await client.call_tool("parse_dates", {"text": "Q1"})
+    except MCPError as exc:
+        return exc
+    return None
+
+
+def test_an_unknown_tool_name_is_a_protocol_error_that_names_the_real_one():
+    """MCP reports a tool the server does not have as a JSON-RPC error, not as a result:
+    there is nothing for a model to correct in its arguments."""
+    caught = in_process(_call_unknown_tool)
+    assert isinstance(caught, MCPError)
+    assert caught.error.code == INVALID_PARAMS
+    assert tool.NAME in caught.error.message
 
 
 def test_the_command_serves_over_stdio():
@@ -83,8 +120,13 @@ def test_the_command_serves_over_stdio():
         async with Client(params) as client:
             listed = await client.list_tools()
             called = await client.call_tool(tool.NAME, {"text": "since March", "today": TODAY})
-            return listed, called
+            refused = await client.call_tool(tool.NAME, {"text": "Q1", "today": "16/11/2026"})
+            unknown = await _call_unknown_tool(client)
+            return listed, called, refused, unknown
 
-    listed, called = anyio.run(run)
+    listed, called, refused, unknown = anyio.run(run)
     assert [t.name for t in listed.tools] == [tool.NAME]
     assert called.structured_content == tool.call({"text": "since March", "today": TODAY})
+    assert refused.is_error is True and "YYYY-MM-DD" in refused.content[0].text
+    # Over the wire, the unknown tool is a JSON-RPC error with its code.
+    assert isinstance(unknown, MCPError) and unknown.error.code == INVALID_PARAMS

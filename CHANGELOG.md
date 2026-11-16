@@ -17,18 +17,27 @@ give the same answer. Parsing is unchanged: the same answers, at the same speed.
 - `date_wrangler.tool`: the tool's definition (`definition()`, plain JSON Schema that strict
   tool use accepts) and `call(arguments)`, which runs it on arguments as a model sent them.
   `resolve_dates()` is the same for Python callers. Each match comes back with `first_day`
-  and `last_day` (inclusive), `reads_as`, `confidence`, `notes` saying why a confidence is
-  below 1, and `relative_to_today`, beside everything `DateMatch.to_dict()` gives.
-- Assumptions. Each setting the caller left out -- the fiscal start month and label, the
-  year basis, the date order, what `jan 24` means, the week start, anchoring, and today --
-  is tried at its other values, and listed only when that reads a date differently, with
-  the dates it would be otherwise. `03/04/2024` reports the day-first order it assumed and
-  the US reading; `13/04/2024`, which has one reading, reports nothing.
+  and `last_day` (inclusive), `reads_as`, `confidence`, `notes` (the diagnostics about its
+  words, and an unwritten year) and `relative_to_today`, beside everything
+  `DateMatch.to_dict()` gives.
+- Assumptions. Each setting the caller left out -- the fiscal start month (every month)
+  and label, the year basis, the date order, what `jan 24` means, the century of a
+  two-digit year, the week start (Sunday and Saturday), anchoring, and today -- is tried
+  at its other values, and listed only when that reads a date differently, with the dates
+  it would be otherwise. `03/04/2024` reports the day-first order it assumed and the US
+  reading; `13/04/2024`, which has one reading, reports nothing. A two-digit year is
+  reported only from `'30` to `'68`, where Windows and Excel read the other century. A
+  business-day date reports the weekend and the holidays it assumed (Saturday and Sunday,
+  none), found by reading it with a weekend no calendar has.
+- The tool takes `weekend`, `holidays` and `two_digit_pivot`, and the CLI `--weekend`,
+  `--holidays` and `--two-digit-pivot`.
+- `tool.OUTPUT_SCHEMA`, the answer as JSON Schema.
 - Arguments a model gets wrong come back as `ToolInputError`, a message naming what to
   change: an unknown argument, a month of 13, a date that is not `YYYY-MM-DD`.
 - `date-wrangler-mcp`, an MCP server over stdio with the one tool, for Claude Desktop,
-  Claude Code and other MCP clients. It needs the new extra, `pip install
-  "date-wrangler[mcp]"`; a plain install is unchanged and pulls in none of it.
+  Claude Code and other MCP clients; it declares the output schema. It needs the new
+  extra, `pip install "date-wrangler[mcp]"`; a plain install is unchanged and pulls in
+  none of it.
 - `skills/date-wrangler`, an Agent Skill: when to resolve dates and how to read the answer,
   using the CLI.
 - The CLI's `--json` is now the tool's answer. Every key it printed before is still there;

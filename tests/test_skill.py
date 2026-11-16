@@ -35,6 +35,22 @@ def frontmatter() -> dict[str, str]:
     return fields
 
 
+def test_the_frontmatter_is_valid_yaml():
+    """Read the way skill loaders read it. A ": " inside the description, say, would turn
+    the plain scalar into a mapping, and the line-by-line reading below would not see it."""
+    yaml = pytest.importorskip("yaml")
+    match = re.match(r"---\n(.*?)\n---\n", TEXT, re.S)
+    assert match
+    assert yaml.safe_load(match.group(1)) == frontmatter()
+
+
+def test_the_description_is_a_safe_plain_scalar():
+    """What makes a YAML plain scalar misread, checked without a YAML parser."""
+    description = frontmatter()["description"]
+    assert ": " not in description and " #" not in description
+    assert description[0] not in "!&*[]{}|>'\"%@`#,?:-"
+
+
 def test_the_frontmatter_is_what_skill_loaders_require():
     fields = frontmatter()
     assert set(fields) == {"name", "description"}
@@ -58,7 +74,9 @@ def test_every_setting_the_tool_takes_has_its_flag_in_the_skill():
         "today": "--today", "timezone": "--tz", "fiscal_start_month": "--fiscal-start",
         "fiscal_year_label": "--label-by", "year_basis": "--year-basis",
         "date_order": "--date-order", "month_number": "--month-number",
+        "two_digit_pivot": "--two-digit-pivot",
         "week_starts_on": "--week-starts-on", "anchor": "--anchor",
+        "weekend": "--weekend", "holidays": "--holidays",
     }
     assert set(flag_for) == set(tool.INPUT_SCHEMA["properties"]) - {"text"}
     for flag in flag_for.values():

@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 from datetime import date, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -87,6 +89,8 @@ def test_the_schema_offers_exactly_the_values_the_library_has():
     assert props["month_number"]["enum"] == [n.value for n in MonthNumber]
     assert props["anchor"]["enum"] == [a.value for a in Anchor]
     assert len(props["week_starts_on"]["enum"]) == 7
+    assert props["weekend"]["items"]["enum"] == props["week_starts_on"]["enum"]
+    assert props["holidays"]["items"] == {"type": "string", "format": "date"}
 
 
 def test_the_schema_and_the_function_take_the_same_arguments():
@@ -98,24 +102,28 @@ def test_the_schema_and_the_function_take_the_same_arguments():
 
 
 def test_the_assumption_notes_describe_the_library_defaults():
-    """The notes are written for these defaults ("read day first", "start on Monday"); if
-    a default moves, the note has to move with it."""
-    defaults = {s.name: s.default for s in tool._SETTINGS}
-    assert defaults == {
-        "fiscal_start_month": DEFAULT_CONFIG.fiscal.start_month,
-        "fiscal_year_label": DEFAULT_CONFIG.fiscal.label_by.value,
-        "year_basis": DEFAULT_CONFIG.effective_year_basis.value,
-        "date_order": DEFAULT_CONFIG.date_order.value,
-        "month_number": DEFAULT_CONFIG.month_number.value,
-        "week_starts_on": "monday",
-        "anchor": DEFAULT_CONFIG.anchor.value,
+    """The notes are written for these defaults ("read day first", "start on Monday", "no
+    holidays"); if a default in the library moves, the notes have to move with it."""
+    assert tool._DEFAULTS == {
+        "timezone": None, "fiscal_start_month": 4, "fiscal_year_label": "end_year",
+        "year_basis": "calendar", "date_order": "DMY", "month_number": "day",
+        "two_digit_pivot": 68, "week_starts_on": "monday", "anchor": "anchored",
+        "weekend": ["saturday", "sunday"], "holidays": [],
     }
+    assert DEFAULT_CONFIG.two_digit_pivot == 68
+    assert DEFAULT_CONFIG.fiscal.start_month == 4
+    assert DEFAULT_CONFIG.fiscal.label_by is YearLabel.END_YEAR
+    assert DEFAULT_CONFIG.effective_year_basis is Basis.CALENDAR
+    assert DEFAULT_CONFIG.date_order is DateOrder.DMY
+    assert DEFAULT_CONFIG.month_number is MonthNumber.DAY
     assert DEFAULT_CONFIG.week_starts_on == 0
-    assert defaults == {
-        "fiscal_start_month": 4, "fiscal_year_label": "end_year", "year_basis": "calendar",
-        "date_order": "DMY", "month_number": "day", "week_starts_on": "monday",
-        "anchor": "anchored",
-    }
+    assert DEFAULT_CONFIG.anchor is Anchor.ANCHORED
+    assert DEFAULT_CONFIG.weekend == (5, 6) and DEFAULT_CONFIG.holidays == frozenset()
+
+
+def test_every_setting_has_a_default_and_an_entry_in_the_answer():
+    assert set(tool._DEFAULTS) == set(tool.INPUT_SCHEMA["properties"]) - {"text", "today"}
+    assert set(tool.OUTPUT_SCHEMA["properties"]["settings"]["properties"]) == set(tool._DEFAULTS)
 
 
 # ---------------------------------------------------------------------------
@@ -164,11 +172,13 @@ def test_an_open_end_has_no_last_day():
 
 
 def test_the_settings_used_are_echoed():
-    result = answer("Q1", fiscal_start_month=7, week_starts_on="sunday")
+    result = answer("Q1", fiscal_start_month=7, week_starts_on="sunday",
+                    holidays=["2026-12-25", "2026-01-01", "2026-12-25"])
     assert result["settings"] == {
         "fiscal_start_month": 7, "fiscal_year_label": "end_year", "year_basis": "calendar",
-        "date_order": "DMY", "month_number": "day", "week_starts_on": "sunday",
-        "anchor": "anchored", "timezone": None,
+        "date_order": "DMY", "month_number": "day", "two_digit_pivot": 68,
+        "week_starts_on": "sunday", "anchor": "anchored", "weekend": ["saturday", "sunday"],
+        "holidays": ["2026-01-01", "2026-12-25"], "timezone": None,
     }
 
 
@@ -246,8 +256,8 @@ def test_each_default_that_changed_a_date_says_what_it_would_be_otherwise(
 ):
     found = assumed(answer(text))
     (entry,) = found[setting]["matches"]
-    (other,) = entry["otherwise"]
-    assert (other["value"], other["first_day"]) == (value, first_day)
+    readings = {o["value"]: o["first_day"] for o in entry["otherwise"]}
+    assert readings[value] == first_day
     assert found[setting]["note"]
     assert setting not in assumed(answer(text, **{setting: value}))
 
@@ -258,9 +268,14 @@ def test_a_date_written_in_full_assumes_nothing():
 
 
 def test_today_is_an_assumption_only_when_left_out():
+    before = date.today()
     left_out = assumed(tool.call({"text": "since March"}))
+    after = date.today()  # read either side, so a run across midnight still passes
     assert left_out["today"]["matches"] == [{"text": "since March", "span": [0, 11]}]
-    assert left_out["today"]["assumed"] == tool.call({"text": "x"})["today"]
+    assert left_out["today"]["assumed"] in {before.isoformat(), after.isoformat()}
+    assert "the clock where this runs" in left_out["today"]["note"]
+    zoned = assumed(tool.call({"text": "since March", "timezone": "Asia/Kolkata"}))
+    assert "the clock in Asia/Kolkata" in zoned["today"]["note"]
     given = answer("since March")
     assert "today" not in assumed(given)
     assert given["matches"][0]["relative_to_today"] is True
@@ -273,6 +288,177 @@ def test_today_left_out_follows_the_timezone():
     after = datetime.now(zone).date()
     assert result["today"] in {before.isoformat(), after.isoformat()}
     assert result["settings"]["timezone"] == "Pacific/Kiritimati"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Each moves with the start month, but not with every one: tried against January
+        # alone, the first three were missed, and the last three are calendar days or a
+        # calendar span whose year the fiscal calendar chose.
+        "June of this fiscal year",
+        "October of this fiscal year",  # moves only for a November start
+        "same quarter last FY",
+        "from April 2023 to the end of FY24",
+        "15 March to FY25",
+        "15-20 June FY25",
+        # A day picked out of a fiscal year comes back as a calendar day.
+        "the last day of FY2024",
+        "the first day of Q3 FY24",
+        # Quarters repeat every three months, so an April, July, October and January start
+        # give the same quarters: only a start in another month of the three moves these.
+        "this fiscal quarter",
+        "fiscal QTD",
+    ],
+)
+def test_a_date_the_fiscal_calendar_reaches_reports_the_start_month(text):
+    assert "fiscal_start_month" in assumed(answer(text))
+    assert "fiscal_start_month" not in assumed(answer(text, fiscal_start_month=4))
+
+
+@pytest.mark.parametrize(
+    "text", ["03/04/2024", "03–04–2024", "03—04—2024", "03／04／2024", "03−04−2024"]
+)
+def test_an_ambiguous_numeric_date_is_reported_whatever_its_separators(text):
+    """The parser folds en dashes, minus signs and fullwidth slashes -- what a pasted
+    spreadsheet date often has -- so the date order has to be reported for them too."""
+    (entry,) = assumed(answer(text))["date_order"]["matches"]
+    assert {o["value"]: o["first_day"] for o in entry["otherwise"]}["MDY"] == "2024-03-04"
+
+
+def test_a_two_digit_year_reports_the_century_it_assumed():
+    """Only where the conventions in use disagree, '30 to '68: Windows and Excel read those
+    in the 1900s. "FY24" and "'85" read the same either way, and are not offered as 1924
+    or 2085."""
+    found = assumed(answer("12/31/68, Q1 '45, Q3 FY24 and Q1 '85", date_order="MDY"))
+    entries = {e["text"]: e for e in found["two_digit_pivot"]["matches"]}
+    assert set(entries) == {"12/31/68", "Q1 '45"}
+    assert [o["first_day"] for o in entries["12/31/68"]["otherwise"]] == ["1968-12-31"]
+    assert [o["first_day"] for o in entries["Q1 '45"]["otherwise"]] == ["1945-01-01"]
+    assert "1969 to 2068" in found["two_digit_pivot"]["note"]
+    (m,) = answer("12/31/68", date_order="MDY", two_digit_pivot=70)["matches"]
+    assert m["first_day"] == "2068-12-31"
+    (m,) = answer("12/31/68", date_order="MDY", two_digit_pivot=50)["matches"]
+    assert m["first_day"] == "1968-12-31"
+    assert "two_digit_pivot" not in assumed(answer("12/31/1968", date_order="MDY"))
+
+
+def test_a_week_start_is_tried_at_saturday_as_well_as_sunday():
+    """Saturday is the first day of the week in parts of the Middle East, and "Saturday last
+    week" moves for it alone."""
+    (entry,) = assumed(answer("Saturday last week"))["week_starts_on"]["matches"]
+    assert [(o["value"], o["first_day"]) for o in entry["otherwise"]] == [
+        ("saturday", "2026-11-07")
+    ]
+
+
+def test_business_days_report_the_weekend_and_holidays_they_assumed():
+    found = assumed(answer("5 business days ago"))
+    assert found["weekend"]["assumed"] == ["saturday", "sunday"]
+    assert found["holidays"]["assumed"] == []
+    for setting in ("weekend", "holidays"):
+        assert [m["text"] for m in found[setting]["matches"]] == ["5 business days ago"]
+    # A Friday-Saturday weekend lands on the same day here, so there is no other reading
+    # to give -- but the answer still depends on the weekend, and says so.
+    assert "otherwise" not in found["weekend"]["matches"][0]
+
+
+def test_a_weekend_reading_is_given_where_it_differs():
+    found = assumed(answer("5 business days ago", holidays=["2026-11-13"]))
+    assert "holidays" not in found
+    (other,) = found["weekend"]["matches"][0]["otherwise"]
+    assert other["value"] == ["friday", "saturday"] and other["first_day"] == "2026-11-09"
+
+
+def test_business_settings_given_are_not_assumptions():
+    assert set(assumed(answer("5 business days ago", weekend=["sat", "sun"]))) == {"holidays"}
+    assert assumed(answer("5 business days ago", weekend=["sat", "sun"], holidays=[])) == {}
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["next business day", "the last working day of the month",
+     "first business day of next month", "in 3 working days", "last 10 business days"],
+)
+def test_every_business_day_phrase_is_found(text):
+    assert {"weekend", "holidays"} <= set(assumed(answer(text)))
+
+
+def test_dates_not_counted_in_business_days_assume_no_weekend():
+    for text in ["last week", "15 March 2024", "Q3 FY24", "the last day of the month"]:
+        found = assumed(answer(text))
+        assert "weekend" not in found and "holidays" not in found, text
+
+
+#: Phrases where a shortcut could go wrong: each kind of setting, mixed with dates it
+#: cannot reach, in spans, lists and comparisons.
+_HARD = [
+    "Q3 FY24 and 15 March 2024", "June of this fiscal year", "15-20 June FY25",
+    "from April 2023 to the end of FY24", "15 March to FY25", "15 June 2024-25",
+    "03/04/2024 vs 13/04/2024", "March and 24/03/04", "jan, feb 24", "jan 24 to mar 24",
+    "last week vs Saturday last week", "last month and 15 March 2024", "since March",
+    "5 business days ago and last week", "Q1-Q3 FY24 vs Q1-Q3 FY23", "YTD vs FYTD",
+    "the last month of the fiscal year", "H1 2025 vs H1 2024", "w.e.f. 1 April 2024",
+    "03–04–2024 and 03／04／2024", "12/31/68 vs Q1 '85", "the last day of FY2024",
+    "this fiscal quarter and fiscal QTD", "this Friday and Monday through Friday",
+]
+
+
+@pytest.mark.parametrize("given", [{}, {"year_basis": "fiscal"}, {"date_order": "MDY"}])
+def test_the_shortcuts_change_no_answer(monkeypatch, given):
+    """``_reach`` and the early stop only skip work. Trying every setting on every match
+    must give exactly the same answer. (Checked once over the whole format catalogue and
+    snapshot, under three days and three settings; these are the cases that broke.)"""
+    fast = [answer(text, **given) for text in _HARD]
+    monkeypatch.setattr(tool, "_reach", lambda reach, found, relative: found)
+    assert [answer(text, **given) for text in _HARD] == fast
+
+
+def test_every_answer_matches_the_output_schema():
+    jsonschema = pytest.importorskip("jsonschema")
+    validator = jsonschema.Draft202012Validator(
+        tool.OUTPUT_SCHEMA, format_checker=jsonschema.FormatChecker()
+    )
+    validator.check_schema(tool.OUTPUT_SCHEMA)
+    jsonschema.Draft202012Validator.check_schema(tool.INPUT_SCHEMA)
+    for text in [*_HARD, "nothing", "", "next week at 3pm", "before 2024", "Q3 2024-25"]:
+        validator.validate(tool.call({"text": text}))
+        validator.validate(answer(text, weekend=["fri", "sat"], holidays=["2026-12-25"]))
+
+
+def test_the_module_docstring_example_runs():
+    import doctest
+
+    assert doctest.testmod(tool).failed == 0
+
+
+def test_the_readme_example_answer_is_what_the_tool_gives():
+    """The README shows the answer for "Q3 FY24", shortened: every key and value it shows
+    must be in the real answer. "..." stands for what was left out."""
+    readme = (Path(__file__).resolve().parent.parent / "README.md")
+    if not readme.is_file():
+        pytest.skip("README.md is not beside the tests")
+    block = re.search(r"`Q3 FY24`, with nothing but today given.*?```json\n(.*?)\n```",
+                      readme.read_text(encoding="utf-8"), re.S)
+    assert block, "the README's example answer is gone"
+
+    def holds(shown: object, real: object, where: str) -> None:
+        if isinstance(shown, dict):
+            assert isinstance(real, dict), where
+            for key, value in shown.items():
+                if key != "...":
+                    assert key in real, f"{where}.{key}"
+                    holds(value, real[key], f"{where}.{key}")
+        elif isinstance(shown, list):
+            assert isinstance(real, list) and len(shown) == len(real), where
+            for i, (a, b) in enumerate(zip(shown, real, strict=True)):
+                holds(a, b, f"{where}[{i}]")
+        elif isinstance(shown, str) and shown.endswith("..."):
+            assert isinstance(real, str) and real.startswith(shown[:-3].rstrip()), where
+        else:
+            assert shown == real, where
+
+    holds(json.loads(block.group(1)), answer("Q3 FY24"), "answer")
 
 
 # ---------------------------------------------------------------------------
@@ -291,9 +477,28 @@ def test_today_left_out_follows_the_timezone():
         ({"text": "Q1", "fiscal_start_month": True}, "1-12"),
         ({"text": "Q1", "fiscal_start_month": "April"}, "1-12"),
         ({"text": "Q1", "date_order": "DYM"}, "'DMY', 'MDY', 'YMD'"),
+        ({"text": "Q1", "fiscal_start_month": 7.5}, "1-12"),
+        # A digit to str.isdigit, and no number to int(): refused, never a crash.
+        ({"text": "Q1", "fiscal_start_month": "¹"}, "1-12"),
+        ({"text": "Q1", "week_starts_on": "²"}, "week_starts_on"),
+        ({"text": "Q1", "two_digit_pivot": 100}, "0-99"),
+        ({"text": "Q1", "two_digit_pivot": "sixty"}, "0-99"),
         ({"text": "Q1", "week_starts_on": 7}, "week_starts_on"),
+        ({"text": "Q1", "week_starts_on": "su"}, "week_starts_on"),
         ({"text": "Q1", "today": "16/11/2026"}, "YYYY-MM-DD"),
+        # Taken by date.fromisoformat from Python 3.11, and not by 3.10: refused on all.
+        ({"text": "Q1", "today": "20261116"}, "YYYY-MM-DD"),
+        ({"text": "Q1", "today": "2026-W47-1"}, "YYYY-MM-DD"),
+        ({"text": "Q1", "today": "2026-02-30"}, "not a date in the calendar"),
         ({"text": "Q1", "timezone": "IST"}, "IANA"),
+        # A directory of the zone database: PermissionError on Windows, not a zone anywhere.
+        ({"text": "Q1", "timezone": "America"}, "IANA"),
+        ({"text": "Q1", "timezone": ""}, "IANA"),
+        ({"text": "Q1", "weekend": ["saturday", "funday"]}, "each day of weekend"),
+        ({"text": "Q1", "weekend": list(tool._WEEKDAYS)}, "at least one working day"),
+        ({"text": "Q1", "weekend": {"saturday": True}}, "weekend must be a list"),
+        ({"text": "Q1", "holidays": ["2026-12-25", "25/12/2026"]}, "each holiday"),
+        ({"text": "Q1", "holidays": 20261225}, "holidays must be a list"),
     ],
 )
 def test_bad_arguments_come_back_as_a_message_the_model_can_act_on(arguments, says):
@@ -310,14 +515,40 @@ def test_a_tool_input_error_is_a_value_error():
     assert issubclass(tool.ToolInputError, ValueError)
 
 
+def test_a_timezone_in_the_wrong_case_is_told_its_name(monkeypatch):
+    """On a case-insensitive disk "asia/kolkata" may simply load, so the lookup is made to
+    fail here as it does on Linux and Windows."""
+
+    def not_found(key: str) -> None:
+        raise tool.ZoneInfoNotFoundError(key)
+
+    monkeypatch.setattr(tool, "ZoneInfo", not_found)
+    with pytest.raises(tool.ToolInputError, match="it is 'Asia/Kolkata'"):
+        tool.call({"text": "Q1", "timezone": "asia/kolkata"})
+
+
 def test_near_misses_a_model_sends_are_read_as_meant():
-    reference = answer("last week Q3 FY24 03/04/2024", fiscal_start_month=7, date_order="MDY",
-                       week_starts_on="sunday")
-    loose = answer("last week Q3 FY24 03/04/2024", fiscal_start_month="7", date_order="mdy",
-                   week_starts_on="Sunday")
-    numbered = answer("last week Q3 FY24 03/04/2024", fiscal_start_month=7, date_order="MDY",
-                      week_starts_on=6)
+    text = "last week Q3 FY24 03/04/2024 5 business days ago"
+    reference = answer(text, fiscal_start_month=7, date_order="MDY", week_starts_on="sunday",
+                       weekend=["friday", "saturday"], holidays=["2026-11-12"])
+    loose = answer(text, fiscal_start_month="7", date_order="mdy", week_starts_on="Sun",
+                   weekend="fri, SAT", holidays="2026-11-12")
+    numbered = answer(text, fiscal_start_month=7.0, date_order="MDY", week_starts_on=6,
+                      weekend=[4, "5"], holidays=[date(2026, 11, 12), "2026-11-12"])
     assert loose == reference == numbered
+
+
+def test_an_empty_weekend_is_a_weekend_of_no_days():
+    result = answer("5 business days ago", weekend=[], holidays=[])
+    assert result["settings"]["weekend"] == [] and result["assumptions"] == []
+    assert result["matches"][0]["first_day"] == "2026-11-11"
+
+
+def test_a_today_at_the_end_of_the_calendar_still_answers():
+    """Which dates count from today is found by looking a year on; at 9999 that is past
+    the last date Python has, so it looks a year back instead."""
+    (m,) = tool.call({"text": "last month", "today": "9999-12-01"})["matches"]
+    assert m["first_day"] == "9999-11-01" and m["relative_to_today"] is True
 
 
 def test_null_means_left_out():
@@ -351,14 +582,23 @@ def test_cli_json_is_the_tool_answer(capsys):
 def test_cli_flags_map_onto_the_tool_settings(capsys):
     argv = ["--json", "--today", TODAY, "--label-by", "start_year", "--basis", "fiscal",
             "--date-order", "MDY", "--month-number", "year", "--week-starts-on", "sunday",
-            "--anchor", "rolling", "--tz", "Asia/Kolkata", "last week, Q1 and 03/04/2024"]
+            "--anchor", "rolling", "--tz", "Asia/Kolkata", "--weekend", "fri,sat",
+            "--holidays", "2026-12-25,2026-11-20", "--two-digit-pivot", "30",
+            "last week, Q1 and 03/04/2024"]
     assert main(argv) == 0
     settings = json.loads(capsys.readouterr().out)["settings"]
     assert settings == {
         "fiscal_start_month": 4, "fiscal_year_label": "start_year", "year_basis": "fiscal",
-        "date_order": "MDY", "month_number": "year", "week_starts_on": "sunday",
-        "anchor": "rolling", "timezone": "Asia/Kolkata",
+        "date_order": "MDY", "month_number": "year", "two_digit_pivot": 30,
+        "week_starts_on": "sunday", "anchor": "rolling", "weekend": ["friday", "saturday"],
+        "holidays": ["2026-11-20", "2026-12-25"], "timezone": "Asia/Kolkata",
     }
+
+
+def test_cli_today_takes_an_unpadded_month_and_day(capsys):
+    """As --today always has: it was read with strptime's %m and %d, which take one digit."""
+    assert main(["--json", "--today", "2026-1-5", "today"]) == 0
+    assert json.loads(capsys.readouterr().out)["today"] == "2026-01-05"
 
 
 def test_cli_table_shows_the_reading_and_reports_assumptions(capsys):
@@ -371,6 +611,13 @@ def test_cli_table_shows_the_reading_and_reports_assumptions(capsys):
 def test_cli_table_leaves_today_out_of_the_assumptions(capsys):
     assert main(["since March"]) == 0
     assert "assumed" not in capsys.readouterr().err
+
+
+def test_cli_table_shows_list_settings_as_the_flag_takes_them(capsys):
+    assert main(["--today", TODAY, "5 business days ago"]) == 0
+    err = capsys.readouterr().err
+    assert "assumed weekend=saturday,sunday:" in err
+    assert "assumed holidays=none:" in err
 
 
 @pytest.mark.parametrize(
@@ -396,11 +643,58 @@ def test_cli_with_nothing_found_exits_1(capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_the_mcp_command_without_the_sdk_says_how_to_install_it(monkeypatch, capsys):
-    from date_wrangler import mcp_server
+def _load_mcp_server_failing_with(monkeypatch, error: ImportError):
+    """The server module as it loads when importing the SDK raises ``error``."""
+    import builtins
+    import importlib
 
-    monkeypatch.setattr(mcp_server, "_SDK", False)
-    assert mcp_server.main() == 1
+    import date_wrangler.mcp_server as mcp_server
+
+    real_import = builtins.__import__
+
+    def failing(name, *args, **kwargs):
+        if name == "anyio" or name.startswith("mcp"):
+            raise error
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", failing)
+    try:
+        return importlib.reload(mcp_server)
+    finally:
+        monkeypatch.setattr(builtins, "__import__", real_import)
+
+
+@pytest.fixture
+def reload_mcp_server_after():
+    yield
+    import importlib
+
+    import date_wrangler.mcp_server as mcp_server
+
+    importlib.reload(mcp_server)
+
+
+def test_the_mcp_command_without_the_sdk_says_how_to_install_it(
+    monkeypatch, capsys, reload_mcp_server_after
+):
+    server = _load_mcp_server_failing_with(
+        monkeypatch, ModuleNotFoundError("No module named 'mcp'", name="mcp")
+    )
+    assert server.main() == 1
     assert 'pip install "date-wrangler[mcp]"' in capsys.readouterr().err
     with pytest.raises(ImportError, match="date-wrangler\\[mcp\\]"):
-        mcp_server.build_server()
+        server.build_server()
+
+
+def test_a_broken_sdk_is_reported_as_broken_not_as_missing(
+    monkeypatch, capsys, reload_mcp_server_after
+):
+    """With the extra installed but a dependency of it missing, "install the extra" would
+    send someone round in a circle: the message names what actually failed."""
+    server = _load_mcp_server_failing_with(
+        monkeypatch, ModuleNotFoundError("No module named 'pywintypes'", name="pywintypes")
+    )
+    assert server.main() == 1
+    err = capsys.readouterr().err
+    assert "could not load the MCP SDK" in err and "pywintypes" in err
+    assert "pip install" not in err

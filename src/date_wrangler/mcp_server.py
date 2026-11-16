@@ -11,6 +11,7 @@ dates: ``pip install "date-wrangler[mcp]"``. Without it the command says so and 
 
 from __future__ import annotations
 
+import copy
 import json
 import sys
 from typing import Any
@@ -22,17 +23,24 @@ try:
     import mcp.types as types
     from mcp.server import Server, ServerRequestContext
     from mcp.server.stdio import stdio_server
-except ImportError:
+    from mcp.shared.exceptions import MCPError
+except ImportError as exc:
     _SDK = False
+    # Not installed, or installed and broken (a missing pywintypes, say): telling someone
+    # with the extra installed to install it hides the real fault, so the two differ.
+    if exc.name in ("mcp", "anyio"):
+        _INSTALL = 'date-wrangler-mcp needs the MCP SDK: pip install "date-wrangler[mcp]"'
+    else:
+        _INSTALL = f"date-wrangler-mcp could not load the MCP SDK: {exc}"
 else:
     _SDK = True
-
-_INSTALL = 'date-wrangler-mcp needs the MCP SDK: pip install "date-wrangler[mcp]"'
+    _INSTALL = ""
 
 _INSTRUCTIONS = (
     f"One tool, {tool.NAME}: call it to turn dates written in words into exact first and "
     "last days instead of working them out. Pass today and the organisation's fiscal "
-    "settings when they are known, and tell the user about any assumptions it reports."
+    "year, weekend and holidays when they are known, and tell the user about any "
+    "assumptions it reports."
 )
 
 
@@ -63,6 +71,7 @@ async def _list_tools(
                 title="Resolve dates",
                 description=spec["description"],
                 input_schema=spec["input_schema"],
+                output_schema=copy.deepcopy(tool.OUTPUT_SCHEMA),
                 # It reads text and computes; nothing outside the call changes.
                 annotations=types.ToolAnnotations(
                     read_only_hint=True,
@@ -79,16 +88,27 @@ async def _call_tool(
     ctx: ServerRequestContext[Any], params: types.CallToolRequestParams
 ) -> types.CallToolResult:
     if params.name != tool.NAME:
-        return _error(f"unknown tool {params.name!r}; this server has one, {tool.NAME!r}")
+        # A protocol error, as MCP asks for a tool the server does not have: the client
+        # asked for something that is not there, and no model can fix that by retrying.
+        raise MCPError(
+            code=types.INVALID_PARAMS,
+            message=f"unknown tool {params.name!r}; this server has one, {tool.NAME!r}",
+        )
     try:
         answer = tool.call(params.arguments or {})
     except tool.ToolInputError as exc:
-        # An error result, not a protocol error: the model reads it and fixes the call.
+        # An error result, not a protocol error, as MCP asks for arguments that fail
+        # validation: the model reads it and fixes the call.
         return _error(str(exc))
+    except Exception as exc:  # a fault in the library, not in the call
+        # Still a result, as MCP asks of a tool that fails while running, so the model can
+        # say what happened; the server carries on for the next call.
+        return _error(f"date-wrangler failed on this input: {type(exc).__name__}: {exc}")
     # The answer twice, as MCP asks of structured results: as data for clients that read
-    # structured content, and as its JSON text for those that only show text.
+    # structured content, and as its JSON text for those that only show text -- compact,
+    # since it is a copy and a long text's answer is large.
     return types.CallToolResult(
-        content=[types.TextContent(text=json.dumps(answer))],
+        content=[types.TextContent(text=json.dumps(answer, separators=(",", ":")))],
         structured_content=answer,
     )
 
@@ -107,7 +127,10 @@ def main() -> int:
     if not _SDK:
         print(_INSTALL, file=sys.stderr)
         return 1
-    anyio.run(_serve)
+    try:
+        anyio.run(_serve)
+    except KeyboardInterrupt:  # Ctrl+C when run by hand at a terminal: no traceback
+        return 130
     return 0
 
 

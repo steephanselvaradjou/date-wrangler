@@ -43,9 +43,16 @@ def _parser() -> argparse.ArgumentParser:
                    help="how 03/04/2024 is read (default DMY)")
     p.add_argument("--month-number", choices=[n.value for n in MonthNumber], default=None,
                    help="what two digits after a month name are: 'jan 24' (default day)")
+    p.add_argument("--two-digit-pivot", default=None, metavar="N",
+                   help="two-digit years at or below N are 20xx, above it 19xx (default 68)")
     p.add_argument("--strictness", choices=["strict", "balanced", "greedy"], default="balanced")
     p.add_argument("--week-starts-on", default=None, metavar="D",
                    help="0=Monday (default) through 6=Sunday, or the day's name")
+    p.add_argument("--weekend", default=None, metavar="DAYS",
+                   help="non-working days for business-day phrases, comma-separated, e.g. "
+                        "fri,sat (default sat,sun)")
+    p.add_argument("--holidays", default=None, metavar="DATES",
+                   help="non-working dates, comma-separated YYYY-MM-DD (default none)")
     p.add_argument("--min-confidence", type=float, default=0.0, metavar="C",
                    help="drop matches below this, e.g. 0.9 to exclude flagged reads")
     p.add_argument("--json", action="store_true",
@@ -69,8 +76,11 @@ def main(argv: list[str] | None = None) -> int:
             year_basis=args.year_basis or args.basis,
             date_order=args.date_order,
             month_number=args.month_number,
+            two_digit_pivot=args.two_digit_pivot,
             week_starts_on=args.week_starts_on,
             anchor=args.anchor,
+            weekend=args.weekend,
+            holidays=args.holidays,
             strictness=args.strictness,
             # Filtering here rather than inside diagnose keeps the diagnostics: a caller
             # asking for confident matches only still wants to be told what was dropped.
@@ -101,7 +111,10 @@ def main(argv: list[str] | None = None) -> int:
     # relative phrase would repeat it.
     for a in answer["assumptions"]:
         if a["setting"] != "today":
-            print(f"assumed {a['setting']}={a['assumed']}: {a['note']}", file=sys.stderr)
+            assumed = a["assumed"]
+            if isinstance(assumed, list):  # weekend, holidays: as the flag takes them
+                assumed = ",".join(assumed) or "none"
+            print(f"assumed {a['setting']}={assumed}: {a['note']}", file=sys.stderr)
     return 0
 
 
