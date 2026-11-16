@@ -62,7 +62,7 @@ _TRIGGERS = (
         # Phrases whose only trigger is the word itself: a bare "weekend" or "EOM"
         # carries no digit and no unit word, so without these it never reaches the
         # scanner at all.
-        "weekend", "eom", "eoq", "eoy", "eow", "eod", "cob", "eob",
+        "weekend", "eom", "eoq", "eoy", "eow", "eod", "cob", "eob", "fye",
         "wk", "cw", "kw",
         "beginning", "start", "early", "mid", "middle", "late", "end", "close",
         # Read only to say why they are not answered: "an hour ago" has no other trigger.
@@ -91,6 +91,7 @@ _DIGIT = re.compile(r"\d")
 #: back" and "some time back" never reached the rule that says why they are not answered.
 _UNTRIGGERED = re.compile(
     r"\b[ymqw][.-]t[.-]?d\b|\bas\s+(?:of|at)\s+now\b|\bup\s+to\s+now\b|\be\.o\.[mqyw]\b"
+    r"|\bf\.y\.e\b"
     r"|\b(?:a\s+(?:little\s+)?while|some\s*time)\s+back\b",
     re.IGNORECASE,
 )
