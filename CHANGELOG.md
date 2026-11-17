@@ -7,20 +7,20 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
-## Unreleased
+## 2.5.0 — 2026-11-17
 
 For AI agents: one tool, `resolve_dates`, offered three ways -- a definition to hand a
 model, an MCP server, and a skill -- with every decision made in the library, so all three
-give the same answer. Parsing is about as fast as before, within 4%. It now reads fiscal weeks, weeks and
-months numbered into a period, a fiscal year's end and a year's start as written, where it
-read them as calendar periods, days, or this year's; a tax year as the fiscal year, and
-`FY24 M3` as FY24's third month, where a word was dropped; it declines an academic or school
-year's edges as it does the year itself; and a weekday on a week that does not start on
-Monday falls on that weekday. **Changes answers** for those phrases. None of the 5,982
-answers the snapshot pins moved but the weekday's 14, under its Sunday-week configuration;
-every other answer that differs from the parser before this release -- over 2,638 phrases
-under eight settings, and the test suite's 7,202 under two -- is in a family named under
-Fixed.
+give the same answer. Parsing is about as fast as before, within 4%. It now reads fiscal
+weeks, weeks and months numbered into a period, a fiscal year's end and a year's start as
+written, where it read them as calendar periods, days, or this year's; a tax year as the
+fiscal year, and `FY24 M3` as FY24's third month, where a word was dropped; it declines an
+academic or school year's edges as it does the year itself; and a weekday on a week that
+does not start on Monday falls on that weekday. **Changes answers** for those phrases.
+None of the 5,982 answers the snapshot pins moved but the weekday's 14, under its
+Sunday-week configuration; every other answer that differs from the parser before this
+release -- over 2,638 phrases under eight settings, and the test suite's 7,202 under two --
+is in a family named under Fixed.
 
 ### Added
 - `date_wrangler.tool`: the tool's definition (`definition()`, plain JSON Schema that strict
