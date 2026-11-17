@@ -284,8 +284,9 @@ class _Pieces:
 
     def year_word(self, k: int) -> tuple[Basis, int] | None:
         """A word saying which kind of year follows, at token ``k``: "FY", "F.Y.", "fiscal
-        year", "financial year", "fiscal" before a number, "CY", "C.Y.", "calendar year".
-        Returns the basis and the token after the word."""
+        year", "financial year", "tax year", "fiscal" before a number, "CY", "C.Y.",
+        "calendar year". Returns the basis and the token after the word. A tax year is the
+        fiscal year, as the rules read it."""
         t = self.at(k)
         if t is None:
             return None
@@ -293,8 +294,14 @@ class _Pieces:
             j = k + 1
         elif t.low in ("f", "c") and self.is_(k + 1, ".") and self.is_(k + 2, "y"):
             j = k + 3 + (1 if self.is_(k + 3, ".") else 0)  # "F.Y.", "c.y"
-        elif t.low in ("fiscal", "financial", "calendar") and self.is_(k + 1, "year"):
+        elif t.low in ("fiscal", "financial", "calendar", "tax") and self.is_(k + 1, "year"):
             j = k + 2
+        elif (
+            t.low in ("fiscal", "financial", "calendar", "tax")
+            and self.is_(k + 1, "-")
+            and self.is_(k + 2, "year")
+        ):
+            j = k + 3  # "fiscal-year 2024", "tax-year 2024", as the rules take them
         elif t.low in ("fiscal", "financial") and self.number_follows(k + 1):
             j = k + 1  # "fiscal 2024", as US filings write it
         else:
@@ -883,8 +890,28 @@ _OPENING_WITH_A_MONTH: tuple[_ReadFn, ...] = (
 )
 _OPENING_WITH_A_YEAR_WORD: tuple[_ReadFn, ...] = (_fy_month,)
 _OPENING_WITH_BETWEEN: tuple[_ReadFn, ...] = (_between_days,)
+
+#: The rule each reader reads for, where its own name is not one. A reader that declines
+#: is reported -- and ordered against the rules' matches at the same place -- under it.
+#: REGRESSION: a decline went out under the reader's own name, "days_month" say, which no
+#: rule has, and beside a rule's match at the same place parse raised KeyError: " '02
+#: TO1MAR" on a strict configuration.
+_RULE_OF: dict[_ReadFn, str] = {
+    _days_month: "day_span",
+    _month_days: "day_span",
+    _between_days: "day_span",
+    _days_list: "day_list",
+    _month_days_list: "day_list",
+    _compact_day: "dashed_day",
+    _month_alone: "month",
+}
+
+
+def rule_of(reader: _ReadFn) -> str:
+    """The rule ``reader`` reads for: the name its dates, and its declines, go under."""
+    return _RULE_OF.get(reader, reader.__name__.lstrip("_"))
 #: Words a date of this family can open with, besides a number or a month.
-_OPENERS = frozenset({"fy", "f", "fiscal", "financial", "cy", "c", "calendar"})
+_OPENERS = frozenset({"fy", "f", "fiscal", "financial", "tax", "cy", "c", "calendar"})
 
 
 #: A date found: the rule it stands in for, its spec (None when declined, with the reason),
@@ -941,7 +968,7 @@ class Reader:
             try:
                 got = reader(p, i, self.cfg)
             except Declined as no:
-                return reader.__name__.lstrip("_"), None, t.start, p.toks[no.end - 1].end, str(no)
+                return rule_of(reader), None, t.start, p.toks[no.end - 1].end, str(no)
             if got is not None:
                 rule, spec, end = got
                 if isinstance(spec, list):

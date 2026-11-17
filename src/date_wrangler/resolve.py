@@ -150,25 +150,24 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     """Resolve ``spec`` against ``today``. Raises :class:`UnresolvableSpec` on bad input."""
     try:
         base = _resolve_core(spec, today, cfg)
-        if spec.year_offset:
+        # An ISO week takes its offset in its year, in _resolve_core: week 3 of next year is
+        # not this year's week 3 a year on.
+        if spec.year_offset and spec.kind is not Kind.ISO_WEEK:
             base = _shift_years(base, spec.year_offset)
-        if spec.through_today:
-            # With no year written, "December to date" in October means the December just
-            # gone, not the one coming -- the same choice "YTD March" already makes. An
-            # explicit year is taken at its word, so "FY28 to date" is still refused.
-            # A relative period is never moved: "next month to date" has nothing to date yet.
-            if (
-                base.start is not None
-                and base.start > today
-                and not spec.has_explicit_year
-                and not spec.is_relative
-            ):
-                base = _shift_years(base, -1)
-            base = _through_today(base, today)
+        if spec.through_today and spec.sub_period is None:
+            base = _to_date(base, spec, today)
         if spec.day_span is not None:
             base = _pick_day_span(base, *spec.day_span)
         if spec.sub_period is not None:
-            base = _pick_sub_period(base, *spec.sub_period)
+            picked = _pick_sub_period(base, *spec.sub_period)
+            if spec.through_today:
+                # "week 3 of FY25 to date" runs from that week to today. REGRESSION: "to
+                # date" was put on FY25 before its week was taken out, and the week alone
+                # came back.
+                if picked.start is not None and picked.start > today and _may_go_back(spec):
+                    picked = _pick_sub_period(_shift_years(base, -1), *spec.sub_period)
+                picked = _through_today(picked, today)
+            base = picked
         if spec.part is not None:
             if spec.kind is Kind.DECADE:
                 base = _slice_decade(base, spec.part)
@@ -257,6 +256,21 @@ def _pick_sub_period(r: DateRange, index: int, count: int, unit: Grain) -> DateR
     if not r.start <= start < r.end:
         raise UnresolvableSpec(f"{r.start}..{r.end} does not have that {unit.value}")
     return DateRange(start, min(end, r.end), unit, r.basis)
+
+
+def _may_go_back(spec: Spec) -> bool:
+    """With no year written, "December to date" in October means the December just gone,
+    not the one coming -- the same choice "YTD March" already makes. An explicit year is
+    taken at its word, so "FY28 to date" is still refused. A relative period is never
+    moved: "next month to date" has nothing to date yet."""
+    return not spec.has_explicit_year and not spec.is_relative
+
+
+def _to_date(r: DateRange, spec: Spec, today: date) -> DateRange:
+    """``r`` to date, a year back first when it has not started and may go back."""
+    if r.start is not None and r.start > today and _may_go_back(spec):
+        r = _shift_years(r, -1)
+    return _through_today(r, today)
 
 
 def _through_today(r: DateRange, today: date) -> DateRange:
@@ -530,9 +544,10 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         if spec.index is None:
             raise UnresolvableSpec("a week number spec needs a week")
         # The ISO year, not the calendar year: on 31 December 2026 the current week is
-        # week 53 of 2026, but on 1 January 2027 it is still week 53 of *2026*.
+        # week 53 of 2026, but on 1 January 2027 it is still week 53 of *2026*. A year
+        # named from this one -- "week 3 of next year" -- moves that year.
         year = spec.year if spec.year is not None else today.isocalendar()[0]
-        return iso_week_range(year, spec.index)
+        return iso_week_range(year + (spec.year_offset or 0), spec.index)
 
     if spec.kind is Kind.DECADE:
         if spec.year is None:
@@ -560,7 +575,9 @@ def _resolve_weekday(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     if spec.direction == 0:
         week_start = week_range(today, cfg.week_starts_on).start
         assert week_start is not None
-        return day_range(week_start + timedelta(days=spec.index))
+        # spec.index counts from Monday and the week may not: on a Sunday-start week,
+        # Friday is five days in, not four.
+        return day_range(week_start + timedelta(days=(spec.index - cfg.week_starts_on) % 7))
     delta = (spec.index - today.weekday()) % 7
     if spec.direction < 0:
         back = delta - 7 if delta else -7

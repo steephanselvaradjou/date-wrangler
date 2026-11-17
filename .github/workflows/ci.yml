@@ -23,7 +23,8 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: pyproject.toml
-      - run: pip install -e ".[dev]"
+      # With the MCP extra, so mypy checks the server against the SDK's real types.
+      - run: pip install -e ".[dev,mcp]"
       - run: ruff check src tests
       - run: mypy
 
@@ -55,6 +56,22 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: python -m pip install --upgrade pip
+      # The MCP extra everywhere, so the server is started over stdio on every platform:
+      # Windows pipes are where a stdio server is most likely to break.
+      - run: pip install -e ".[dev,mcp]"
+      - run: pytest -q
+
+  # The core alone, as most installs have it. The MCP tests skip; everything else has to
+  # pass with the SDK absent, which the matrix above can no longer show.
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e ".[dev]"
       - run: pytest -q
 

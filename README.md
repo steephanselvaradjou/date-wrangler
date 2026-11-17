@@ -34,6 +34,7 @@ pip install date-wrangler
 
 Python 3.10+. No runtime dependencies, except `tzdata` on Windows — which ships no system
 timezone database, so the standard library needs it for the optional `tz=` argument.
+`pip install "date-wrangler[mcp]"` adds the [MCP server](#an-mcp-server) for AI agents.
 
 ## The core model
 
@@ -176,6 +177,11 @@ either: `2026-W01` begins on 29 December 2025, and some years have a week 53 and
 not. Asking for one that does not exist is refused with a diagnostic, not rounded into the
 next year. A bare `W42` is treated like a bare month name and needs a cue (`in W42`),
 because on its own it is just as likely a part number.
+
+A week numbered *in* something is that thing's week, not an ISO week: `fiscal week 3`,
+`week 3 of FY25` and `week 3 of January` count seven days at a time from the period's first
+day, as `the 3rd week of FY25` and `the 3rd week of January` do, and do not follow this
+setting either. With nothing fiscal about it, `week 3 of 2025` stays ISO week 3.
 
 ### Business days
 
@@ -460,12 +466,13 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 
 | | |
 |---|---|
-| Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `Q1 FY2024-25`, `FY2024-25 Q3`, `fiscal 2024`, `2023-24 financial year`, `fy-24`, `F.Y. 2024`, `FY ending June 30, 2024` |
+| Fiscal periods | `Q1 FY25`, `Q1FY24`, `H1 FY25`, `1H 2024`, `FY2024-25`, `Q1 FY2024-25`, `FY2024-25 Q3`, `fiscal 2024`, `fiscal-year 2024`, `2023-24 financial year`, `fy-24`, `F.Y. 2024`, `FY ending June 30, 2024` |
 | Assessment year | `A.Y. 2025-26`, `AY 2025-26`, `assessment year 2025-26`, `Q1 AY 2025-26` — always the fiscal year before it, whose income it assesses: `A.Y. 2025-26` is F.Y. 2024-25 |
+| Tax year | `tax year 2025-26`, `this tax year`, `last tax year`, `tax year start`, `tax year end 2024`, `Q1 of the tax year`, `tax week 3`, `tax year to date` — the fiscal year on your fiscal calendar, read exactly as `fiscal year` is: `tax year 2025-26` is F.Y. 2025-26, whose income `AY 2026-27` assesses. A fiscal calendar starts on the first of a month, so the UK's personal tax year, from 6 April, is read from 1 April; one that ends on a day given — `the tax year ending 5 April 2024` — ends there. `tax` before anything but a year changes nothing: `tax day`, `tax YTD` |
 | Split years | `2024-25`, `2012/13` with no FY follow `year_basis`, as any year does: on a fiscal basis the fiscal year 2024-25 (and `Q3 2024-25` its third quarter); on a calendar basis the years 2024 to 2025, of which `Q3 2024-25` is not one period, so `diagnose` says to write `FY2024-25`. `2011-12` is a fiscal year on a fiscal basis and December 2011 on a calendar one |
 | Quarter spellings | `Q3'24`, `Q3-2024`, `2024-Q3`, `2024Q3`, `FY24 Q3`, `3Q24`, `1H24`, `1HFY24`, `fiscal Q3`, `Q3 FY` — and a quarter, half or month beside its year: `Q3 in 2024`, `Q3/FY24`, `FY 2024 Qtr 3`, `2024 - third quarter`, `June in 2024`, `Mar/2024`, `2024 March`, and run together: `2024QTR3`, `FY2024-25QTR3`, `Qtr 3-24`, `2024March`, `MarchFY24`. A spaced dash after the label is a span, as `June - FY25` always was; before it, a heading: `FY24 - Q3`, `2024 - March` |
 | Years and labelled periods | `2024`, `the year 2024`, `Q1 of 2024`, `January 2024`, `CY2024` — see [which calendar](#configuration) for how a year is read |
-| Fiscal month index | `third month of FY24`, `twelfth month` |
+| Fiscal month index | `third month of FY24`, `twelfth month`, `month 3 of FY24`, `FY24 month 3`, `fiscal month 3`, `months 3-5 of FY24`, and as reports head a column: `FY24 M3`, `FY24-M03`, `FY24 M3-M5`, read at confidence 0.8, since `M3` may be the money supply. Only straight after the fiscal year and only `M1` to `M12`: `M3 FY24`, `BMW M3 FY24` and `FY24 M25` read FY24 alone |
 | Month of a fiscal year | `June FY25`, `Jun-FY25`, `FY25 June`, `June FY 2024-25`, `Oct to Mar FY25` — the June *inside* FY25, so June 2024 with an April year; `June 2025` stays June 2025 |
 | Relative | `last 3 months`, `next 2 quarters`, `3 months ago`, `this week`, `yesterday` — and spelt short: `last 3months`, `3mos ago`, `last mth`, `prev quarter`, `a couple of weeks ago`, `yday`, `tmrw`. A single letter for a unit (`3m`) is not read: it is minutes or millions as often as months |
 | Stated basis | `this fiscal year`, `this FY`, `last 2 fiscal quarters`, `next calendar year` |
@@ -473,7 +480,7 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | To-date | `YTD`, `MTD`, `QTD`, `WTD`, `year-to-date`, `Y-T-D`, `so far this year`; `FYTD`, `fiscal YTD`, `FY to date` (from the fiscal year's start), `CYTD`; `last YTD`, `LYTD`, `YTD last year` (the same window a year earlier), `last MTD`, `LMTD` (the same days of last month), `last year's MTD`; `YTD 2024`, `2024-YTD`, `YTD through March 2024`, `March 2024 YTD` |
 | Period to date | `this year to date`, `Q3 to date`, `October to date`, `March 2024 to date` |
 | Reporting shorthand | `TTM`, `LTM`, `T12M`, `L3M`, `trailing 12 months`, `rolling 3 months` |
-| Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024`, and as reports abbreviate them: `QE June 2024`, `YE March 2024`, `FYE March 2024`, `12M to March 2024`, `6M to June 2024` |
+| Period-ending | `quarter ending June 2024`, `year ended March 2024`, `six months to June 2024`, `the 12 months to March 2024`, `the half year to 30 September 2024`, and as reports abbreviate them: `QE June 2024`, `YE March 2024`, `FYE March 2024`, `12M to March 2024`, `6M to June 2024`. `FYE 2024`, `FYE 24`, `2024 FYE`, `fiscal year end 2024` and `fiscal year end of 2024` are the fiscal year that ends in 2024, April 2023 to March 2024 with an April year; `FYE FY24` and `FY24 FYE` are FY24, whatever year names it. A period named by its end can be counted in: `week 3 of the half year ending June 2024`, `month 3 of the fiscal year ending March 2025`, `the last day of the quarter ended June 2024` |
 | Absolute | `2024-03-15`, `15 January 2024`, `January 15, 2024`, `March 15 2024`, `2024 March 15`, `03/04/2024`, `01-04-2018`, `13.06.18` |
 | A comma or weekday inside the date | `June, 2013`, `12 March, 2014`, `Q1, 2024`, `Friday, 15 March 2024` — one date, and a weekday that does not match it is flagged |
 | Months as numbers | `2024-03`, `2024/03`, `03/2024`, `03-2024` |
@@ -492,14 +499,15 @@ str(m.range)                   # '2012-01-01 .. 2013-12-31 (731 days)'
 | Part of a period | `first half of March`, `early 2024`, `mid March`, `end of Q1` |
 | Day in a period | `1st of next month`, `15th of March`, `the last day of the month`, `the last day of the fiscal year` |
 | Runs of days | `1-15 March`, `March 1-15, 2024`, `1st to 15th March`, `15-20 Mar-24`, `2024 March 15th-20th`, `between the 15th and the 20th of March 2024`, `15-20 June FY25`, and across months: `15 March 2024-20 April 2024`, `28 Dec - 3 Jan 2024`. Days listed, `15, 16 and 20 March 2024`, are each a date of their own |
-| Unit of a period | `the first week of April`, `first wk of April`, `the last week of March`, `the last 3 months of the year`, `last 3 mths of 2024`, `the last quarter of 2024`, `the last month of the fiscal year`, `the last quarter of this fiscal year` |
+| Unit of a period | `the first week of April`, `first wk of April`, `the last week of March`, `the last 3 months of the year`, `last 3 mths of 2024`, `the last quarter of 2024`, `the last month of the fiscal year`, `the last quarter of this fiscal year`, `week 3 of January`, `weeks 3-5 of January`, `week 10 of Q1 2025`, `the 20th week of FY25`. A week of a period is seven days counted from its first day: `the 3rd week of January` is the 15th to the 21st, whatever day the week starts on |
 | Deadlines | `by 31 March`, `on or before 31 March`, `no later than Friday`, `not before 1 April` |
 | Nth weekday | `first Monday of March`, `last Friday of the month`, `last Friday of month`, `3rd Thursday of November`, `the 3rd Thurs. of Nov.` |
 | Week numbers | `week 42`, `2026-W42`, `CW42`, `KW 42`, `week 42 of 2026`, `2026 week 42`, `W42-2026`, `week no. 42`, `weeks 42-43 2026` |
+| Fiscal weeks | `fiscal week 3`, `week 3 of FY25`, `FY25 week 3`, `fiscal weeks 3-5 FY25`, `week 3 to week 5 of FY25`, `weeks 3 and 5 of FY25` — counted from the fiscal year's first day, as `the 3rd week of FY25` is: 15 to 21 April 2024 with an April year |
 | Business days | `5 business days ago`, `next business day`, `last business day of the month`, `last 5 biz days`, `next workday` |
 | Same period back | `same quarter last year`, `same month of last year`, `same quarter LY`, `this time last year`, and on the fiscal calendar: `same quarter last FY` |
 | Weekend | `this weekend`, `next weekend`, `last weekend` |
-| Period edges | `month end`, `EOM`, `E.O.M.`, `end-of-month`, `EOQ`, `end of the quarter`, `end of 1Q 2024`, `year start`, `last day of month`, `last workday of the month` |
+| Period edges | `month end`, `EOM`, `E.O.M.`, `end-of-month`, `EOQ`, `end of the quarter`, `end of 1Q 2024`, `year start`, `last day of month`, `last workday of the month`, and of the fiscal year: `fiscal year end`, `FY end`, `FYE`, `fiscal year start`. With its year, a year's start is that year's: `year start 2024`, `fiscal year start 2024`, `2024 F.Y. start` |
 | Ahead | `in 3 days`, `2 weeks from now`, `3 months from today` |
 | Fortnights | `a fortnight ago`, `last fortnight`, `next fortnight` |
 | Day idioms | `day before yesterday`, `day after tomorrow` |
@@ -547,7 +555,7 @@ date, so these are left alone on purpose:
 | `within 30 days of the Effective Date` | a duration with no anchor to measure from |
 | `bake for 30 minutes` | durations and times of day are out of scope |
 | `summer 2024`, `last winter` | seasons fall in different months either side of the equator |
-| `the 2015–2016 season`, `academic year 2015-16`, `the 2015-16 NBA season`, `SY 2015-16` | a name with months of its own, not the two years it spans — kept as a label. `2015–2016` on its own is still the years, and so is `2015-16 sales by season`. `AY 2015-16` is the assessment year, and is read |
+| `the 2015–2016 season`, `academic year 2015-16`, `the 2015-16 NBA season`, `SY 2015-16`, `academic year start`, `the school year end 2024` | a name with months of its own, not the two years it spans — kept as a label. `2015–2016` on its own is still the years, and so is `2015-16 sales by season`. `AY 2015-16` is the assessment year, and is read |
 | `recently`, `a few days ago`, `the other day`, `the past few weeks`, `in recent months`, `a while back` | too vague to name a period |
 | `the year before`, on its own | before what? With a date beside it — `2024 vs the year before` — it is read |
 
@@ -797,15 +805,145 @@ $ date-wrangler --today 2025-09-04 "revenue since Q1 FY25"
    SQL: d >= '2024-04-01'
 ```
 
-`--json` for machine-readable output; `--fiscal-start`, `--year-basis`, `--date-order` and
-`--strictness` to try configurations.
+`--fiscal-start`, `--label-by`, `--year-basis`, `--date-order`, `--month-number`,
+`--week-starts-on`, `--anchor`, `--weekend`, `--holidays` and `--strictness` to try
+configurations. A setting you leave out that changed an answer is reported on stderr.
+`--json` prints the same answer an agent's tool call gets: see below.
+
+## From an AI agent
+
+Models get date arithmetic wrong in quiet ways: a fiscal year that starts in April, "last
+week" starting on a Sunday, an exclusive end read as the last day. `date-wrangler` gives an
+agent one tool, `resolve_dates`, that does the arithmetic and says what it assumed. Every
+decision is made in the library; the tool definition, the MCP server and the skill below
+only expose it, so all three give the same answer.
+
+`Q3 FY24`, with nothing but today given, comes back as (shortened):
+
+```json
+{
+  "matches": [
+    {"text": "Q3 FY24", "first_day": "2023-10-01", "last_day": "2023-12-31",
+     "reads_as": "October 2023 to December 2023", "confidence": 1.0, "notes": [],
+     "relative_to_today": false, "range": {"start": "2023-10-01", "end": "2024-01-01", "...": "..."}}
+  ],
+  "assumptions": [
+    {"setting": "fiscal_start_month", "assumed": 4,
+     "note": "The fiscal year is taken to start in April. Pass fiscal_start_month if ...",
+     "matches": [{"text": "Q3 FY24", "span": [0, 7]}]},
+    {"setting": "fiscal_year_label", "assumed": "end_year", "note": "...",
+     "matches": [{"text": "Q3 FY24", "span": [0, 7], "otherwise": [
+       {"value": "start_year", "reads_as": "October 2024 to December 2024",
+        "first_day": "2024-10-01", "last_day": "2024-12-31"}]}]}
+  ],
+  "diagnostics": []
+}
+```
+
+An assumption is listed only when it changed an answer: the text is read again with the
+setting at its other values, and a default that moved no date is not reported. `03/04/2024`
+reports the day-first order and the US reading; `13/04/2024`, which has only one reading,
+reports nothing. The settings tried are the fiscal start month (all twelve) and label, the
+year basis, the date order, what `jan 24` means, the century of a two-digit year (against
+the 1930-2029 that Windows and Excel use), the week start (Monday, Sunday, Saturday),
+anchoring, today, and, for business days, the weekend and holidays. Each other reading
+changes that one setting and keeps the rest. The year basis is also tried with the fiscal
+year starting in every month, when the start month was left out too: `last quarter` is the
+calendar's on an April year and three other months on a February one, so it is listed,
+with no single other reading to give and a note to pass both. `first_day` and
+`last_day` are inclusive, for quoting; `range.end` stays exclusive, for code. Arguments a
+model gets wrong raise `ToolInputError` with a message naming what to change, to hand back
+as the tool's error result. `tool.OUTPUT_SCHEMA` describes the answer as JSON Schema.
+
+A call reads the text several times where `parse()` reads it once: a few milliseconds,
+nothing beside a model's turn, but `parse()` is the one for bulk work.
+
+### A tool for your own agent
+
+`date_wrangler.tool` holds the definition, plain JSON Schema inside what strict tool use
+accepts, and `call()`, which runs it on the arguments a model sends:
+
+```python
+import json
+
+import anthropic
+from date_wrangler import tool
+
+client = anthropic.Anthropic()
+messages = [{"role": "user", "content": "What are the dates of Q3 FY24? Our year starts in July."}]
+while True:
+    response = client.beta.messages.create(
+        model="claude-opus-5-5",
+        max_tokens=16000,
+        tools=[{**tool.definition(), "strict": True}],
+        messages=messages,
+        # If a request is declined, it is retried on a fallback model.
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+    )
+    if response.stop_reason != "tool_use":
+        break
+    messages.append({"role": "assistant", "content": response.content})
+    results = []
+    for block in response.content:
+        if block.type == "tool_use":
+            try:
+                content, is_error = json.dumps(tool.call(block.input)), False
+            except tool.ToolInputError as exc:
+                content, is_error = str(exc), True
+            results.append({"type": "tool_result", "tool_use_id": block.id,
+                            "content": content, "is_error": is_error})
+    messages.append({"role": "user", "content": results})
+print("".join(b.text for b in response.content if b.type == "text"))
+```
+
+Other model APIs take the same schema under their own key: `parameters` for OpenAI-style
+function calling, `inputSchema` for MCP. Frameworks that build a tool from a function's
+signature can wrap `tool.resolve_dates`, which takes the same arguments as keywords.
+
+### An MCP server
+
+```bash
+pip install "date-wrangler[mcp]"
+```
+
+installs `date-wrangler-mcp`, a stdio MCP server with the one tool. The extra brings the MCP
+SDK and its web stack; a plain install still has none of it. In Claude Code:
+
+```bash
+claude mcp add --transport stdio --scope user date-wrangler -- date-wrangler-mcp
+```
+
+Claude Desktop and other clients take it in their MCP configuration:
+
+```json
+{"mcpServers": {"date-wrangler": {"command": "date-wrangler-mcp"}}}
+```
+
+Or without installing anything first: `uvx --from "date-wrangler[mcp]" date-wrangler-mcp`.
+The server takes today from the machine it runs on unless the model passes `today`. It
+declares the answer's shape as the tool's output schema, and returns it as structured
+content and as JSON text.
+
+### A skill
+
+[`skills/date-wrangler`](https://github.com/steephanselvaradjou/date-wrangler/tree/main/skills/date-wrangler)
+is an Agent Skill: it tells Claude
+when to resolve dates, which flags carry an organisation's settings, and how to read and
+report the answer, using the command line. It holds no date logic of its own. For Claude
+Code, copy the folder into `~/.claude/skills/` for yourself, or into a project's
+`.claude/skills/`; it can also be uploaded through the Skills API. Wherever it runs needs
+`date-wrangler` installed, or a way to install it: in a sandbox with no network access,
+use the tool definition or the MCP server instead.
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,mcp]"
 pytest
 ```
+
+Without the `mcp` extra the MCP server's tests are skipped and everything else runs.
 
 ## License
 
