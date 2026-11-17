@@ -11,14 +11,16 @@ The full notes for each release, with examples, are on the
 
 For AI agents: one tool, `resolve_dates`, offered three ways -- a definition to hand a
 model, an MCP server, and a skill -- with every decision made in the library, so all three
-give the same answer. Parsing is as fast as before. It now reads fiscal weeks, weeks and
+give the same answer. Parsing is about as fast as before, within 4%. It now reads fiscal weeks, weeks and
 months numbered into a period, a fiscal year's end and a year's start as written, where it
-read them as calendar periods, days, or this year's; it declines an academic or school
+read them as calendar periods, days, or this year's; a tax year as the fiscal year, and
+`FY24 M3` as FY24's third month, where a word was dropped; it declines an academic or school
 year's edges as it does the year itself; and a weekday on a week that does not start on
 Monday falls on that weekday. **Changes answers** for those phrases. None of the 5,982
 answers the snapshot pins moved but the weekday's 14, under its Sunday-week configuration;
-a 1,919-phrase comparison against the parser before this release finds the rest only in
-the families named under Fixed.
+every other answer that differs from the parser before this release -- over 2,638 phrases
+under eight settings, and the test suite's 7,202 under two -- is in a family named under
+Fixed.
 
 ### Added
 - `date_wrangler.tool`: the tool's definition (`definition()`, plain JSON Schema that strict
@@ -59,37 +61,93 @@ the families named under Fixed.
   year` were ISO week 3 of the calendar year, "fiscal" dropped, and `week 3 of FY25`,
   `week 3 FY25` and `FY25 week 3` ISO week 3 of calendar 2025 or beside FY25. They are
   the fiscal year's third week, counted from its first day exactly as `the 3rd week of
-  FY25` already was: 15-21 April 2024 with an April year. Runs and lists are read whole,
-  every week in the same year: `fiscal weeks 3-5 FY25`, `week 3 to week 5 of FY25`,
-  `weeks 3 and 5 of FY25` -- where `weeks 3 and 5 of FY25` was the 5th *day* of FY25. A
-  week number with nothing fiscal about it is still an ISO week, whatever `year_basis`
-  says, as it is after an FY and a comma: `In FY24, week 3 of 2024`.
+  FY25` already was: 15-21 April 2024 with an April year. A run of two weeks, or a list of
+  single weeks, is read whole, every week in the same year: `fiscal weeks 3-5 FY25`, `week
+  3 to week 5 of FY25`, `week 3 to fiscal week 5`, `weeks 3 and 5 of FY25` -- where `weeks 3
+  and 5 of FY25` was the 5th *day* of FY25. A list of runs is not: `weeks 3-5 and 7-9 of
+  FY25` is as it was. A week number with nothing fiscal about it is still an ISO week,
+  whatever `year_basis` says, as it is after an FY and a comma: `In FY24, week 3 of 2024`;
+  and so is a calendar week, `CW 3 of FY25` or `KW3 FY25`, whatever year follows it.
+- `week 3 of next year` and `week 3 last year` were this year's week 3, the year guessed.
+  They are ISO week 3 of 2027 and of 2025.
 - A week numbered in a month or a quarter -- `week 3 of January`, `week 3 of next month`,
   `week 10 of Q1 2025` -- was an ISO week beside the whole period. It is the period's own
   week, as `the 3rd week of January` is. `the 10th week of Q1` and `the 20th week of FY25`
   are no longer refused for having more weeks than a month: a quarter holds fourteen, a
-  half 27, a fiscal year 53, the last of each cut short. A week a period has not got --
-  `week 10 of March` -- is refused with the reason.
+  half 27, a fiscal year 53, the last of each cut short -- and so, on a fiscal basis, is a
+  year written bare: `the 52nd week of 2024` is FY2024's, where a calendar year's numbered
+  weeks are ISO weeks and it stays refused. A week a period has not got -- `week 10 of
+  March` -- is refused with the reason. `to date` after one runs from that week to today:
+  `week 3 of FY25 to date`.
 - `month 3 of FY24` was the 3rd *day* of FY24, and `month 13 of FY24` the 13th: "month" was
   dropped. It is the third month, June 2023, as `the 3rd month of FY24` is; so are `month
   3 of the fiscal year`, `month 3 of 2024`, `FY24 month 3`, `fiscal month 3`, and the runs
   `months 3-5 of FY24` and `month 3 to month 5 of FY24`. A month a period has not got is
-  refused with the reason. `FY24 M3` is still FY24 alone: "M3" beside a year is a road, a
-  car or cubic metres as often as a month.
+  refused with the reason.
+- `FY24 M3`, as reports head a column, was FY24, "M3" dropped. It is FY24's third month,
+  read at confidence 0.8 because "M3" may be the money supply: `FY24 M3 growth`. So are
+  `FY24-M03`, `FY24M3`, `FY2024-25 M3`, the runs `FY24 M3-M5` and `FY24 M3 to M5`, and
+  `FY24 M3 and M5`, two months. Only straight after the fiscal year and only `M1` to `M12`:
+  before it, "M3" is a car or cubic metres as often as a month, and past twelve a road --
+  `BMW M3 FY24`, `500 m3 FY24` and `FY24 M25 widening` read FY24 alone, as before.
+- A tax year was the calendar year, "tax" dropped: `tax year 2024`, `tax year 2024-25`
+  (half read and flagged), `tax year start 2024`, `tax year end`, `tax year to date`, `week
+  3 of the tax year`; and `this tax year`, `last tax year` and `June of the tax year` were
+  nothing. A tax year is the fiscal year on the configured calendar, read exactly as
+  "fiscal year" is -- India's tax year, since April 2026, is its financial year -- so
+  `tax year 2025-26` is FY2025-26, the year `AY 2026-27` assesses, and `tax week 3` and
+  `tax month 3` are the fiscal year's. "tax" before anything but a year changes nothing:
+  `tax day`, `tax YTD` (the tax paid so far). A fiscal calendar starts on the first of a
+  month, so the UK's personal tax year, from 6 April, is read from 1 April.
+- `fiscal-year 2024` and `financial-year 2024`, hyphened, were the calendar year 2024. They
+  are the fiscal year, as `fiscal year 2024` is.
+- `Q1 of the financial year 2024-25` was this fiscal year's Q1 beside the calendar years
+  2024 to 2025, and so were `H1 of the financial year 2024-25`, `the first quarter of the
+  financial year 2024-25` and `Q1 of the calendar year 2024`; `the last month of the year
+  2024` was this year's December beside 2024. "the" was taken only straight before "year".
+  Each is now that year's, as it is without "the".
+- Weeks numbered after a fiscal year and counted in a quarter -- `FY25 weeks 3-5 of Q2`,
+  `FY2024-25 week 3 of Q2` -- are that quarter's weeks, as `weeks 3-5 of Q2 FY25` are.
+- A run backwards -- `FY25 week 5-3`, `months 5-3 of FY24` -- is refused with the reason,
+  where it was read as one of its numbers or not explained.
 - `fiscal year end` was the end of the calendar year, "fiscal" dropped, and `fiscal year
   start` its start. They are the end and the start of the fiscal year, as `the end of the
   fiscal year` is; so are `FY end`, `FYE`, `F.Y.E.`, `fiscal quarter end` and `fiscal half
   end`. With a year, `FYE 2024`, `FYE 24`, `2024 FYE`, `F.Y.E. 2024` and `fiscal year end
   2024` were the calendar year 2024, this fiscal year's end or nothing; they are the fiscal
   year that ends in 2024, April 2023 to March 2024 with an April year, whatever label it
-  carries. `FYE FY24` is FY24 itself. A basis word before a period's end with a date after
-  it keeps the reading it had: `fiscal quarter end June 2024` is still April to June 2024.
+  carries -- and so, now, are the long forms `fiscal year ended 2024`, `fiscal year ending
+  2024`, `FY ending 2024` and `financial year ended 2024`, which were the calendar year 2024
+  on a calendar basis, and on a fiscal basis with years named by their start a year late
+  (October 2024 to September 2025 on an October year). `FYE FY24`, `FY24 FYE` and `FY24
+  year end` are FY24 itself; `FYE-2024`, `FYE: 2024`, `fiscal year end, 2024` and `fiscal
+  year close 2024` the fiscal year ending 2024; `Q4 FYE 2024` its fourth quarter, where it
+  was this year's Q4 beside 2024. Two digits a unit or a measure follows are not a year:
+  `FYE 12 months`, `fiscal year end 24 hours later`. A basis word before a period's end
+  with a date after it keeps the reading it had: `fiscal quarter end June 2024` is still
+  April to June 2024.
+- A period's end or start named from this one dropped a word: `last month end` was all of
+  last month and `last fiscal year end` all of last fiscal year, "end" dropped. Each is now
+  that period's end, as `the end of last month` is; `this month end` is this month's, and
+  `since last FYE` runs from the end of last fiscal year.
+- A period named by where it ends could not be counted in or taken from: `month 3 of the
+  fiscal year ending March 2025` was the 3rd *day* of this fiscal year beside March 2025,
+  `week 3 of the half year ending June 2024` this year's week 3 beside the half, and `the
+  last day of the quarter ended June 2024` 31 December beside June 2024. Each is read in
+  that period: June 2024, 15-21 January 2024, 30 June 2024. `fiscal year end of 2024`,
+  `FYE in 2024` and `FYE of FY24` -- the calendar year's end, or this fiscal year's,
+  beside the year -- are the fiscal year ending in 2024 and FY24.
+- `calendar year end 2024`, `2024 calendar year end` and `CY end 2024` were FY2024 on a
+  fiscal basis -- "calendar" dropped -- and `CY end 2024` was the end of 2024, September to
+  December, on any basis. Each is the calendar year 2024, as `year end 2024` is the year.
+- `Revenue in 2024 year end rose 5%` was the year 4050: "in 2024 year" was read as 2,024
+  years from now. A year with "year" after it is no count of years.
 - `year start 2024` was the start of this year, 2024 dropped; it is the start of 2024, and
   `fiscal year start 2024` and `2024 F.Y. start` the start of the fiscal year 2024.
 - `academic year start` and `the school year end 2024` were the calendar year's start or
   end. They are declined as a season, as `academic year 2015-16` is: an academic year does
   not start in January.
-- `parse` could raise `KeyError` on odd text: `" '02 TO1MAR"` on a strict configuration.
+- `parse` could raise `KeyError` on odd text, `" '02 TO1MAR"`, under any configuration.
   A run of days the token reader declined was reported under the reader's own name,
   which no rule has, and could not be ordered against a rule's match at the same place.
   It is reported under its rule, `day_span`, with its reason -- so a diagnostic's `rule`

@@ -33,7 +33,7 @@ date-wrangler --json --today 2026-11-16 "revenue for Q3 FY24 vs the same quarter
 
 | Flag | What it decides | Default |
 |---|---|---|
-| `--fiscal-start M` | the month the fiscal year starts, 1-12: 4 India, UK, Japan; 7 Australia; 10 US federal | 4 |
+| `--fiscal-start M` | the month the fiscal year starts, 1-12: 4 India, UK, Japan; 7 Australia; 10 US federal. A tax year is read as the fiscal year, an assessment year (AY) as the one before | 4 |
 | `--label-by end_year\|start_year` | which year names a fiscal year: with end_year, FY2024 is April 2023 to March 2024 | end_year |
 | `--year-basis calendar\|fiscal` | how "2024", "Q1 2024", "last quarter", "YTD" are read when they do not say | calendar |
 | `--date-order DMY\|MDY\|YMD` | how 03/04/2024 is read: DMY is 3 April, MDY (US) is 4 March | DMY |

@@ -284,8 +284,9 @@ class _Pieces:
 
     def year_word(self, k: int) -> tuple[Basis, int] | None:
         """A word saying which kind of year follows, at token ``k``: "FY", "F.Y.", "fiscal
-        year", "financial year", "fiscal" before a number, "CY", "C.Y.", "calendar year".
-        Returns the basis and the token after the word."""
+        year", "financial year", "tax year", "fiscal" before a number, "CY", "C.Y.",
+        "calendar year". Returns the basis and the token after the word. A tax year is the
+        fiscal year, as the rules read it."""
         t = self.at(k)
         if t is None:
             return None
@@ -293,8 +294,14 @@ class _Pieces:
             j = k + 1
         elif t.low in ("f", "c") and self.is_(k + 1, ".") and self.is_(k + 2, "y"):
             j = k + 3 + (1 if self.is_(k + 3, ".") else 0)  # "F.Y.", "c.y"
-        elif t.low in ("fiscal", "financial", "calendar") and self.is_(k + 1, "year"):
+        elif t.low in ("fiscal", "financial", "calendar", "tax") and self.is_(k + 1, "year"):
             j = k + 2
+        elif (
+            t.low in ("fiscal", "financial", "calendar", "tax")
+            and self.is_(k + 1, "-")
+            and self.is_(k + 2, "year")
+        ):
+            j = k + 3  # "fiscal-year 2024", "tax-year 2024", as the rules take them
         elif t.low in ("fiscal", "financial") and self.number_follows(k + 1):
             j = k + 1  # "fiscal 2024", as US filings write it
         else:
@@ -904,7 +911,7 @@ def rule_of(reader: _ReadFn) -> str:
     """The rule ``reader`` reads for: the name its dates, and its declines, go under."""
     return _RULE_OF.get(reader, reader.__name__.lstrip("_"))
 #: Words a date of this family can open with, besides a number or a month.
-_OPENERS = frozenset({"fy", "f", "fiscal", "financial", "cy", "c", "calendar"})
+_OPENERS = frozenset({"fy", "f", "fiscal", "financial", "tax", "cy", "c", "calendar"})
 
 
 #: A date found: the rule it stands in for, its spec (None when declined, with the reason),

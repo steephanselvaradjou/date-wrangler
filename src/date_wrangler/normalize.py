@@ -78,6 +78,11 @@ _COUNT_UNIT = re.compile(
     + r")\b)",
     re.IGNORECASE,
 )
+#: A number that is a unit's own, not a count of the next one: the 3 of "week 3-week 5",
+#: whose hyphen runs to week 5. REGRESSION: it was read as "3 weeks", and the run split.
+_NUMBERED_UNIT = re.compile(
+    rf"\b(?:{alt(UNIT_WORDS)})s?\s*(?:#|no\.?|num(?:ber)?\.?)?\s*$", re.IGNORECASE
+)
 
 
 def _space_counts(
@@ -91,6 +96,11 @@ def _space_counts(
     new_ends: list[int] = []
     pos = 0
     for m in _COUNT_UNIT.finditer(text):
+        # Only the words just before the number can make it a unit's own -- "fortnights no."
+        # is the longest -- so only they are searched, or long text costs the square of
+        # its length.
+        if m.group(2) and _NUMBERED_UNIT.search(text, max(0, m.start() - 24), m.start()):
+            continue
         cut = m.end(1)
         pieces.append(text[pos:cut])
         new_starts += starts[pos:cut]

@@ -96,7 +96,8 @@ INPUT_SCHEMA: dict[str, Any] = {
             "enum": list(range(1, 13)),
             "description": "The month the fiscal year starts, 1-12: 4 for India, the UK "
                            "and Japan, 7 for Australia, 10 for the US federal government. "
-                           "Default 4.",
+                           "Default 4. A tax year ('tax year 2025-26') is read as the fiscal "
+                           "year, and an assessment year ('AY 2025-26') as the one before it.",
         },
         "fiscal_year_label": {
             "type": "string",
@@ -110,9 +111,9 @@ INPUT_SCHEMA: dict[str, Any] = {
             "enum": [b.value for b in (Basis.CALENDAR, Basis.FISCAL)],
             "description": "How a year or period that does not say fiscal or calendar is "
                            "read: '2024', 'Q1 2024', 'last quarter', 'YTD', 'year end'. "
-                           "Default calendar. 'FY24', 'CY24', 'fiscal week 3' and 'fiscal "
-                           "year end' always read as written. Week numbers ('week 3', "
-                           "'W12') are ISO weeks on either basis.",
+                           "Default calendar. 'FY24', 'CY24', 'tax year 2024', 'fiscal week "
+                           "3' and 'fiscal year end' always read as written. Week numbers "
+                           "('week 3', 'W12') are ISO weeks on either basis.",
         },
         "date_order": {
             "type": "string",
