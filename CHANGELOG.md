@@ -11,10 +11,14 @@ The full notes for each release, with examples, are on the
 
 For AI agents: one tool, `resolve_dates`, offered three ways -- a definition to hand a
 model, an MCP server, and a skill -- with every decision made in the library, so all three
-give the same answer. Parsing is as fast as before. It now reads fiscal weeks, months
-numbered into a year and the fiscal year's end as written, where it read them as calendar
-periods or days, and a weekday on a week that does not start on Monday falls on that
-weekday. **Changes answers**, for those phrases only.
+give the same answer. Parsing is as fast as before. It now reads fiscal weeks, weeks and
+months numbered into a period, a fiscal year's end and a year's start as written, where it
+read them as calendar periods, days, or this year's; it declines an academic or school
+year's edges as it does the year itself; and a weekday on a week that does not start on
+Monday falls on that weekday. **Changes answers** for those phrases. None of the 5,982
+answers the snapshot pins moved but the weekday's 14, under its Sunday-week configuration;
+a 1,919-phrase comparison against the parser before this release finds the rest only in
+the families named under Fixed.
 
 ### Added
 - `date_wrangler.tool`: the tool's definition (`definition()`, plain JSON Schema that strict
@@ -32,9 +36,8 @@ weekday. **Changes answers**, for those phrases only.
   month left out too, the year basis is tried with every start month: `last quarter` is
   the calendar's on an April year and not on a February one, so it is reported. A
   two-digit year is reported only from `'30` to `'68`, where Windows and Excel read the
-  other century. A
-  business-day date reports the weekend and the holidays it assumed (Saturday and Sunday,
-  none), found by reading it with a weekend no calendar has.
+  other century. A business-day date reports the weekend and the holidays it assumed
+  (Saturday and Sunday, none), found by reading it with a weekend no calendar has.
 - The tool takes `weekend`, `holidays` and `two_digit_pivot`, and the CLI `--weekend`,
   `--holidays` and `--two-digit-pivot`.
 - `tool.OUTPUT_SCHEMA`, the answer as JSON Schema.
@@ -53,29 +56,45 @@ weekday. **Changes answers**, for those phrases only.
 
 ### Fixed
 - A fiscal week was a calendar one. `fiscal week 3`, `FY week 3` and `week 3 of the fiscal
-  year` were ISO week 3 of the calendar year, "fiscal" dropped, and `week 3 of FY25` ISO
-  week 3 of calendar 2025. They are the fiscal year's third week, counted from its first
-  day exactly as `the 3rd week of FY25` already was: 15-21 April 2024 with an April year.
-  `FY25 week 3` and `fiscal weeks 3-5 FY25` are read too, and `the 20th week of FY25` is
-  no longer refused for having more weeks than a month. A week number with nothing fiscal
-  about it is still an ISO week, whatever `year_basis` says.
+  year` were ISO week 3 of the calendar year, "fiscal" dropped, and `week 3 of FY25`,
+  `week 3 FY25` and `FY25 week 3` ISO week 3 of calendar 2025 or beside FY25. They are
+  the fiscal year's third week, counted from its first day exactly as `the 3rd week of
+  FY25` already was: 15-21 April 2024 with an April year. Runs and lists are read whole,
+  every week in the same year: `fiscal weeks 3-5 FY25`, `week 3 to week 5 of FY25`,
+  `weeks 3 and 5 of FY25` -- where `weeks 3 and 5 of FY25` was the 5th *day* of FY25. A
+  week number with nothing fiscal about it is still an ISO week, whatever `year_basis`
+  says, as it is after an FY and a comma: `In FY24, week 3 of 2024`.
+- A week numbered in a month or a quarter -- `week 3 of January`, `week 3 of next month`,
+  `week 10 of Q1 2025` -- was an ISO week beside the whole period. It is the period's own
+  week, as `the 3rd week of January` is. `the 10th week of Q1` and `the 20th week of FY25`
+  are no longer refused for having more weeks than a month: a quarter holds fourteen, a
+  half 27, a fiscal year 53, the last of each cut short. A week a period has not got --
+  `week 10 of March` -- is refused with the reason.
 - `month 3 of FY24` was the 3rd *day* of FY24, and `month 13 of FY24` the 13th: "month" was
   dropped. It is the third month, June 2023, as `the 3rd month of FY24` is; so are `month
-  3 of the fiscal year`, `month 3 of 2024`, `FY24 month 3` and `fiscal month 3`. `FY24 M3`
-  and `M3 FY24` are read beside their year, where `FY24 M3` was all of FY24; `M3` alone is
-  not. A month 13 is refused, with the reason.
+  3 of the fiscal year`, `month 3 of 2024`, `FY24 month 3`, `fiscal month 3`, and the runs
+  `months 3-5 of FY24` and `month 3 to month 5 of FY24`. A month a period has not got is
+  refused with the reason. `FY24 M3` is still FY24 alone: "M3" beside a year is a road, a
+  car or cubic metres as often as a month.
 - `fiscal year end` was the end of the calendar year, "fiscal" dropped, and `fiscal year
   start` its start. They are the end and the start of the fiscal year, as `the end of the
-  fiscal year` is; so are `FY end`, `FYE` and `fiscal quarter end`. With a year, `FYE 2024`
-  and `fiscal year end 2024` were the calendar year 2024; they are the fiscal year that
-  ends in 2024, April 2023 to March 2024 with an April year, whatever label it carries.
-- `week 3 of January` was ISO week 3 beside all of January, and `the 3rd week for January`
-  all of January; both are the month's third week, as `the 3rd week of January` is.
+  fiscal year` is; so are `FY end`, `FYE`, `F.Y.E.`, `fiscal quarter end` and `fiscal half
+  end`. With a year, `FYE 2024`, `FYE 24`, `2024 FYE`, `F.Y.E. 2024` and `fiscal year end
+  2024` were the calendar year 2024, this fiscal year's end or nothing; they are the fiscal
+  year that ends in 2024, April 2023 to March 2024 with an April year, whatever label it
+  carries. `FYE FY24` is FY24 itself. A basis word before a period's end with a date after
+  it keeps the reading it had: `fiscal quarter end June 2024` is still April to June 2024.
+- `year start 2024` was the start of this year, 2024 dropped; it is the start of 2024, and
+  `fiscal year start 2024` and `2024 F.Y. start` the start of the fiscal year 2024.
+- `academic year start` and `the school year end 2024` were the calendar year's start or
+  end. They are declined as a season, as `academic year 2015-16` is: an academic year does
+  not start in January.
 - `parse` could raise `KeyError` on odd text: `" '02 TO1MAR"` on a strict configuration.
   A run of days the token reader declined was reported under the reader's own name,
   which no rule has, and could not be ordered against a rule's match at the same place.
-  It is reported under its rule, `day_span`, with its reason. Found by the property
-  tests; it had been there since 2.4.0 read runs of days.
+  It is reported under its rule, `day_span`, with its reason -- so a diagnostic's `rule`
+  reads `day_span`, where it read `days_month`. Found by the property tests; it had been
+  there since 2.4.0 read runs of days.
 - With `week_starts_on` set to anything but Monday, a weekday named in the current week
   fell on the wrong day: on a Sunday-start week "this Tuesday" and "Friday" were the
   Monday and the Thursday, "Monday through Friday" was Sunday to Thursday, and "COB

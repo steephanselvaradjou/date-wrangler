@@ -730,14 +730,18 @@ def _changed_by(
                 continue  # tried above
             # Against this setting as chosen *at the same other value*, not against the
             # answer: "FY24 Q1" moves with the start month alone, and that is the start
-            # month's to report, not this setting's. Read only once a difference shows.
+            # month's to report, not this setting's. Every match is compared, not only one
+            # that moved off the answer: one whose fiscal reading there happens to equal
+            # the answer can still differ from its calendar one.
+            base = read({**chosen, name: other_value})
             for value in setting.others:
                 other = read({**chosen, setting.name: value, name: other_value})
-                moved = [m for m in found if m.span in pending and _moved(m, other) is not None]
-                base = read({**chosen, name: other_value}) if moved else {}
-                for m in moved:
-                    o, b = other[m.span], base.get(m.span)
-                    if b is not None and (o.start, o.end) != (b.start, b.end):
+                for m in found:
+                    o, b = other.get(m.span), base.get(m.span)
+                    if (
+                        m.span in pending and o is not None and b is not None
+                        and (o.start, o.end) != (b.start, b.end)
+                    ):
                         together.add(m.span)
                         pending.discard(m.span)
             if not pending:

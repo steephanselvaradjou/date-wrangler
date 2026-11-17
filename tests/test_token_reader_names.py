@@ -30,6 +30,29 @@ def test_every_reader_reads_for_a_rule_the_scanner_can_order():
         assert tokens.rule_of(reader) in _ORDER, reader.__name__
 
 
+#: Phrases each token reader reads: runs and lists of days either way round, days run
+#: together, the year first, a month and its year, a month alone, a fiscal year's month,
+#: "between", and declines.
+_READER_PHRASES = [
+    "15-20 March 2024", "March 15-20, 2024", "15, 16 and 20 March 2024", "March 1, 5 and 9",
+    "15MAR2024", "15-Mar-2024", "2024 March 15", "2024 March 15th-20th", "15 March 2024",
+    "Mar-15-2024", "March 15, 2024", "Mar 15 14:30:00", "January first, 2024", "March 2024",
+    "Mar-24", "March", "FY25 June", "between 15 and 20 March 2024", "15-1 March 2024",
+    "between the 15th and the 20th of March",
+]
+
+
+def test_every_name_a_reader_hands_the_scanner_can_be_ordered():
+    """Its dates' names too, not only its declines': each must be a rule in RULES."""
+    cfg = WranglerConfig()
+    seen = set()
+    for text in _READER_PHRASES:
+        for found in tokens.read(text, cfg):
+            seen.add(found[0])
+            assert found[0] in _ORDER, (text, found[0])
+    assert {"day_span", "day_list", "dashed_day", "month_year", "month"} <= seen
+
+
 def test_a_declined_day_run_beside_a_rule_does_not_raise():
     cfg = WranglerConfig(fiscal=FiscalCalendar(1), bare_period_basis="fiscal",
                          two_digit_pivot=0, strictness="strict")

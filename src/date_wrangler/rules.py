@@ -721,9 +721,20 @@ def _p_period_ending(text: str, cfg: WranglerConfig) -> Spec | None:
     # months to it; "2024 year end" is "year end 2024", the year 2024. REGRESSION: that
     # last one was the end of this year, and the rest read only their month; and "FYE 2024"
     # was the calendar year 2024.
-    short = re.match(r"\s*(?:the\s+)?(q/?e|y/?e|fye)\s+(.+)$", text, re.IGNORECASE)
+    # "FYE 24", "fiscal year end 24": two digits after a fiscal year's end are its year, as
+    # "FYE '24" already was. REGRESSION: they were this fiscal year's end, the year dropped.
+    two_digits = re.fullmatch(
+        rf"\s*(?:the\s+)?(?:f\.?y\.?e\.?|{_FY_WORD}[\s-]*end(?:ing|ed|s)?)\s+(\d{{2}})\s*",
+        text,
+        re.IGNORECASE,
+    )
+    if two_digits:
+        return _p_period_ending(
+            f"fiscal year ended {_pivot_year(two_digits.group(1), cfg)}", cfg
+        )
+    short = re.match(r"\s*(?:the\s+)?(q/?e|y/?e|f\.?y\.?e\.?)\s+(.+)$", text, re.IGNORECASE)
     if short:
-        word = short.group(1).lower()
+        word = re.sub(r"[./]", "", short.group(1).lower())
         unit_word = {"fye": "fiscal year"}.get(word, "quarter" if word[0] == "q" else "year")
         return _p_period_ending(f"{unit_word} ended {short.group(2)}", cfg)
     months = re.match(r"\s*(?:the\s+)?(\d{1,2})\s*m\s+(to|ended|ending)\s+(.+)$", text, re.I)
@@ -731,12 +742,18 @@ def _p_period_ending(text: str, cfg: WranglerConfig) -> Spec | None:
         n, word, rest = months.groups()
         return _p_period_ending(f"{n} months {word} {rest}", cfg)
     year_first = re.fullmatch(
-        rf"\s*((?:19|20)\d{{2}})\s+((?:{_BASIS_WORD}\s+)?year|{_FY_WORD})[\s-]+end(?:ing|ed)?\s*",
+        rf"\s*((?:19|20)\d{{2}})\s+(?:((?:{_BASIS_WORD}\s+)?year|{_FY_WORD}|{_CY_WORD})"
+        rf"[\s-]+(?:end(?:ing|ed)?|close)|(f\.?y\.?e\.?))\s*",
         text,
         re.I,
     )
     if year_first:
-        return _p_period_ending(f"{year_first.group(2)} end {year_first.group(1)}", cfg)
+        # "2024 year end", "2024 fiscal year end", "2024 FYE": the year written first. A
+        # calendar year is "year"; anything fiscal, the fiscal year.
+        said = year_first.group(2) or year_first.group(3)
+        fiscal = re.match(r"(?i)(?:fiscal|financial|f\.?y)", said) is not None
+        unit_word = "fiscal year" if fiscal else "year"
+        return _p_period_ending(f"{unit_word} end {year_first.group(1)}", cfg)
     m = re.match(
         rf"\s*(?:the\s+)?(?:({_NUM})\s+)?(half[\s-]?years?|{_FY_WORD}|{_UNIT})(?:\s+period)?"
         rf"(?:\s+|-)(end(?:ing|ed|s)?|to)\s+(.+)$",
@@ -783,6 +800,11 @@ def _p_period_ending(text: str, cfg: WranglerConfig) -> Spec | None:
     if month is None and year is None:
         return None
     if month is None and year is not None and re.fullmatch(_FY_WORD, word):
+        if basis is Basis.FISCAL:
+            # "FYE FY24": a fiscal year named by its label is that fiscal year, whichever
+            # year its label is taken from. REGRESSION: it was read as the year FY24's
+            # number ends in, a year early with a start-year label.
+            return Spec(Kind.ABS_YEAR, year=year, basis=Basis.FISCAL)
         # "fiscal year ended 2024", "FYE 2024": a year alone names the fiscal year that
         # ends in it -- April 2023 to March 2024 with an April year, whichever label that
         # year carries. A month or a day given says where it ends instead, whatever the
@@ -1453,12 +1475,12 @@ def _p_iso_week_compact(text: str, cfg: WranglerConfig) -> Spec | None:
 
 
 def _p_week_number(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"week 42", "wk 42", "CW42", "week 42 of 2026" -- and "week 3 of FY25", a fiscal week.
+    """"week 42", "wk 42", "CW42", "week 42 2026" -- and "week 3 FY25", a fiscal week.
 
-    A week number is an ISO week, whatever year_basis says, unless the words after it name
-    a fiscal year. Then it is that year's third week, as "the third week of FY25" is.
-    REGRESSION: "week 3 of FY25" was ISO week 3 of calendar 2025, the "FY" read only for
-    its number.
+    A week number is an ISO week, whatever year_basis says, unless the year after it is a
+    fiscal one: then it is that year's third week, as "the third week of FY25" is. Weeks
+    counted "of" or "in" something -- "week 3 of FY25", "week 3 of January" -- are the
+    counted rule's, which comes first.
     """
     m = re.match(rf"\s*{_WEEK_WORD}{_WEEK_NO}(\d{{1,2}})\b(.*)$", text, re.IGNORECASE)
     if not m:
@@ -1466,14 +1488,6 @@ def _p_week_number(text: str, cfg: WranglerConfig) -> Spec | None:
     week = int(m.group(1))
     if not 1 <= week <= 53:
         return None
-    of_period = re.match(r"\s+(?:of|in)\s+(?:the\s+)?(.+)$", m.group(2), re.IGNORECASE)
-    if of_period and (
-        find_month(of_period.group(1)) is not None
-        or re.match(rf"\s*{_QWORD}\s*[1-4]", of_period.group(1), re.IGNORECASE)
-    ):
-        # "week 3 of January": the month's third week, as "the 3rd week of January" is.
-        # REGRESSION: it was ISO week 3 and, beside it, all of January.
-        return _p_sub_period(f"the {_ordinal(week)} week of {of_period.group(1)}", cfg)
     if _SAYS_FISCAL.search(m.group(2)):
         target = _fiscal_year_of_tail(m.group(2), cfg)
         return None if target is None else target.with_(sub_period=(week, 1, Grain.WEEK))
@@ -1487,80 +1501,199 @@ _SAYS_FISCAL = re.compile(r"\b(?:fiscal|financial)\b|\bf\.?y\.?(?![a-z])", re.IG
 _FISCAL_WEEK_WORD = r"(?:fiscal|financial|f\.?y\.?)[\s-]*(?:week|wk)"
 
 
+def _is_year(spec: Spec) -> bool:
+    return spec.kind is Kind.ABS_YEAR or spec.unit is Grain.YEAR
+
+
 def _fiscal_year_of_tail(tail: str, cfg: WranglerConfig) -> Spec | None:
     """The fiscal year a numbered week or month is counted in, from the words after it.
 
-    "FY25" and, after "fiscal week", a plain "2025" are that fiscal year; "of the fiscal
-    year" and "last FY" the one in progress and the one before it; nothing at all the one
-    in progress, its year unwritten -- so a guess, as "week 3" is. A year said to be the
-    calendar's is no fiscal year to count in, and gives None.
+    "FY25" and, after "fiscal week", a plain "2025" are that fiscal year; "the fiscal
+    year", "FY" and "last FY" the one in progress and the one before it; nothing at all
+    the one in progress, its year unwritten -- so a guess, as "week 3" is. A calendar year
+    is no fiscal year to count in, and gives None, as anything not a year does.
 
-    The year is read off its own words, not through year_basis: after "fiscal week" the
-    words have said which kind of year already.
+    Read off the words, not through year_basis: after "fiscal week" they have said which
+    kind of year already.
     """
-    rest = tail.strip(" ,-/")
+    rest = re.sub(r"^[\s,/-]*(?:(?:of|in)\s+)?", "", tail, flags=re.IGNORECASE).strip()
     if not rest:
         return Spec(Kind.ABS_YEAR, basis=Basis.FISCAL)
-    found = _YEAR_TAIL_RE.search(rest)
-    if found:
-        year, basis = parse_year_token(found.group(1), cfg)
-        if year is None or basis is Basis.CALENDAR:
-            return None
-        return Spec(Kind.ABS_YEAR, year=year, basis=Basis.FISCAL)
-    rel = _relative_year_of_suffix(rest)
-    if rel is None or rel[1] is Basis.CALENDAR:
+    if re.search(r"\b(?:calendar|c\.?y\.?)(?![a-z])", rest, re.IGNORECASE):
         return None
-    return Spec(Kind.ABS_YEAR, basis=Basis.FISCAL, year_offset=rel[0])
+    target = _nth_target(rest, cfg)
+    if target is None or not _is_year(target):
+        return None
+    return target.with_(basis=Basis.FISCAL)
 
 
-def _p_fiscal_week(text: str, cfg: WranglerConfig) -> Spec | Parts | None:
-    """"fiscal week 3", "FY week 3 2025", "fiscal weeks 3-5", "FY25 week 3".
+#: Between the two numbers of a run of weeks: "week 11-12", "weeks 11 to 12".
+_WEEK_JOIN = r"\s*(?:-|to|through|thru|till|until)\s*"
+#: Between numbers listed: "3, 4 and 5", "3 & 5".
+_LIST_JOIN = r"\s*(?:,\s*(?:and\s+|&\s*)?|and\s+|&\s*)"
+#: Between the two ends of a run: "3-5", "3 to 5".
+_SPAN_WORDS = re.compile(r"-|\b(?:to|through|thru|till|until)\b", re.IGNORECASE)
 
-    The third week of the fiscal year: its days 15 to 21, counted from the year's first
-    day exactly as "the third week of FY25" is, whatever day the week starts on.
-    REGRESSION: "fiscal week 3" was ISO week 3 of the calendar year, "fiscal" dropped.
-    """
-    fy_first = re.match(
-        rf"\s*(?P<fy>{_FY_YEAR})[\s,]*(?:(?:fiscal|financial)\s+)?(?:week|wk)"
-        rf"{_WEEK_NO}(?P<n>\d{{1,2}})\b",
-        text,
-        re.IGNORECASE,
+
+def _run(unit: str) -> str:
+    """The numbers after a unit word: "3", "s 3-5", " 3 to week 5", "s 3, 4 and 5", " 3
+    and week 5". A list needs the unit plural or said again -- "week 3 and 5 people" is
+    one week -- and a run joins two."""
+    one = rf"{_WEEK_NO}\d{{1,2}}\b"
+    again = rf"{unit}s?{_WEEK_NO}\d{{1,2}}\b"
+    span = rf"{_WEEK_JOIN}(?:{unit}s?{_WEEK_NO})?\d{{1,2}}\b"
+    return (
+        rf"(?:s{one}(?:{span}|(?:{_LIST_JOIN}(?:{unit}s?{_WEEK_NO})?\d{{1,2}}\b)+)?"
+        rf"|{one}(?:{span}|(?:{_LIST_JOIN}{again})+)?)"
     )
-    if fy_first:
-        year, basis = parse_year_token(fy_first.group("fy"), cfg)
-        week = int(fy_first.group("n"))
-        if year is None or not 1 <= week <= 53:
-            return None
-        return Spec(Kind.ABS_YEAR, year=year, basis=basis or Basis.FISCAL).with_(
-            sub_period=(week, 1, Grain.WEEK)
-        )
+
+
+_WEEK_RUN = _run(r"(?:week|wk)")
+_MONTH_RUN = _run(r"(?:month|mth)")
+#: What numbered weeks or months are counted in: "of FY25", "in January", "of the fiscal
+#: year", "of next quarter".
+_COUNTED_IN = r"\s+(?:of|in)\s+(?:the\s+)?"
+
+
+def _weeks_in(target: Spec) -> int:
+    """The most seven-day weeks, counted from its first day, a period can start: five in a
+    month, fourteen in a quarter, 27 in a half, 53 in a year -- the last of each cut short
+    where the period ends."""
+    if _is_year(target):
+        return 53
+    if target.kind is Kind.ABS_QUARTER or target.unit is Grain.QUARTER:
+        return 14
+    if target.kind is Kind.ABS_HALF or target.unit is Grain.HALF:
+        return 27
+    return 5
+
+
+def _count_limit(unit: Grain, target: Spec) -> tuple[int, str]:
+    """How many of ``unit`` the period holds, and what to call it in a refusal. Weeks are
+    seven days from its first day, as "the 3rd week of January" counts them."""
+    if _is_year(target):
+        holder, months = "a year", 12
+    elif target.kind is Kind.ABS_QUARTER or target.unit is Grain.QUARTER:
+        holder, months = "a quarter", 3
+    elif target.kind is Kind.ABS_HALF or target.unit is Grain.HALF:
+        holder, months = "a half", 6
+    else:
+        holder, months = "a month", 0
+    return (_weeks_in(target) if unit is Grain.WEEK else months), holder
+
+
+def _counted_in(
+    tail: str, cfg: WranglerConfig, unit: Grain, fiscal: bool
+) -> tuple[Spec | None, int | None] | None:
+    """What numbered weeks or months are counted in: (period, None), or (None, year) for
+    ISO weeks; None when the words name nothing they can be counted in.
+
+    "fiscal week 3 of January" and "week 3 of Q1" are the period's own weeks; "week 3 of
+    FY25" and "fiscal week 3 2025" the fiscal year's. "week 3 of 2025", with nothing fiscal
+    about it, is an ISO week -- whatever year_basis says, as week numbers always are.
+    """
+    rest = re.sub(r"^[\s,/-]*(?:(?:of|in)\s+)?", "", tail, flags=re.IGNORECASE).strip()
+    period = _nth_target(rest, cfg) if rest else None
+    if period is not None and not _is_year(period):
+        return period, None
+    if fiscal:
+        target = _fiscal_year_of_tail(tail, cfg)
+        return None if target is None else (target, None)
+    if period is None:
+        return None
+    if unit is Grain.MONTH:
+        return period, None
+    if _SAYS_FISCAL.search(rest):
+        target = _fiscal_year_of_tail(tail, cfg)
+        return None if target is None else (target, None)
+    year, _ = _year_from_suffix(rest, cfg)
+    return None, year
+
+
+def _p_counted(text: str, cfg: WranglerConfig, unit: Grain) -> Spec | Parts | None:
+    """Weeks or months numbered into a period: "fiscal week 3", "week 3 of FY25", "FY25
+    weeks 3-5", "month 3 of FY24", "months 3-5 of FY24", "week 3 and week 5 of FY25".
+
+    Each is read exactly as "the 3rd week of FY25" or "the 3rd month of FY24" already was
+    -- a fiscal week is seven days counted from the fiscal year's first day -- and a run or
+    a list is read whole, every number in the same period. REGRESSION: "fiscal week 3" was
+    ISO week 3 of the calendar year, "week 3 of FY25" of calendar 2025, "month 3 of FY24"
+    the 3rd *day* of FY24, and "week 3 of January" ISO week 3 beside all of January.
+    """
+    word = r"(?:week|wk)" if unit is Grain.WEEK else r"(?:month|mth)"
+    lead = _WEEK_WORD if unit is Grain.WEEK else word
     m = re.match(
-        rf"\s*(?:the\s+)?{_FISCAL_WEEK_WORD}s?{_WEEK_NO}(\d{{1,2}})(?:{_WEEK_JOIN}(\d{{1,2}}))?"
-        r"\b(.*)$",
+        rf"\s*(?:(?P<fy>{_FY_YEAR})\s*(?:(?:fiscal|financial)\s+)?{word}"
+        rf"|(?:the\s+)?(?P<fiscal>(?:fiscal|financial|f\.?y\.?)[\s-]*)?{lead})"
+        rf"(?P<run>{_WEEK_RUN if unit is Grain.WEEK else _MONTH_RUN})(?P<tail>.*)$",
         text,
         re.IGNORECASE,
     )
     if not m:
         return None
-    first = int(m.group(1))
-    last = int(m.group(2)) if m.group(2) else None
-    target = _fiscal_year_of_tail(m.group(3), cfg)
-    if target is None or not 1 <= first <= 53:
+    base = m.start("run")
+    numbers = [
+        (int(n.group()), base + n.start(), base + n.end())
+        for n in re.finditer(r"\d{1,2}", m.group("run"))
+    ]
+    if m.group("fy"):
+        year, basis = parse_year_token(m.group("fy"), cfg)
+        if year is None:
+            return None
+        period: Spec | None = Spec(Kind.ABS_YEAR, year=year, basis=basis or Basis.FISCAL)
+        iso_year = None
+    else:
+        counted = _counted_in(m.group("tail"), cfg, unit, m.group("fiscal") is not None)
+        if counted is None:
+            if m.group("fiscal") and re.search(
+                r"\b(?:calendar|c\.?y\.?)(?![a-z])", m.group("tail"), re.IGNORECASE
+            ):
+                raise ValueError(
+                    f"a fiscal {unit.value} is counted in a fiscal year, not a calendar one"
+                )
+            return None
+        period, iso_year = counted
+    # A run has two ends, the first before the last.
+    is_run = len(numbers) > 1 and _SPAN_WORDS.search(text[numbers[0][2] : numbers[1][1]])
+    if is_run and (len(numbers) != 2 or numbers[0][0] >= numbers[1][0]):
         return None
-    if last is None:
-        return target.with_(sub_period=(first, 1, Grain.WEEK))
-    if not first < last <= 53:
-        return None
-    # Two ends, each its own week, joined as "week 11-12" is.
+    specs = []
+    for n, _, _ in numbers:
+        if period is None:
+            if not 1 <= n <= 53:
+                return None
+            specs.append(Spec(Kind.ISO_WEEK, year=iso_year, index=n))
+            continue
+        limit, holder = _count_limit(unit, period)
+        if not 1 <= n <= limit:
+            if unit is Grain.MONTH and holder == "a year":
+                raise ValueError(f"a year has twelve months, and no month {n}")
+            raise ValueError(f"{holder} has no {unit.value} {n} in it")
+        specs.append(period.with_(sub_period=(n, 1, unit)))
+    if len(specs) == 1:
+        return specs[0]
+    # Each its own date, joined as "weeks 11-12" or "Q1 and Q3" are: the first from the
+    # start of the words, the last to their end, the rest the number alone -- with its
+    # unit when that is said again, so that only "to" or "and" lies between: "month 3 to
+    # month 5" joins as "month 3" to "month 5 of FY24".
+    starts = [0]
+    for _, lo, _ in numbers[1:]:
+        again = re.search(rf"{word}s?{_WEEK_NO}$", text[:lo], re.IGNORECASE)
+        starts.append(again.start() if again else lo)
+    last = len(specs) - 1
+    end = len(text.rstrip())
     return [
-        (target.with_(sub_period=(first, 1, Grain.WEEK)), 0, m.end(1)),
-        (target.with_(sub_period=(last, 1, Grain.WEEK)), m.start(2), len(text.rstrip())),
+        (spec, start, end if i == last else hi)
+        for i, (spec, start, (_, _, hi)) in enumerate(zip(specs, starts, numbers, strict=True))
     ]
 
 
-#: Between the two numbers of a run of weeks: "week 11-12", "weeks 11 to 12". Not "week
-#: 11 to week 12", which is two weeks already, joined as any two dates are.
-_WEEK_JOIN = r"\s*(?:-|to|through|thru|till|until)\s*"
+def _p_week_counted(text: str, cfg: WranglerConfig) -> Spec | Parts | None:
+    return _p_counted(text, cfg, Grain.WEEK)
+
+
+def _p_month_counted(text: str, cfg: WranglerConfig) -> Spec | Parts | None:
+    return _p_counted(text, cfg, Grain.MONTH)
 
 
 def _p_week_span(text: str, cfg: WranglerConfig) -> Parts | None:
@@ -1731,10 +1864,6 @@ _SUB_UNIT = r"(?:days?|weeks?|wks?|fortnights?|months?|mths?|mnths?|mos?|quarter
 #: An ordinal that says so: a word or a suffixed number. A bare "3" is a count, and "3
 #: months of 2024" must not become "the third month of 2024".
 _NTH_STRICT = rf"(?:{alt(ORDINALS)}|\d{{1,2}}(?:st|nd|rd|th)|last|final)"
-#: Between a run of units and its period: "of", "in", and "for" -- "the 3rd week for
-#: January" is a schedule's way of saying it. REGRESSION: that was all of January, the
-#: week dropped. Only here: "for" after a weekday or a day says something else.
-_SUB_OF = r"\s+(?:of|in|for)\s+"
 
 
 def _p_sub_period(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -1746,7 +1875,7 @@ def _p_sub_period(text: str, cfg: WranglerConfig) -> Spec | None:
     counted back from today, and 2024 -- the first of them confidently wrong.
     """
     m = re.match(
-        rf"\s*(?:the\s+)?({_NTH_STRICT})\s+(?:({_NUM})\s+)?({_SUB_UNIT}){_SUB_OF}(.+)$",
+        rf"\s*(?:the\s+)?({_NTH_STRICT})\s+(?:({_NUM})\s+)?({_SUB_UNIT}){_NTH_OF}(.+)$",
         text,
         re.IGNORECASE,
     )
@@ -1765,10 +1894,12 @@ def _p_sub_period(text: str, cfg: WranglerConfig) -> Spec | None:
     if target is None:
         return None
     limit = {Grain.DAY: 31, Grain.WEEK: 5, Grain.MONTH: 12, Grain.QUARTER: 4}.get(unit, 0)
-    if unit is Grain.WEEK and (target.kind is Kind.ABS_YEAR or target.unit is Grain.YEAR):
-        # A year has 52 weeks and a day or two: "the 20th week of FY25" is a week, as
-        # "fiscal week 20 FY25" is. REGRESSION: it was refused, five being a month's most.
-        limit = 53
+    if unit is Grain.WEEK and (target.basis is Basis.FISCAL or not _is_year(target)):
+        # Weeks in what holds them: "the 20th week of FY25" and "the 10th week of Q1" are
+        # weeks, as "fiscal week 20 FY25" and "week 10 of Q1" are. REGRESSION: both were
+        # refused, five being a month's most. A calendar year keeps five: its numbered
+        # weeks are ISO weeks.
+        limit = _weeks_in(target)
     if index > limit:
         return None
     # "the first fortnight of March" is its first fourteen days.
@@ -1791,57 +1922,6 @@ def _p_sub_period(text: str, cfg: WranglerConfig) -> Spec | None:
         tail = re.sub(r"^\s*the\s+(?=year\b)", "", m.group(4), flags=re.IGNORECASE)
         return _p_quarter(f"fourth quarter of {tail}", cfg)
     return target.with_(sub_period=(index, count, unit))
-
-
-def _ordinal(n: int) -> str:
-    """3 -> "3rd", 11 -> "11th"."""
-    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}"
-
-
-def _p_month_number(text: str, cfg: WranglerConfig) -> Spec | None:
-    """"month 3 of FY24", "month 3 of 2024", "FY24 month 3", "fiscal month 3".
-
-    A month counted into a period, read exactly as "the 3rd month of FY24" is: June 2023
-    with an April year. REGRESSION: "month 3 of FY24" was the 3rd *day* of FY24, the word
-    "month" dropped, and "month 13 of FY24" the 13th day where it is no month at all.
-    """
-    # "FY24 month 3", "FY24 M3" -- and "M3 FY24": finance shorthand, read only beside its
-    # fiscal year, since "M3" alone is as likely a car, a motorway or cubic metres.
-    # REGRESSION: "FY24 M3" was all of FY24.
-    beside_fy = re.match(
-        rf"\s*(?P<fy>{_FY_YEAR})[\s,]*(?:(?:fiscal|financial)\s+)?(?:month|mth|m)"
-        rf"{_WEEK_NO}(?P<n>\d{{1,2}})\b",
-        text,
-        re.IGNORECASE,
-    ) or re.match(rf"\s*m\s*(?P<n>\d{{1,2}})[\s,]+(?P<fy>{_FY_YEAR})\b", text, re.IGNORECASE)
-    if beside_fy:
-        year, basis = parse_year_token(beside_fy.group("fy"), cfg)
-        index = int(beside_fy.group("n"))
-        target: Spec | None = Spec(Kind.ABS_YEAR, year=year, basis=basis or Basis.FISCAL)
-        tail = ""
-    else:
-        m = re.match(
-            rf"\s*(?:the\s+)?((?:fiscal|financial)\s+)?(?:month|mth){_WEEK_NO}(\d{{1,2}})\b(.*)$",
-            text,
-            re.IGNORECASE,
-        )
-        if not m:
-            return None
-        index, tail = int(m.group(2)), m.group(3)
-        target = None
-        if m.group(1):
-            # "fiscal month 3 [of 2024]": the year after it is a fiscal year, and one said
-            # to be the calendar's contradicts it.
-            target = _fiscal_year_of_tail(tail, cfg)
-            if target is None:
-                return None
-    if not 1 <= index <= 12:
-        raise ValueError(f"a year has twelve months, and no month {index}")
-    if target is not None:
-        return target.with_(sub_period=(index, 1, Grain.MONTH))
-    rest = re.sub(r"^[\s,]*(?:(?:of|in)\s+)?", "", tail)
-    return _p_sub_period(f"the {_ordinal(index)} month of {rest}", cfg)
 
 
 def _p_nth_of(text: str, cfg: WranglerConfig) -> Spec | None:
@@ -1974,6 +2054,31 @@ def _p_period_edge(text: str, cfg: WranglerConfig) -> Spec | None:
     year, exactly as "the end of the fiscal year" is. REGRESSION: it was read as "year
     end", the calendar year's, "fiscal" dropped -- and "fiscal year start" its start.
     """
+    started = re.fullmatch(
+        rf"\s*(?:the\s+)?(?P<basis>{_BASIS_WORD}[\s-]+)?(?P<unit>year|yr|{_FY_WORD}|{_CY_WORD})"
+        r"[-\s](?:start|beginning)\s+(?:of\s+)?(?P<year>.+?)\s*",
+        text,
+        re.IGNORECASE,
+    ) or re.fullmatch(
+        rf"\s*(?P<year>(?:19|20)\d{{2}})\s+(?:the\s+)?(?P<basis>{_BASIS_WORD}[\s-]+)?"
+        rf"(?P<unit>year|yr|{_FY_WORD}|{_CY_WORD})[-\s](?:start|beginning)\s*",
+        text,
+        re.IGNORECASE,
+    )
+    if started:
+        # "year start 2024", "fiscal year start FY24", "2024 F.Y. start": the start of that
+        # year. A year's end with a year beside it is period_ending's -- "year end 2024" is
+        # the year 2024. REGRESSION: "year start 2024" was the start of this year, 2024
+        # dropped, and "2024 F.Y. start" this fiscal year's start.
+        target = _target_spec(started.group("year"), cfg)
+        if target is None or not _is_year(target):
+            return None
+        said = started.group("basis") or started.group("unit")
+        if re.match(r"(?i)(?:fiscal|financial|f\.?y)", said):
+            target = target.with_(basis=Basis.FISCAL)
+        elif re.match(r"(?i)(?:calendar|c\.?y)", said):
+            target = target.with_(basis=Basis.CALENDAR)
+        return target.with_(part=Part.EARLY)
     low = re.sub(r"[\s.-]+", " ", text.strip().lower())
     edge = _EDGE_WORDS.get(low.replace(" ", ""))
     if edge is not None:
@@ -2146,10 +2251,15 @@ RULES: tuple[Rule, ...] = (
     # where the data held it as a label. Ahead of every rule that would take the years.
     # "the 2015-16 campaign" and "the 2015-16 term" as well, and "SY 2015-16" for a school
     # year. REGRESSION: each was two calendar years.
+    # And a season's edges: "academic year start", "the school year end 2024", "2024
+    # academic year end" -- the start of an academic year is no January. REGRESSION: they
+    # were the calendar year's start or end.
     Rule(
         "season_label",
         rf"\b(?:the\s+)?{_YEAR_RUN}\s+{_SEASON_OWNER}(?:{_SEASON_WORD}|campaign|term)s?\b"
-        rf"|\b(?:{_SEASON_WORD}|sy)\s+(?:of\s+)?{_YEAR_RUN}\b",
+        rf"|\b(?:{_SEASON_WORD}|sy)\s+(?:of\s+)?{_YEAR_RUN}\b"
+        rf"|\b(?:the\s+)?(?:{_YEAR_RUN}\s+)?(?:academic|school)\s+year[-\s]+"
+        rf"(?:end|start|beginning|close)(?:\s+(?:of\s+)?{_YEAR_RUN})?\b",
         _p_decline(
             "{text!r} names a season, which runs over months of its own -- a sport's, a "
             "school's -- so it is read as a label, not as dates"
@@ -2192,11 +2302,13 @@ RULES: tuple[Rule, ...] = (
     # each take the year and leave the month behind: "FY25 June", "FY2024-25 March".
     _from_tokens("fy_month"),
     # Not when a month follows: in "FY24 - 15 March 2024" the 15 is a day. Not when a
-    # quarter does: "FY2024-25 Q3" is a quarter of that year, for labelled_period.
+    # quarter does: "FY2024-25 Q3" is a quarter of that year, for labelled_period. Nor a
+    # numbered week or month: "FY2024-25 week 3" is that year's, for week_counted.
     Rule(
         "fy_range",
         rf"\b{_FY_WORD}\s*'?\d{{2,4}}\s*[-/]\s*'?\d{{2,4}}\b(?![\s,]+{_MONTH}\b)"
-        rf"(?!\s*-?\s*{_QH}(?!\w))",
+        rf"(?!\s*-?\s*{_QH}(?!\w))"
+        rf"(?!\s*(?:(?:fiscal|financial)\s+)?(?:week|wk|month|mth)s?{_WEEK_NO}\d)",
         _p_fy_range,
     ),
     # "9M 2024", "9M FY24": the first months of a year, as results are reported.
@@ -2250,13 +2362,15 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "period_ending",
         rf"\b(?:(?:(?:the\s+)?(?:{_NUM}\s+)?(?:half[\s-]?years?|{_FY_WORD}|{_UNIT})"
-        rf"(?:\s+period)?(?:\s+|-)(?:end(?:ing|ed|s)?|to)|w/e|w\.e\.|q/?e|y/?e|fye"
+        rf"(?:\s+period)?(?:\s+|-)(?:end(?:ing|ed|s)?|to)|w/e|w\.e\.|q/?e|y/?e|f\.?y\.?e\.?"
         rf"|(?:the\s+)?\d{{1,2}}\s*m\s+(?:to|ended|ending))\s+"
         rf"(?:\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}[/.-]\d{{1,2}}[/.-](?:\d{{4}}|\d{{2}})"
         rf"|\d{{1,2}}(?:st|nd|rd|th)?\s+{_MONTH}(?:\s+\d{{4}})?"
         rf"|{_MONTH}\s+\d{{1,2}}(?:st|nd|rd|th)?(?!\d)(?:,?\s+\d{{4}})?"
         rf"|{_MONTH}{_YEAR_SUFFIX}|{_YEAR})"
-        rf"|(?:19|20)\d{{2}}\s+(?:(?:{_BASIS_WORD}\s+)?year|{_FY_WORD})[\s-]+end(?:ing|ed)?)\b",
+        rf"|(?:19|20)\d{{2}}\s+(?:(?:(?:{_BASIS_WORD}\s+)?year|{_FY_WORD}|{_CY_WORD})"
+        rf"[\s-]+(?:end(?:ing|ed)?|close)|f\.?y\.?e)"
+        rf"|(?:f\.?y\.?e\.?|(?:the\s+)?{_FY_WORD}[\s-]*end(?:ing|ed|s)?)\s+\d{{2}}(?![\d/.-]))\b",
         _p_period_ending,
     ),
     Rule("trailing_months", r"\b(?:ttm|ltm|[tl]\d{1,2}m)\b", _p_trailing_months),
@@ -2283,11 +2397,21 @@ RULES: tuple[Rule, ...] = (
         _p_within,
     ),
     # Before "part_of": "month end" is an edge of the current period, and part_of would
-    # read the bare unit as the whole of it.
+    # read the bare unit as the whole of it. The forms that say a basis -- "fiscal year
+    # end", "FYE", "CY end" -- take nothing that follows them as a year or a date: those are
+    # period_ending's ("fiscal quarter end June 2024"), and part_of's ("CY end 2024"), as
+    # they were before the basis was read here. REGRESSION: they were all this year's end.
+    # A year's start may take its year: "year start 2024", "fiscal year start FY24".
     Rule(
         "period_edge",
-        rf"\b(?:e\.?o\.?[mqyw]|f\.?y\.?e|(?:the\s+)?(?:{_BASIS_WORD}[\s-]+{_UNIT}|{_FY_WORD}"
-        rf"|{_CY_WORD}|{_UNIT})[-\s](?:end|start|beginning|close))\b",
+        rf"\b(?:e\.?o\.?[mqyw]"
+        rf"|(?:the\s+)?(?:{_BASIS_WORD}[\s-]+)?(?:year|yr|{_FY_WORD}|{_CY_WORD})"
+        rf"[-\s](?:start|beginning)\s+(?:of\s+)?{_YEAR}(?![-/.]\d)"
+        rf"|(?:19|20)\d{{2}}\s+(?:the\s+)?(?:{_BASIS_WORD}[\s-]+)?(?:year|yr|{_FY_WORD}|{_CY_WORD})"
+        rf"[-\s](?:start|beginning)"
+        rf"|(?:f\.?y\.?e\.?|(?:the\s+)?(?:{_BASIS_WORD}[\s-]+{_UNIT}|{_FY_WORD}|{_CY_WORD})"
+        rf"[-\s](?:end|start|beginning|close))(?![\s,]*(?:'?\d|{_MONTH}\b|[fc]\.?y))"
+        rf"|(?:the\s+)?{_UNIT}[-\s](?:end|start|beginning|close))\b",
         _p_period_edge,
     ),
     Rule(
@@ -2322,12 +2446,17 @@ RULES: tuple[Rule, ...] = (
     # Ahead of week_number, which would take "week 11" and leave "-12".
     # Before week_span and week_number, which would take "week 3" and leave "fiscal"; and
     # before "year", which would take "FY25" and leave "week 3".
+    # Weeks counted into a period -- "fiscal week 3", "FY25 weeks 3-5", "week 3 of FY25",
+    # "week 3 of January" -- before week_span and week_number, which would take "week 3"
+    # and leave "fiscal" or "of January", and before "year", which would take "FY25". The
+    # fiscal-year-first form takes nothing after it: "FY24 week 3 of Q2" is not FY24's.
     Rule(
-        "fiscal_week",
-        rf"\b(?:(?:the\s+)?{_FISCAL_WEEK_WORD}s?{_WEEK_NO}\d{{1,2}}(?:{_WEEK_JOIN}\d{{1,2}})?\b"
-        rf"{_WEEK_YEAR_SUFFIX}"
-        rf"|{_FY_YEAR}[\s,]*(?:(?:fiscal|financial)\s+)?(?:week|wk){_WEEK_NO}\d{{1,2}}\b)",
-        _p_fiscal_week,
+        "week_counted",
+        rf"\b(?:(?:the\s+)?{_FISCAL_WEEK_WORD}{_WEEK_RUN}(?:{_COUNTED_IN}{_NTH_TARGET}"
+        rf"|{_WEEK_YEAR_SUFFIX})"
+        rf"|{_FY_YEAR}\s*(?:(?:fiscal|financial)\s+)?(?:week|wk){_WEEK_RUN}(?!\s*(?:of|in)\b)"
+        rf"|{_WEEK_WORD}{_WEEK_RUN}{_COUNTED_IN}{_NTH_TARGET})",
+        _p_week_counted,
     ),
     Rule(
         "week_span",
@@ -2336,9 +2465,7 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "week_number",
-        rf"\b{_WEEK_WORD}{_WEEK_NO}\d{{1,2}}\b"
-        rf"(?:\s+(?:of|in)\s+(?:the\s+)?(?:{_MONTH}{_YEAR_SUFFIX}|{_QWORD}\s*[1-4](?!\d)"
-        rf"{_YEAR_SUFFIX})|{_WEEK_YEAR_SUFFIX})",
+        rf"\b{_WEEK_WORD}{_WEEK_NO}\d{{1,2}}\b{_WEEK_YEAR_SUFFIX}",
         _p_week_number,
     ),
     # Days running inside one month -- "1-15 March", "March 1-15", "between 1 and 15 March"
@@ -2379,20 +2506,21 @@ RULES: tuple[Rule, ...] = (
     # "year", which would take "FY24" from "FY24 month 3". It needs a fiscal word or a
     # period after it: "month 3" alone says nothing about which year's month.
     Rule(
-        "month_number",
-        rf"\b(?:{_FY_YEAR}[\s,]*(?:(?:fiscal|financial)\s+)?(?:month|mth|m){_WEEK_NO}\d{{1,2}}\b"
-        rf"|m\s*\d{{1,2}}[\s,]+{_FY_YEAR}"
-        rf"|(?:the\s+)?(?:fiscal|financial)\s+(?:month|mth){_WEEK_NO}\d{{1,2}}\b{_YEAR_SUFFIX}"
-        rf"|(?:the\s+)?(?:month|mth){_WEEK_NO}\d{{1,2}}"
-        rf"(?:{_NTH_OF}{_NTH_TARGET}|(?:\s*,)?\s+{_YEAR}(?![-/.]\d)))\b",
-        _p_month_number,
+        "month_counted",
+        rf"\b(?:(?:the\s+)?(?:fiscal|financial)\s+(?:month|mth){_MONTH_RUN}"
+        rf"(?:{_COUNTED_IN}{_NTH_TARGET}|{_YEAR_SUFFIX})"
+        rf"|{_FY_YEAR}\s*(?:(?:fiscal|financial)\s+)?(?:month|mth){_MONTH_RUN}"
+        rf"(?!\s*(?:of|in)\b)"
+        rf"|(?:the\s+)?(?:month|mth){_MONTH_RUN}"
+        rf"(?:{_COUNTED_IN}{_NTH_TARGET}|(?:\s*,)?\s+{_YEAR}(?![-/.]\d)))\b",
+        _p_month_counted,
     ),
     Rule(
         "sub_period",
         rf"\b(?:the\s+)?(?:{_NTH_STRICT}\s+(?:{_NUM}\s+)?"
         rf"(?:days?|weeks?|wks?|fortnights?|months?|mths?|mnths?|mos?)"
         rf"|(?:first|1st|last|final)\s+{_NUM}\s+(?:quarters|qtrs)"
-        rf"|(?:last|final)\s+(?:quarter|qtr)){_SUB_OF}{_NTH_TARGET}\b",
+        rf"|(?:last|final)\s+(?:quarter|qtr)){_NTH_OF}{_NTH_TARGET}\b",
         _p_sub_period,
     ),
     Rule("final_quarter", r"\bthe\s+final\s+(?:quarter|qtr)\b(?!\s+(?:of|in)\b)", _p_final_quarter),
