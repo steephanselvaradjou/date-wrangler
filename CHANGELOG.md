@@ -7,7 +7,7 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
-## Unreleased
+## 2.6.0 — 2026-11-18
 
 The agent tool takes a whole configuration; a range gives the periods it is compared with
 and the period that holds a day; a configuration can be described in plain words for a
