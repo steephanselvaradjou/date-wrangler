@@ -21,7 +21,7 @@ from typing import Any
 from .config import DEFAULT_CONFIG, WranglerConfig
 from .normalize import Normalized, normalize
 from .resolve import UnresolvableSpec, default_year_for, resolve
-from .rules import _DAY_WORDS, RULES, Rule, _pivot_year
+from .rules import _DAY_WORDS, _NTH_STRICT, RULES, Rule, _pivot_year
 from .spec import Kind, Part, Spec
 from .tokens import Reader
 from .types import Anchor, DateMatch, DateRange, Grain, Mod, grain_rank
@@ -935,6 +935,77 @@ def _scan(text: str, cfg: WranglerConfig, diags: list[Diagnostic] | None) -> lis
     return out
 
 
+#: A unit or weekday an ordinal counts: what follows the "3rd" of "3rd weeks of January".
+_COUNTED_UNIT = (
+    r"(?:days?|weeks?|wks?|fortnights?|months?|mths?|mnths?|quarters?|qtrs?|halves|halfs?"
+    rf"|{alt(WEEKDAY_NAMES)}s?)"
+)
+#: A match that opens with an ordinal and its unit: "3rd weeks of January", "the second
+#: quarter of 2024", "last Mondays of March". The ordinal's place, and what follows it.
+_ORDINAL_LED = re.compile(
+    rf"(?:the\s+)?({_NTH_STRICT})(\s+({_COUNTED_UNIT})\b.*)$", re.IGNORECASE | re.DOTALL
+)
+#: An ordinal listed just before one: "the 2nd and ", "first, ", "the 2nd week and the ",
+#: "the 2nd to ".
+_ORDINAL_BEFORE = re.compile(
+    rf"(?<!\w)(?:the\s+)?({_NTH_STRICT})(?:\s+({_COUNTED_UNIT}))?"
+    r"(\s*(?:,\s*(?:and\s+|&\s*)?|and\s+|&\s*|-\s*|(?:to|through|thru|till|until)\s+)"
+    r"(?:the\s+)?)$",
+    re.IGNORECASE,
+)
+
+
+def _ordinal_lists(raws: list[_Raw], text: str, cfg: WranglerConfig) -> list[_Raw]:
+    """Ordinals listed or run before one that names its unit: "the 2nd and 3rd weeks of
+    January", "the first, second and third quarters of 2024", "the 2nd to 4th weeks of
+    January", "the 2nd week and the 3rd week of January", "the 2nd and 3rd Mondays of
+    March".
+
+    Each is read exactly as its own phrase would be -- "the 2nd weeks of January" -- by
+    reading those words, and then joins its neighbours as any two dates do: a list after
+    "and" or a comma, a span after "to". REGRESSION: only the last was read, "3rd weeks of
+    January", confidently and with nothing to say the 2nd had been dropped.
+    """
+    out: list[_Raw] = []
+    for raw in raws:
+        led = _ORDINAL_LED.match(text, raw.start, raw.end)
+        if led is None or led.end() != raw.end:
+            out.append(raw)
+            continue
+        rest = led.group(2)  # " weeks of January"
+        # Never over a date already read -- except an ordinal taken for a day of the month,
+        # the "2nd" of "the 2nd, 3rd and 4th weeks", which is this list's.
+        keep = len(out)
+        while keep and out[keep - 1].rule == "ordinal_day" and out[keep - 1].end > raw.start - 48:
+            keep -= 1
+        floor = out[keep - 1].end if keep else 0
+        before: list[_Raw] = []
+        pos = raw.start
+        while True:
+            m = _ORDINAL_BEFORE.search(text, max(floor, pos - 48), pos)
+            if m is None or m.end() != pos or m.start() < floor:
+                break
+            # With its own unit when it says one: "the 2nd Monday and the 3rd week of March"
+            # is the 2nd Monday of March.
+            own = m.group(2)
+            phrase = f"the {m.group(1)}" + (f" {own}{text[led.end(3) : raw.end]}" if own else rest)
+            alone = _scan(phrase, cfg, None)
+            # Read whole, with "the" or from the ordinal: "the 2nd week of January" is read
+            # with it, "first quarter of 2024" without.
+            if len(alone) != 1 or alone[0].end != len(phrase) or alone[0].start not in (0, 4):
+                break
+            # The ordinal, and its unit when it says one: "the 2nd", "the 2nd week".
+            start = m.start() if alone[0].start == 0 else m.start(1)
+            before.append(_Raw(alone[0].rule, alone[0].spec, start, m.start(3)))
+            pos = m.start()
+        if before:
+            first = before[-1].start
+            out[keep:] = [r for r in out[keep:] if r.end <= first]
+        out.extend(reversed(before))
+        out.append(raw)
+    return out
+
+
 #: What a rule read from a fragment: (True, what it read), or (False, why it refused).
 _Reading = tuple[bool, Any]
 #: Readings already made, per configuration. "Q1", "FY24" and "Q3 2024" recur from text to
@@ -1580,7 +1651,9 @@ def _apply_modifier(raw: _Raw, text: str, floor: int = 0) -> _Raw:
         mod = _MOD_PREFIXES[int(m.lastgroup[1:])][1]
         # "since 1 June 2018 till date" says where it ends: today.
         if not (mod is Mod.SINCE and raw.spec.through_today):
-            spec = raw.spec.with_(mod=mod)
+            # "since" alone points to the past; "from", "starting", "on or after" may not.
+            since = mod is Mod.SINCE and m.group().lower().lstrip().startswith("since")
+            spec = raw.spec.with_(mod=mod, since=since)
             # "before / by / until the end of March" means by the close of March. Read
             # literally it was "before the last third of March", which ended on the 20th.
             if (
@@ -1667,7 +1740,9 @@ def parse(
     body = norm.text
 
     mark = len(diagnostics) if diagnostics is not None else 0
-    raws = _join_one_date(_scan(body, config, diagnostics), body, config)
+    raws = _join_one_date(
+        _ordinal_lists(_scan(body, config, diagnostics), body, config), body, config
+    )
     if not raws:
         _diagnostics_to_original(diagnostics, mark, norm)
         return []
@@ -2203,15 +2278,21 @@ def _merge(
         #
         # The year comes from the unified spec: default_year_for() returns None once
         # _unify has supplied one, and a fiscal label cannot be read off the dates.
+        #
+        # An end counted from today -- "last month", "today", "Friday" -- has no year to
+        # move, so the start moves instead: "15 March to last month" began last March.
+        # REGRESSION: such an end stopped the search, which mattered once a month with no
+        # year took the fiscal year in progress, and so could fall after last month.
+        b_year = None
         if not b.spec.has_explicit_year:
-            base = sb.year if sb.year is not None else default_year_for(sb, day, cfg)
-            if base is not None:
-                try:
-                    retried = resolve(sb.with_(year=base + 1), day, cfg)
-                except UnresolvableSpec:
-                    retried = None
-                if retried is not None and retried.end is not None and retried.end > ra.start:
-                    rb = retried
+            b_year = sb.year if sb.year is not None else default_year_for(sb, day, cfg)
+        if b_year is not None:
+            try:
+                retried = resolve(sb.with_(year=b_year + 1), day, cfg)
+            except UnresolvableSpec:
+                retried = None
+            if retried is not None and retried.end is not None and retried.end > ra.start:
+                rb = retried
         elif not a.spec.has_explicit_year:
             base = sa.year if sa.year is not None else default_year_for(sa, day, cfg)
             far_end = rb.end
@@ -2260,7 +2341,9 @@ def _merge(
             return None
 
     grain = ra.grain if ra.grain == rb.grain else max(ra.grain, rb.grain, key=_grain_rank)
-    merged = DateRange(ra.start, rb.end, grain, ra.basis)
+    # "weeks 3-5 of FY25" runs from one counted week to another, so it is counted too.
+    counted = ra.counted_in_period and rb.counted_in_period
+    merged = DateRange(ra.start, rb.end, grain, ra.basis, counted_in_period=counted)
     if not _usable(merged):
         if diags is not None:
             diags.append(

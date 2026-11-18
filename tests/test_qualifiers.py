@@ -25,7 +25,8 @@ from date_wrangler import (
 TODAY = date(2025, 9, 4)  # a Thursday, in fiscal Q2 of FY2026 on an April start
 ROLLING = WranglerConfig(anchor=Anchor.ROLLING)
 #: Most cases here read undeclared periods fiscally, the case with the most to get wrong;
-#: the library default is calendar.
+#: the library default is calendar. A month with no year is then in the fiscal year in
+#: progress, FY2026: June is June 2025 and March is March 2026.
 FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)
 CALENDAR_YEARS = WranglerConfig(year_basis=Basis.CALENDAR)
 
@@ -48,7 +49,7 @@ def rng(text, cfg=None):
         ("Q1 of last year", date(2024, 4, 1), date(2024, 7, 1)),
         ("Q3 next year", date(2026, 10, 1), date(2027, 1, 1)),
         ("Q1 this year", date(2025, 4, 1), date(2025, 7, 1)),
-        ("March last year", date(2024, 3, 1), date(2024, 4, 1)),
+        ("March last year", date(2025, 3, 1), date(2025, 4, 1)),  # FY25's March
         ("H1 last year", date(2024, 4, 1), date(2024, 10, 1)),
     ],
 )
@@ -72,12 +73,12 @@ def test_relative_year_is_one_match():
     "text,start,end",
     [
         # Days, because half a month is not a whole number of months.
-        ("first half of March", date(2025, 3, 1), date(2025, 3, 16)),
+        ("first half of March", date(2026, 3, 1), date(2026, 3, 16)),
         ("second half of June", date(2025, 6, 16), date(2025, 7, 1)),
-        ("beginning of March", date(2025, 3, 1), date(2025, 3, 11)),
-        ("start of March", date(2025, 3, 1), date(2025, 3, 11)),
-        ("mid March", date(2025, 3, 11), date(2025, 3, 21)),
-        ("end of March", date(2025, 3, 21), date(2025, 4, 1)),
+        ("beginning of March", date(2026, 3, 1), date(2026, 3, 11)),
+        ("start of March", date(2026, 3, 1), date(2026, 3, 11)),
+        ("mid March", date(2026, 3, 11), date(2026, 3, 21)),
+        ("end of March", date(2026, 3, 21), date(2026, 4, 1)),
         # Months, because a year divides evenly into halves and thirds.
     ],
 )
@@ -91,7 +92,7 @@ def test_parts_tile_the_period_exactly():
     """No day may fall between the pieces, and none may be counted twice."""
     first = rng("first half of March")
     second = rng("second half of June")
-    assert first[0] == date(2025, 3, 1) and first[1] == date(2025, 3, 16)
+    assert first[0] == date(2026, 3, 1) and first[1] == date(2026, 3, 16)
     assert second[1] == date(2025, 7, 1)
     for cfg, year_start, year_end in (
         (CALENDAR_YEARS, date(2024, 1, 1), date(2025, 1, 1)),
@@ -135,7 +136,7 @@ def test_a_part_of_a_numbered_year_follows_year_basis(text, calendar, fiscal):
     [
         ("1st of next month", date(2025, 10, 1)),
         ("15th of next month", date(2025, 10, 15)),
-        ("15th of March", date(2025, 3, 15)),
+        ("15th of March", date(2026, 3, 15)),
         ("3rd of last month", date(2025, 8, 3)),
     ],
 )

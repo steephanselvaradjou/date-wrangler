@@ -44,7 +44,8 @@ def periods(text, cfg=None):
                        ("Q3", date(2026, 10, 1), date(2027, 1, 1))]),
         ("Q1 and Q2", [("Q1", date(2026, 4, 1), date(2026, 7, 1)),
                        ("Q2", date(2026, 7, 1), date(2026, 10, 1))]),
-        ("March and June", [("March", date(2026, 3, 1), date(2026, 4, 1)),
+        # A month with no year is in FY27, April 2026 to March 2027, as Q1 and Q3 are.
+        ("March and June", [("March", date(2027, 3, 1), date(2027, 4, 1)),
                             ("June", date(2026, 6, 1), date(2026, 7, 1))]),
         ("this year and Q1", [("this year", date(2026, 4, 1), date(2027, 4, 1)),
                               ("Q1", date(2026, 4, 1), date(2026, 7, 1))]),

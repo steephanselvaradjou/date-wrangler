@@ -8,8 +8,10 @@ shifts the window back a year instead of widening to the whole prior year.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from typing import Any
 
+from .arith import DateRangeOverflow
 from .calendars import (
     add_business_days,
     add_months,
@@ -25,12 +27,12 @@ from .calendars import (
     week_range,
     year_range,
 )
-from .config import WranglerConfig
+from .config import DEFAULT_CONFIG, WranglerConfig
 from .spec import Kind, Part, Spec
 from .types import Anchor, Basis, DateRange, Grain, Mod
 from .vocab import WEEKDAY_DISPLAY
 
-__all__ = ["resolve", "default_year_for", "UnresolvableSpec"]
+__all__ = ["resolve", "default_year_for", "period_of", "UnresolvableSpec"]
 
 
 class UnresolvableSpec(ValueError):
@@ -92,6 +94,65 @@ def _shift(start: date, unit: Grain, n: int) -> date:
     return add_months(start, n * months)
 
 
+def period_of(
+    day: date,
+    grain: Grain | str,
+    config: WranglerConfig | None = None,
+    *,
+    basis: Basis | str | None = None,
+) -> DateRange:
+    """The whole period of ``grain`` that holds ``day``: its week, month, quarter, half or
+    year.
+
+    The same rule the parser reads "the week of 5 October" and "the quarter of June" by,
+    so a report's axis and a parsed phrase never disagree on where a period starts. A week
+    starts on ``config.week_starts_on``; a quarter, half or year is on ``year_basis``, the
+    fiscal calendar's when that is fiscal, unless ``basis`` says otherwise; a month is a
+    calendar month either way.
+
+        >>> from date_wrangler import WranglerConfig
+        >>> fiscal = WranglerConfig(year_basis="fiscal")       # April years
+        >>> str(period_of(date(2026, 11, 18), "quarter", fiscal))
+        '2026-10-01 .. 2026-12-31 (92 days)'
+        >>> str(period_of(date(2026, 11, 18), "year", fiscal))
+        '2026-04-01 .. 2027-03-31 (365 days)'
+
+    For a trend axis -- every period from one date to another -- take the periods of both
+    ends and split what lies between: each bucket is then one whole period.
+
+        >>> first = period_of(date(2026, 2, 10), "quarter", fiscal)
+        >>> last = period_of(date(2026, 11, 18), "quarter", fiscal)
+        >>> axis = DateRange(first.start, last.end, Grain.QUARTER).split(Grain.QUARTER)
+        >>> [b.start.isoformat() for b in axis]
+        ['2026-01-01', '2026-04-01', '2026-07-01', '2026-10-01']
+    """
+    if isinstance(day, datetime):
+        day = day.date()
+    if not isinstance(day, date):
+        raise TypeError(f"day must be a date, got {type(day).__name__}")
+    unit = _as(Grain, grain, "grain")
+    cfg = DEFAULT_CONFIG if config is None else config
+    on = cfg.effective_year_basis if basis is None else _as(Basis, basis, "basis")
+    try:
+        start = _period_start(day, cfg, unit, on)
+        return DateRange(start, _shift(start, unit, 1), unit, on)
+    except OverflowError as exc:
+        raise DateRangeOverflow(
+            f"the {unit.value} that holds {day.isoformat()} runs past the supported year range"
+        ) from exc
+
+
+def _as(kind: type[Grain] | type[Basis], value: object, name: str) -> Any:
+    """``value`` as a member of ``kind``, from the member or its value in any case."""
+    if isinstance(value, kind):
+        return value
+    try:
+        return kind(str(value).strip().lower())
+    except ValueError:
+        choices = ", ".join(m.value for m in kind)
+        raise ValueError(f"{name} must be one of {choices}, got {value!r}") from None
+
+
 # ---------------------------------------------------------------------------
 # Basis and year defaults
 # ---------------------------------------------------------------------------
@@ -126,6 +187,19 @@ def _default_year(today: date, cfg: WranglerConfig, basis: Basis) -> int:
     return today.year
 
 
+def _month_year(month: int, today: date, cfg: WranglerConfig, basis: Basis) -> int:
+    """The calendar year a month named without one falls in: the year in progress.
+
+    On ``year_basis``, as "Q4" is: on a fiscal basis the fiscal year in progress, so with
+    an April year in November 2026 "January" is January 2027 -- inside the fiscal year
+    whose Q4 it is -- and on the calendar, January 2026. REGRESSION: a month always took
+    the calendar year, so "January" and "Q4" fell a year apart on a fiscal basis.
+    """
+    if basis is Basis.FISCAL:
+        return _calendar_year_of(month, fiscal_year_of(today, cfg.fiscal), cfg)
+    return today.year
+
+
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
@@ -142,12 +216,58 @@ def default_year_for(spec: Spec, today: date, cfg: WranglerConfig) -> int | None
     if spec.kind is Kind.FISCAL_MONTH:
         return fiscal_year_of(today, cfg.fiscal)
     if spec.kind in (Kind.ABS_MONTH, Kind.ABS_DAY):
-        return today.year
+        if spec.month is None:
+            return today.year
+        if spec.basis is Basis.FISCAL:
+            # A year on a month that says fiscal -- "June FY25", or "December" beside "last
+            # fiscal quarter" -- is a fiscal label to resolve(), so give one. REGRESSION: a
+            # calendar year was given, read back as a label, and the span moved two years.
+            return fiscal_year_of(today, cfg.fiscal)
+        return _month_year(spec.month, today, cfg, _basis_for(spec, cfg))
     return _default_year(today, cfg, _basis_for(spec, cfg))
 
 
 def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     """Resolve ``spec`` against ``today``. Raises :class:`UnresolvableSpec` on bad input."""
+    looks_back = spec.mod is not None and _looks_back(spec)
+    try:
+        base = _resolve_named(spec, today, cfg)
+    except UnresolvableSpec:
+        # "since 29 February" in a year without one: the latest year that has it.
+        # REGRESSION: the year in progress failed, and the bound found nothing.
+        earlier = _latest_begun(spec, today, cfg) if looks_back else None
+        if earlier is None:
+            raise
+        return earlier
+    if looks_back and base.start is not None and base.start > today:
+        earlier = _latest_begun(spec, today, cfg)
+        if earlier is not None:
+            return earlier
+    out = _apply_mod(base, spec.mod, today)
+    if spec.sub_period is not None:
+        # Counted from the period's first day, not on the calendar's grid: "week 3 of FY25"
+        # a year earlier is week 3 of FY24, where "W12" goes back 52 weeks. Built directly:
+        # dataclasses.replace() here cost 5% of parsing a corpus full of such runs.
+        out = DateRange(out.start, out.end, out.grain, out.basis, out.mod, out.anchor, True)
+    return out
+
+
+def _latest_begun(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange | None:
+    """``spec`` in the latest year before the one in progress that holds its month or day:
+    a year back, or as far back as 29 February needs. None when no such year resolves."""
+    year = default_year_for(spec, today, cfg)
+    if year is None:
+        return None
+    for back in range(1, 9):  # a leap day can be eight years away, across 2100
+        try:
+            return resolve(spec.with_(year=year - back), today, cfg)
+        except UnresolvableSpec:
+            continue
+    return None
+
+
+def _resolve_named(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
+    """The period ``spec`` names, before any bound is put on it."""
     try:
         base = _resolve_core(spec, today, cfg)
         # An ISO week takes its offset in its year, in _resolve_core: week 3 of next year is
@@ -209,7 +329,27 @@ def resolve(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
         if isinstance(exc, UnresolvableSpec):
             raise
         raise UnresolvableSpec(str(exc)) from exc
-    return _apply_mod(base, spec.mod, today)
+    return base
+
+
+def _looks_back(spec: Spec) -> bool:
+    """"since" and a month or day with no year: "since March", "since 15 March".
+
+    "Since" points to the past, so it takes the latest such month that has begun rather
+    than the one in the year in progress: asked in October on an April fiscal year, that
+    year's March is still to come, and "since March" means the one gone. Only "since":
+    "from 1 March", "after 31 March", "on or after", "not before" and "by March" may point
+    ahead -- "the new price applies from 1 March" -- and keep the year in progress. A year
+    written, or one counted from today ("since last March"), is taken as it is.
+    """
+    return (
+        spec.since
+        and spec.mod is Mod.SINCE
+        and spec.kind in (Kind.ABS_MONTH, Kind.ABS_DAY)
+        and spec.year is None
+        and spec.year_offset is None
+        and not spec.is_relative
+    )
 
 
 def _pick_day_span(r: DateRange, first: int, last: int) -> DateRange:
@@ -462,8 +602,8 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
     if spec.kind is Kind.ABS_DAY:
         if spec.month is None or spec.day is None:
             raise UnresolvableSpec("an absolute day needs a month and a day")
-        # "meeting on March 3" states no year; assume the current calendar year.
-        year = spec.year if spec.year is not None else today.year
+        # "meeting on March 3" states no year: the year in progress, on year_basis.
+        year = spec.year if spec.year is not None else _month_year(spec.month, today, cfg, basis)
         if spec.basis is Basis.FISCAL and spec.year is not None:
             year = _calendar_year_of(spec.month, spec.year, cfg)
         return day_range(date(year, spec.month, spec.day))
@@ -480,16 +620,18 @@ def _resolve_core(spec: Spec, today: date, cfg: WranglerConfig) -> DateRange:
             label = spec.year if spec.year is not None else fiscal_year_of(today, cfg.fiscal)
             index = (spec.month - cfg.fiscal.start_month) % 12 + 1
             return fiscal_month_range(label, index, cfg.fiscal)
-        if spec.year is None and spec.nearest is not None:
+        if spec.year is None and spec.nearest:
             # "last March" is the latest March before this month, "next March" the first
-            # after it; "this March" is this year's, either side of today.
+            # after it -- counted from today, so the same on either basis.
             year = today.year
             if spec.nearest < 0 and spec.month >= today.month:
                 year -= 1
             elif spec.nearest > 0 and spec.month <= today.month:
                 year += 1
             return month_range(year, spec.month)
-        return month_range(spec.year if spec.year is not None else today.year, spec.month)
+        # "March", and "this March": the year in progress, either side of today.
+        year = spec.year if spec.year is not None else _month_year(spec.month, today, cfg, basis)
+        return month_range(year, spec.month)
 
     if spec.kind is Kind.ABS_QUARTER:
         if spec.index is None:

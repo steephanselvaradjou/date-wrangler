@@ -115,6 +115,9 @@ class Spec:
     weekday_span: tuple[int, int] | None = None
     #: None => take it from configuration. Only relative periods can roll.
     anchor: Anchor | None = None
+    #: Bounded by "since", which points to the past: with no year written, the latest such
+    #: month or day that has begun. "from", "after" and the rest may point either way.
+    since: bool = False
 
     @property
     def has_explicit_year(self) -> bool:
