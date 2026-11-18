@@ -11,6 +11,7 @@ all the same shape, which is what lets them share an API.
     (datetime.date(2024, 4, 1), datetime.date(2024, 7, 1))
 """
 
+from ._describe import describe
 from .calendars import DateRangeOverflow
 from .config import (
     DEFAULT_CONFIG,
@@ -21,7 +22,7 @@ from .config import (
     YearLabel,
 )
 from .format import format_iso, format_range, make_formatter
-from .resolve import UnresolvableSpec
+from .resolve import UnresolvableSpec, period_of
 from .types import Anchor, Basis, DateMatch, DateRange, Grain, Mod, SqlDialect
 from .wrangler import YEAR_GUESSED, Diagnostic, diagnose, parse, parse_one, substitute
 
@@ -50,6 +51,8 @@ __all__ = [
     "substitute",
     "Diagnostic",
     "YEAR_GUESSED",
+    "describe",
+    "period_of",
     # Formatting
     "format_range",
     "format_iso",

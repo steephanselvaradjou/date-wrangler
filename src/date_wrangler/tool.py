@@ -188,13 +188,22 @@ def definition() -> dict[str, Any]:
     return {"name": NAME, "description": DESCRIPTION, "input_schema": copy.deepcopy(INPUT_SCHEMA)}
 
 
-def call(arguments: Mapping[str, Any]) -> dict[str, Any]:
+def call(
+    arguments: Mapping[str, Any],
+    *,
+    config: WranglerConfig | None = None,
+    comparisons: bool = False,
+) -> dict[str, Any]:
     """Run the tool on arguments exactly as a model sent them.
 
     Checked before anything runs, because a model's arguments are not a programmer's: an
     unknown name or a month of 13 comes back as :class:`ToolInputError` naming what to
     change, never as a crash or a silently ignored setting. A JSON ``null`` counts as
     left out, and a value is matched whatever its case.
+
+    ``config`` is the host's, not the model's: the organisation's settings, which the
+    model's arguments can override for one call. ``comparisons`` is the host's too. See
+    :func:`resolve_dates` for both.
     """
     if not isinstance(arguments, Mapping):
         raise ToolInputError(
@@ -209,7 +218,7 @@ def call(arguments: Mapping[str, Any]) -> dict[str, Any]:
         )
     if arguments.get("text") is None:
         raise ToolInputError("text is required: the words that hold the dates")
-    return resolve_dates(**arguments)
+    return resolve_dates(**arguments, config=config, comparisons=comparisons)
 
 
 # ---------------------------------------------------------------------------
@@ -472,8 +481,29 @@ _LATER = timedelta(days=400)
 _NUMERIC_DATE = re.compile(r"\d\s*[-/.]\s*\d")
 
 
-def _config(chosen: Mapping[str, Any], strictness: str) -> WranglerConfig:
-    return WranglerConfig(
+def _settings_of(cfg: WranglerConfig) -> dict[str, Any]:
+    """``cfg`` as the tool's settings, in the values its schema takes."""
+    return {
+        "timezone": None,
+        "fiscal_start_month": cfg.fiscal.start_month,
+        "fiscal_year_label": cfg.fiscal.label_by.value,
+        "year_basis": cfg.effective_year_basis.value,
+        "date_order": cfg.date_order.value,
+        "month_number": cfg.month_number.value,
+        "two_digit_pivot": cfg.two_digit_pivot,
+        "week_starts_on": _WEEKDAYS[cfg.week_starts_on],
+        "anchor": cfg.anchor.value,
+        "weekend": [_WEEKDAYS[d] for d in sorted(cfg.weekend)],
+        "holidays": sorted(d.isoformat() for d in cfg.holidays),
+    }
+
+
+def _config(
+    chosen: Mapping[str, Any], strictness: str, base: WranglerConfig = DEFAULT_CONFIG
+) -> WranglerConfig:
+    """``base`` with the tool's settings put in. Whatever the schema has no setting for --
+    ``of_year_basis`` -- stays as ``base`` has it."""
+    return base.with_(
         fiscal=FiscalCalendar(chosen["fiscal_start_month"], YearLabel(chosen["fiscal_year_label"])),
         year_basis=Basis(chosen["year_basis"]),
         date_order=DateOrder(chosen["date_order"]),
@@ -507,8 +537,10 @@ def resolve_dates(
     anchor: Anchor | str | None = None,
     weekend: list[str] | tuple[str, ...] | str | None = None,
     holidays: list[str | date] | tuple[str | date, ...] | str | None = None,
-    strictness: str = "balanced",
+    config: WranglerConfig | None = None,
+    strictness: str | None = None,
     min_confidence: float = 0.0,
+    comparisons: bool = False,
 ) -> dict[str, Any]:
     """Every date in ``text``, resolved, with what an agent needs to judge each one.
 
@@ -519,9 +551,22 @@ def resolve_dates(
     setting the caller left out made a difference. Business days are found by reading the
     text with a weekend no real calendar has, and today by reading it a year on.
 
+    ``config`` is a whole :class:`WranglerConfig`, for a host that has one: the dates are
+    then exactly what :func:`parse` gives under it, ``of_year_basis`` and all, and every
+    setting it holds counts as given -- none is tried or reported as assumed, since the
+    host chose it. A setting passed as well overrides the config's for this call, which is
+    how a model's argument and an organisation's settings combine.
+
+    ``comparisons=True`` gives each match the periods it is usually set beside, under
+    ``comparisons``: ``previous`` (:meth:`DateRange.previous`) and ``year_earlier``
+    (:meth:`DateRange.year_earlier`), each with its first and last day, or null for an
+    open-ended range. Inside the match and under their own names, so a model cannot take
+    one for a date the text named. Off by default, to keep the answer to what was asked.
+
     That makes a call several reads of the text where :func:`parse` is one -- milliseconds,
     nothing beside a model's turn, but :func:`parse` is the one for bulk work.
-    ``strictness`` and ``min_confidence`` are for Python and the CLI, not the tool schema.
+    ``config``, ``strictness`` (default: the config's, else "balanced"),
+    ``min_confidence`` and ``comparisons`` are for Python and the CLI, not the tool schema.
 
     Returns a JSON-ready dict matching :data:`OUTPUT_SCHEMA`, each match carrying
     ``first_day`` and ``last_day`` (inclusive), ``reads_as``, ``confidence``, ``notes`` and
@@ -529,6 +574,11 @@ def resolve_dates(
     """
     if not isinstance(text, str):
         raise ToolInputError(f"text must be a string, got {type(text).__name__}")
+    if config is not None and not isinstance(config, WranglerConfig):
+        raise TypeError(f"config must be a WranglerConfig, got {type(config).__name__}")
+    base = DEFAULT_CONFIG if config is None else config
+    if strictness is None:
+        strictness = base.strictness
     if strictness not in ("strict", "balanced", "greedy"):
         raise ToolInputError(
             f"strictness must be 'strict', 'balanced' or 'greedy', got {strictness!r}"
@@ -548,8 +598,11 @@ def resolve_dates(
         "holidays": holidays,
     }
     given = {name: _setting_value(name, value) for name, value in raw.items() if value is not None}
-    chosen = {name: given.get(name, _DEFAULTS[name]) for name in raw}
-    cfg = _config(chosen, strictness)
+    defaults = _DEFAULTS if config is None else _settings_of(config)
+    chosen = {name: given.get(name, defaults[name]) for name in raw}
+    cfg = _config(chosen, strictness, base)
+    # A config is the host's choice of every setting in it, so nothing is assumed.
+    left_out = set() if config is not None else set(raw) - set(given)
 
     found, diags = diagnose(text, today=day, config=cfg)
     found = [m for m in found if m.confidence >= min_confidence]
@@ -565,14 +618,16 @@ def resolve_dates(
                     f"{clock}. Pass today as the user's date to be sure.",
             "matches": [_where(m) for m, moves in zip(found, relative, strict=True) if moves],
         })
-    read = _Reads(text, day, strictness)
+    read = _Reads(text, day, strictness, base)
     for setting in _SETTINGS:
-        if setting.name in given:
+        if setting.name not in left_out:
             continue
         reached = _reach(setting.reach, found, relative)
         if not reached:
             continue
-        changed, only_together = _changed_by(setting, read, chosen, found, reached, set(given))
+        changed, only_together = _changed_by(
+            setting, read, chosen, found, reached, set(raw) - left_out
+        )
         if changed:
             together_note = setting.together[2] if setting.together and only_together else ""
             assumptions.append({
@@ -581,16 +636,16 @@ def resolve_dates(
                 "note": setting.note + together_note,
                 "matches": changed,
             })
-    if "weekend" not in given or "holidays" not in given:
+    if "weekend" in left_out or "holidays" in left_out:
         business = _business(read, chosen, found)
-        if business and "weekend" not in given:
+        if business and "weekend" in left_out:
             assumptions.append({
                 "setting": "weekend",
                 "assumed": chosen["weekend"],
                 "note": _WEEKEND_NOTE,
                 "matches": _otherwise_for(business, "weekend", [_OTHER_WEEKEND], read, chosen),
             })
-        if business and "holidays" not in given:
+        if business and "holidays" in left_out:
             assumptions.append({
                 "setting": "holidays",
                 "assumed": chosen["holidays"],
@@ -601,8 +656,15 @@ def resolve_dates(
     return {
         "text": text,
         "today": day.isoformat(),
-        "settings": {**chosen, "timezone": None if zone is None else str(zone)},
-        "matches": [_match(m, diags, moves) for m, moves in zip(found, relative, strict=True)],
+        "settings": {
+            **chosen,
+            "of_year_basis": cfg.effective_of_year_basis.value,
+            "timezone": None if zone is None else str(zone),
+        },
+        "matches": [
+            _match(m, diags, moves, comparisons)
+            for m, moves in zip(found, relative, strict=True)
+        ],
         "assumptions": assumptions,
         "diagnostics": [_diagnostic(d) for d in diags],
         "version": __version__,
@@ -621,8 +683,8 @@ class _Reads:
     and dropped with it -- nothing is remembered between calls.
     """
 
-    def __init__(self, text: str, day: date, strictness: str) -> None:
-        self._text, self._day, self._strictness = text, day, strictness
+    def __init__(self, text: str, day: date, strictness: str, base: WranglerConfig) -> None:
+        self._text, self._day, self._strictness, self._base = text, day, strictness, base
         self._seen: dict[tuple[tuple[str, Any], ...], dict[tuple[int, int], DateRange]] = {}
 
     def __call__(self, chosen: Mapping[str, Any]) -> dict[tuple[int, int], DateRange]:
@@ -631,7 +693,7 @@ class _Reads:
             for name, value in sorted(chosen.items())
         )
         if key not in self._seen:
-            cfg = _config(chosen, self._strictness)
+            cfg = _config(chosen, self._strictness, self._base)
             self._seen[key] = _readings(self._text, self._day, cfg)
         return self._seen[key]
 
@@ -814,7 +876,20 @@ def _days(r: DateRange) -> dict[str, Any]:
     }
 
 
-def _match(m: DateMatch, diags: list[Diagnostic], relative: bool) -> dict[str, Any]:
+def _compared(r: DateRange) -> dict[str, Any]:
+    """The periods ``r`` is set beside: the one before it, and the same one a year back."""
+    out: dict[str, Any] = {}
+    for name, step in (("previous", DateRange.previous), ("year_earlier", DateRange.year_earlier)):
+        try:
+            out[name] = _days(step(r))
+        except (ValueError, OverflowError):  # open-ended, or off the end of the calendar
+            out[name] = None
+    return out
+
+
+def _match(
+    m: DateMatch, diags: list[Diagnostic], relative: bool, comparisons: bool = False
+) -> dict[str, Any]:
     """A match for a reader that is a model: the inclusive days first, then the rest.
 
     ``range.end`` stays exclusive, as everywhere in this library, for code that queries
@@ -833,7 +908,7 @@ def _match(m: DateMatch, diags: list[Diagnostic], relative: bool) -> dict[str, A
     notes = [d.reason for d in diags if lo <= d.span[0] and d.span[1] <= hi]
     if m.confidence == YEAR_GUESSED:
         notes.append("The year is not written, so it is taken from today.")
-    return {
+    out = {
         "text": m.text,
         "span": list(m.span),
         **_days(m.range),
@@ -843,6 +918,9 @@ def _match(m: DateMatch, diags: list[Diagnostic], relative: bool) -> dict[str, A
         **m.to_dict(),
         "iso": format_iso(m.range),
     }
+    if comparisons:
+        out["comparisons"] = _compared(m.range)
+    return out
 
 
 def _diagnostic(d: Diagnostic) -> dict[str, Any]:
@@ -867,8 +945,20 @@ _RANGE_SCHEMA = {
         "basis": {"type": "string", "enum": [b.value for b in Basis]},
         "mod": {"type": ["string", "null"], "enum": [*(m.value for m in Mod), None]},
         "anchor": {"type": "string", "enum": [a.value for a in Anchor]},
+        # Present, and true, only on a run counted from a period's first day.
+        "counted_in_period": {"type": "boolean"},
     },
     "required": ["start", "end", "end_inclusive", "days", "grain", "basis", "mod", "anchor"],
+}
+
+_DAYS_OR_NULL = {
+    "type": ["object", "null"],
+    "properties": {
+        "reads_as": {"type": "string"},
+        "first_day": _DAY_OR_NULL,
+        "last_day": _DAY_OR_NULL,
+    },
+    "required": ["reads_as", "first_day", "last_day"],
 }
 
 _READING_SCHEMA = {
@@ -897,8 +987,12 @@ OUTPUT_SCHEMA: dict[str, Any] = {
                     for name in _SETTING_NAMES
                 },
                 "timezone": {"type": ["string", "null"]},
+                # Not a tool argument: year_basis unless a host's config says otherwise.
+                "of_year_basis": {
+                    "type": "string", "enum": [b.value for b in (Basis.CALENDAR, Basis.FISCAL)],
+                },
             },
-            "required": list(_SETTING_NAMES),
+            "required": [*_SETTING_NAMES, "of_year_basis"],
         },
         "matches": {
             "type": "array",
@@ -919,6 +1013,12 @@ OUTPUT_SCHEMA: dict[str, Any] = {
                                   "enum": ["list", "compare", "range", None]},
                     "endpoints": {"type": ["array", "null"], "items": _RANGE_SCHEMA},
                     "iso": {"type": "string"},
+                    # Only when the host asks: resolve_dates(comparisons=True).
+                    "comparisons": {
+                        "type": "object",
+                        "properties": {"previous": _DAYS_OR_NULL, "year_earlier": _DAYS_OR_NULL},
+                        "required": ["previous", "year_earlier"],
+                    },
                 },
                 "required": ["text", "span", "reads_as", "first_day", "last_day", "confidence",
                              "notes", "relative_to_today", "range", "group", "joined_by",

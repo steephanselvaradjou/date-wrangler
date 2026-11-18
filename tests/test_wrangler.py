@@ -1166,7 +1166,8 @@ def test_a_bare_number_after_a_month_follows_the_setting():
     from date_wrangler import MonthNumber
 
     as_year = WranglerConfig(month_number=MonthNumber.YEAR)
-    assert rng("jan 24") == (date(2025, 1, 24), date(2025, 1, 25))
+    # The module's config is fiscal, so January is FY2026's: January 2026.
+    assert rng("jan 24") == (date(2026, 1, 24), date(2026, 1, 25))
     assert rng("jan 24", as_year) == (date(2024, 1, 1), date(2024, 2, 1))
 
 

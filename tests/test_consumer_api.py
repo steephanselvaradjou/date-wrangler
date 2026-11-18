@@ -138,10 +138,101 @@ Q2 = DateRange(date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER)
             SqlDialect.bigquery(),
             "`order date` >= DATE '2025-04-01' AND `order date` < DATE '2025-07-01'",
         ),
+        (
+            SqlDialect.redshift(),
+            "\"order date\" >= DATE '2025-04-01' AND \"order date\" < DATE '2025-07-01'",
+        ),
+        (
+            SqlDialect.databricks(),
+            "`order date` >= DATE '2025-04-01' AND `order date` < DATE '2025-07-01'",
+        ),
+        (
+            SqlDialect.fabric(),
+            "[order date] >= CAST('2025-04-01' AS DATE) AND "
+            "[order date] < CAST('2025-07-01' AS DATE)",
+        ),
+        (
+            SqlDialect.hana(),
+            "\"order date\" >= CAST('2025-04-01' AS DATE) AND "
+            "\"order date\" < CAST('2025-07-01' AS DATE)",
+        ),
     ],
 )
 def test_sql_dialects(dialect, expected):
     assert Q2.sql("order date", dialect=dialect) == expected
+
+
+PRESETS = [
+    SqlDialect.ansi, SqlDialect.postgres, SqlDialect.redshift, SqlDialect.oracle,
+    SqlDialect.snowflake, SqlDialect.hana, SqlDialect.tsql, SqlDialect.fabric,
+    SqlDialect.mysql, SqlDialect.bigquery, SqlDialect.databricks, SqlDialect.sqlite,
+]
+
+
+@pytest.mark.parametrize("preset", PRESETS, ids=lambda p: p.__name__)
+def test_quoting_switched_off_keeps_the_presets_date(preset):
+    """Supported, and relied on: a caller whose condition holds a placeholder the model
+    fills in later takes a preset for its date and switches quoting off, because a quoted
+    "<column>" is no longer a placeholder. Nothing may be quoted, whatever the name."""
+    import dataclasses
+
+    dialect = preset()
+    off = dataclasses.replace(dialect, quote_open="", quote_close="")
+    lit = dialect.date_literal
+    assert Q2.sql("<column>", dialect=off) == (
+        f"<column> >= {lit(date(2025, 4, 1))} AND <column> < {lit(date(2025, 7, 1))}"
+    )
+    for name in ("date", "order date", "m.date", 'a"b', "x]y"):
+        assert off.identifier(name) == name
+
+
+def test_one_quote_character_alone_is_refused():
+    import dataclasses
+
+    with pytest.raises(ValueError, match="both quote characters"):
+        dataclasses.replace(SqlDialect.oracle(), quote_open="")
+
+
+def test_fabric_is_tsql():
+    """A Fabric Warehouse and its SQL analytics endpoint speak T-SQL; the name is for
+    finding it."""
+    assert SqlDialect.fabric() == SqlDialect.tsql()
+
+
+def test_the_readme_table_is_what_each_preset_writes():
+    """The README lists, per engine, how a quoted name and a date are written. Each row
+    must be what the presets it names actually produce."""
+    from pathlib import Path
+
+    readme = Path(__file__).resolve().parent.parent / "README.md"
+    if not readme.is_file():
+        pytest.skip("README.md is not beside the tests")
+    presets = {
+        "ANSI": SqlDialect.ansi(), "Postgres": SqlDialect.postgres(),
+        "Redshift": SqlDialect.redshift(), "Oracle": SqlDialect.oracle(),
+        "Snowflake": SqlDialect.snowflake(), "SAP HANA": SqlDialect.hana(),
+        "SQL Server": SqlDialect.tsql(), "Fabric (T-SQL)": SqlDialect.fabric(),
+        "BigQuery": SqlDialect.bigquery(), "Databricks": SqlDialect.databricks(),
+        "Spark SQL": SqlDialect.databricks(), "MySQL": SqlDialect.mysql(),
+        "SQLite": SqlDialect.sqlite(),
+    }
+    lines = readme.read_text(encoding="utf-8").splitlines()
+    first = lines.index("| Engine | Name | Date |") + 2  # past the header and its rule
+    rows = []
+    for line in lines[first:]:
+        if not line.startswith("|"):
+            break
+        rows.append(line)
+    named = set()
+    for row in rows:
+        engines, names, literal = (cell.strip() for cell in row.strip("|").split(" | "))
+        code = [part.strip().strip("`").strip() for part in names.split(", ")]
+        for engine in engines.split(", "):
+            d = presets[engine]
+            named.add(engine)
+            assert code == [d.identifier("order date"), d.identifier("date")], row
+            assert literal.strip("`") == d.date_literal(date(2025, 4, 1)), row
+    assert named == set(presets), "an engine is missing from the README's table"
 
 
 def test_the_default_is_exactly_what_it_always_was():
@@ -228,6 +319,8 @@ def test_from_dict_ignores_the_derived_keys():
 ALL_QUOTING = [
     SqlDialect.oracle(), SqlDialect.snowflake(), SqlDialect.postgres(),
     SqlDialect.tsql(), SqlDialect.mysql(), SqlDialect.bigquery(),
+    SqlDialect.redshift(), SqlDialect.databricks(), SqlDialect.fabric(),
+    SqlDialect.hana(), SqlDialect.ansi(), SqlDialect.sqlite(),
 ]
 
 
@@ -262,6 +355,10 @@ def test_a_qualified_name_is_quoted_part_by_part(dialect, column, expected):
         (SqlDialect.postgres(), '"date"'),
         (SqlDialect.tsql(), "[date]"),
         (SqlDialect.mysql(), "`date`"),
+        (SqlDialect.redshift(), '"date"'),
+        (SqlDialect.hana(), '"DATE"'),
+        (SqlDialect.fabric(), "[date]"),
+        (SqlDialect.databricks(), "`date`"),
     ],
 )
 def test_a_reserved_word_is_quoted_in_the_case_the_engine_stored_it(dialect, expected):

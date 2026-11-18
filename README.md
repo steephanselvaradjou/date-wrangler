@@ -116,10 +116,30 @@ alone. When quoting *is* needed:
 - a **qualified name** is quoted part by part — `m.claim_date` is a table and a column, not
   one column with a dot in it.
 
-Presets: `.plain()` (the default), `.ansi()`, `.postgres()`, `.oracle()`, `.snowflake()`,
-`.tsql()`, `.mysql()`, `.bigquery()`, `.sqlite()`. They are shorthand for a few independent
-choices — quote characters, literal style, which case the engine `folds` unquoted names to,
-and `quoting="needed"` or `"always"` — so an engine with no preset is still expressible.
+Presets: `.plain()` (the default), `.ansi()`, `.postgres()`, `.redshift()`, `.oracle()`,
+`.snowflake()`, `.hana()`, `.tsql()`, `.fabric()`, `.mysql()`, `.bigquery()`,
+`.databricks()`, `.sqlite()`. They are shorthand for a few independent choices — quote
+characters, literal style, which case the engine `folds` unquoted names to, and
+`quoting="needed"` or `"always"` — so an engine with no preset is still expressible.
+
+| Engine | Name | Date |
+|---|---|---|
+| ANSI, Postgres, Redshift | `"order date"`, `"date"` | `DATE '2025-04-01'` |
+| Oracle, Snowflake | `"order date"`, `"DATE"` | `DATE '2025-04-01'` |
+| SAP HANA | `"order date"`, `"DATE"` | `CAST('2025-04-01' AS DATE)` |
+| SQL Server, Fabric (T-SQL) | `[order date]`, `[date]` | `CAST('2025-04-01' AS DATE)` |
+| BigQuery, Databricks, Spark SQL | `` `order date` ``, `` `date` `` | `DATE '2025-04-01'` |
+| MySQL | `` `order date` ``, `` `date` `` | `'2025-04-01'` |
+| SQLite | `"order date"`, `"date"` | `'2025-04-01'` |
+
+`.fabric()` is `.tsql()`: a Fabric Warehouse and its SQL analytics endpoint speak T-SQL.
+Spark SQL in a Fabric notebook is `.databricks()`. HANA's typed literal is documented only
+without a space, `DATE'2025-04-01'`, so its preset writes the standard CAST.
+
+To keep a preset's date but quote nothing — for a condition whose column is a placeholder
+filled in later — take quoting off:
+`dataclasses.replace(SqlDialect.redshift(), quote_open="", quote_close="")` writes
+`<column> >= DATE '2025-04-01' AND <column> < DATE '2025-07-01'`.
 
 **Printing never shows the exclusive end.** `str(r)` reports the last day *inside* the
 range, because `[2025-09-04, 2025-09-05)` reads as two days however correct the bracket is:
@@ -260,16 +280,49 @@ for bucket in r.split(Grain.MONTH):
 # 2025-07-01 .. 2025-07-31 (31 days)  ...
 # 2025-08-01 .. 2025-08-31 (31 days)  ...
 
-q = parse_one("Q1 FY25", today=today).range   # 2024-04-01 .. 2024-07-01
-q.shift(-1)                                   # previous quarter: 2024-01-01 .. 2024-04-01
-q.shift(-1, Grain.YEAR)                       # same quarter last year: 2023-04-01 .. 2023-07-01
+q = parse_one("Q1 FY25", today=today).range   # 2024-04-01 .. 2024-06-30
+q.previous()                                  # Q4 FY24: 2024-01-01 .. 2024-03-31
+q.year_earlier()                              # Q1 FY24: 2023-04-01 .. 2023-06-30
 ```
 
-`shift` moves by whole units of the range's own `grain`, both ends together, so the length
-survives. That is the part hand-rolled arithmetic loses: `- timedelta(days=90)` drifts
-because quarters are 90 to 92 days, `- timedelta(days=365)` breaks across a leap year, and
-`start.replace(year=...)` raises on 29 February. Basis comes along too — a fiscal Q1 starts
-on a fiscal boundary already, so one step back lands on fiscal Q4 of the year before.
+**`previous()`** is the period just before, as long. A range of whole units steps back by
+its own length in its own units and ends where it starts: a quarter gives the quarter
+before, `last 3 months` the three before them, `last 30 days` the thirty before. A period
+cut short gives the same stretch of the one before — month to date on the 17th gives the
+1st to the 17th of last month, and on 30 March all of February. Anything else gives as
+many days again, just before it.
+
+**`year_earlier()`** is the same period a year back. A week on the calendar's grid —
+`last week`, `W12`, `week ending 6 March` — goes back 52 weeks, so it starts on the same
+weekday and lands on a week a weekly report already groups by. Everything else takes the
+same dates, including a week counted from a period's first day: `week 3 of FY25` gives
+week 3 of FY24. The two kinds of week can be the same Monday to Sunday — `the 2nd week of
+January 2024` and `the week of 8 January 2024` — so a range says which it is in
+`counted_in_period`, which is not part of equality. Both raise `ValueError` on a range with
+an open end.
+
+**`period_of(day, grain, config)`** is the whole week, month, quarter, half or year that
+holds a day — by the same rule the parser reads `the week of 5 October` and `the quarter of
+June`, so an axis and a parsed phrase agree on where every period starts. A week starts on
+`week_starts_on`; a quarter, half or year is on `year_basis` unless `basis=` says
+otherwise. For a trend axis, take the periods of both ends and split between them:
+
+```python
+from date_wrangler import period_of
+
+cfg = WranglerConfig(year_basis="fiscal")             # April years
+first = period_of(date(2026, 2, 10), "quarter", cfg)  # 2026-01-01 .. 2026-03-31
+last = period_of(date(2026, 11, 18), "quarter", cfg)  # 2026-10-01 .. 2026-12-31
+axis = DateRange(first.start, last.end, Grain.QUARTER).split(Grain.QUARTER)
+[b.start for b in axis]  # 1 January, 1 April, 1 July, 1 October 2026
+```
+
+`shift(n, grain)` is the step underneath, for any other comparison. It moves by whole
+units of the range's own `grain`, both ends together, so the length survives. That is the
+part hand-rolled arithmetic loses: `- timedelta(days=90)` drifts because quarters are 90 to
+92 days, `- timedelta(days=365)` breaks across a leap year, and `start.replace(year=...)`
+raises on 29 February. Basis comes along too — a fiscal Q1 starts on a fiscal boundary
+already, so one step back lands on fiscal Q4 of the year before.
 
 `split` tiles the range exactly: each bucket's `end` is the next one's `start`, no gap and
 no day counted twice. The grid starts at `start` rather than at a calendar boundary, so a
@@ -355,12 +408,22 @@ finance team that says "Q1" and means its fiscal Q1 sets `year_basis="fiscal"`:
 | `the second half of 2024` | Jul – Dec 2024 | Oct 2023 – Mar 2024 |
 | `Q1` | Jan – Mar 2026 | Apr – Jun 2026 |
 | `this year` | Jan – Dec 2026 | Apr 2026 – Mar 2027 |
+| `January`, `15 January` | January 2026 | January 2027 |
 | `FY2024` | Apr 2023 – Mar 2024 | Apr 2023 – Mar 2024 |
 | `CY2024` | Jan – Dec 2024 | Jan – Dec 2024 |
 
 Only the last two rows hold still — they say which calendar they mean. A value from a form
 or select works as-is: `"calendar"` and `"fiscal"` are accepted in any case, and anything
 else fails on construction, by name.
+
+**A month with no year** is in the year in progress on `year_basis`, as `Q4` is: on a
+fiscal basis `January` is the January inside this fiscal year, never a year apart from the
+quarter that holds it. Two things look back instead. `since`, which points to the past,
+takes the latest such month that has begun, on either basis: asked in February, `since
+March` is last March. `from 1 March`, `after 31 March`, `on or after`, `not before`, `by`
+and `until` may point ahead — "the new price applies from 1 March" — and keep the year in
+progress. And a span that ends on a period counted from today — `15 March to last month`,
+`March to today` — starts before it.
 
 ```python
 parse("Q1 2024")                           # January to March 2024
@@ -588,7 +651,7 @@ Confidence is not a probability. There are five levels, each with a reason:
 | **1.0** | read in full, nothing in doubt | `last quarter`, `Q1 FY25`, `15 March 2024`, `last Monday`, `13/06/2018` | rewritten |
 | **0.9** | an all-numeric date that reads either way round — which number is the day is a setting (`date_order`) | `03/04/2024` | rewritten |
 | **0.8** | probably a date, but the same words can be a plain number or name | `2024`, `Monday`, `due on the 15th`, `1 and 15 March 2024` | rewritten |
-| **0.7** | the period is certain, but no year is written, so it is today's — `YEAR_GUESSED` | `September`, `Q1`, `15 March`, `the first week of April` | rewritten |
+| **0.7** | the period is certain, but no year is written, so it is the year in progress — `YEAR_GUESSED` | `September`, `Q1`, `15 March`, `the first week of April` | rewritten |
 | **0.5** | flagged: part of the phrase was not read, or a span says less than it seems — `diagnose` gives the reason | `tomorrow morning`, `two weeks from Friday`, `Q1 to January`, `Monday, 15 March 2024` | left as typed |
 
 `min_confidence` defaults to **0.6**, which sits between the two lowest levels: everything
@@ -599,7 +662,7 @@ are on every match from `parse()`, so code that filters on `confidence` uses the
 scale.
 
 **A year that is not written is a guess.** `events in September and October` names two
-months and no year; today's year is the library's guess, and on historic data it is the
+months and no year; the year in progress is the library's guess, and on historic data it is the
 wrong one. So such a period reads at 0.7 rather than 1.0. A year written anywhere in the
 phrase is not a guess — `Q1 and Q3 2024` gives Q1 the 2024, `Q1 to last month` is this
 year's Q1 — and neither is `last March`, which says which one it means.
@@ -900,6 +963,39 @@ print("".join(b.text for b in response.content if b.type == "text"))
 Other model APIs take the same schema under their own key: `parameters` for OpenAI-style
 function calling, `inputSchema` for MCP. Frameworks that build a tool from a function's
 signature can wrap `tool.resolve_dates`, which takes the same arguments as keywords.
+
+### Your organisation's settings
+
+A host that already has a `WranglerConfig` passes it whole, and the tool then reads exactly
+what `parse()` reads under it — `of_year_basis` and all, which no tool argument can say:
+
+```python
+cfg = WranglerConfig(fiscal=FiscalCalendar(4), year_basis="fiscal", of_year_basis="calendar")
+tool.call(block.input, config=cfg)                  # "H1 of 2022" is January to June 2022
+tool.resolve_dates("Q1 FY26", config=cfg, comparisons=True)
+```
+
+Every setting in the config counts as given, so none is tried or reported as an
+assumption; an argument the model sends overrides the config's for that call. With
+`comparisons=True` each match also carries `comparisons: {previous, year_earlier}`, each
+with its first and last day, or null for an open-ended range — inside the match, under its
+own name, so a model cannot take it for a date the question named. Both switches are for
+the host, not in the schema the model sees.
+
+To tell the model how dates are read before it writes anything itself — a SQL condition,
+say — put `describe(cfg)` in its prompt. Every example in the words is the library's own
+reading on that day, so they cannot disagree with the tool:
+
+```python
+from date_wrangler import describe
+
+describe(cfg, today=date(2026, 11, 17))
+# 'A year here is the fiscal year, April to March, named by the year it ends in: "2024" is
+#  April 2023 to March 2024, as "FY2024" is. ... A half or quarter "of" a year is the
+#  calendar one: "H1 of 2025" is January 2025 to June 2025. A month with no year is in the
+#  fiscal year in progress: on Tuesday 17 November 2026, "January" is January 2027 ...
+#  All-number dates are day first: "08/04/2026" is 8 April 2026. ...'
+```
 
 ### An MCP server
 

@@ -7,6 +7,103 @@ change that breaks existing callers comes only with a new major version. Entries
 The full notes for each release, with examples, are on the
 [releases page](https://github.com/steephanselvaradjou/date-wrangler/releases).
 
+## Unreleased
+
+The agent tool takes a whole configuration; a range gives the periods it is compared with
+and the period that holds a day; a configuration can be described in plain words for a
+model's prompt; ordinals listed before one unit are each read; four more SQL engines have
+presets. A month with no year now follows `year_basis`, as a quarter does. **Changes
+answers** on a fiscal basis, for months with no year, and on either basis for "since" a
+month with no year and for spans ending on a period counted from today. Every answer that differs from
+2.5.0 -- over 45,528 phrases under eight configurations on three days -- is in a family
+named under Changed or Fixed; on the calendar, only the last two families under Changed
+moved anything.
+
+### Added
+
+- `tool.resolve_dates(config=)` and `tool.call(arguments, config=)`: a host's whole
+  `WranglerConfig`. The tool then reads exactly what `parse()` reads under it, including
+  `of_year_basis`, which no tool argument can express -- "H1 of 2022" as the calendar half
+  on a fiscal workspace. Every setting in it counts as given, so none is reported as an
+  assumption; an argument the model sends still overrides it for that call. `strictness`
+  defaults to the config's. The answer's `settings` now include `of_year_basis`.
+- `DateRange.previous()`: the period just before, as long. Whole units step back by their
+  own length and end where the range starts (Q1 FY26 gives Q4 FY25, "last 30 days" the
+  thirty before); a period cut short gives the same stretch of the one before (month to
+  date on the 17th: the 1st to the 17th of last month); anything else, as many days just
+  before.
+- `DateRange.year_earlier()`: the same period a year back. A week on the calendar's grid
+  goes back 52 weeks, keeping its weekdays; everything else takes the same dates,
+  including a week counted from a period's first day ("week 3 of FY25" gives week 3 of
+  FY24).
+- `DateRange.counted_in_period`: true for units counted from a period's first day ("week 3
+  of FY25", "the 2nd week of January", "weeks 3-5 of FY25"), which `year_earlier()` needs
+  to tell them from weeks on the grid. Not part of equality, and in `to_dict()` only where
+  it is true.
+- `tool.resolve_dates(comparisons=True)`: each match carries `comparisons: {previous,
+  year_earlier}`, each with its first and last day, or null for an open-ended range. For
+  the host to switch on; off by default and not in the model's schema.
+- `period_of(day, grain, config=, basis=)`: the whole week, month, quarter, half or year
+  that holds a day, by the rule the parser reads "the week of 5 October" and "the quarter
+  of June" by -- a test holds the two together under every fiscal calendar, both bases and
+  every week start. With `DateRange.split()` it gives the periods of a trend axis or a
+  report, from one date to another.
+- `describe(config, today=)`: how dates are read under a configuration, in one paragraph
+  for a model's prompt -- what a year is and how a fiscal year is named, a period "of" a
+  year, a month with no year, all-number dates, two-digit years, weeks, "last 3 months" and
+  "last 30 days", business days. Every quoted example is the library's own reading of it
+  on that day, and a test checks each one under some 200 configurations on five days.
+- `SqlDialect` presets for four more engines:
+  - `.redshift()`: Postgres's rules, `"date"` and `DATE '2025-04-01'`;
+  - `.databricks()`, also Spark SQL: `` `date` `` and `DATE '2025-04-01'`;
+  - `.fabric()`: the same as `.tsql()`, since a Fabric Warehouse and its SQL analytics
+    endpoint speak T-SQL;
+  - `.hana()`: `"DATE"` and `CAST('2025-04-01' AS DATE)`. HANA documents its typed
+    literal only without a space, so the standard CAST is written instead.
+- The README lists what every preset writes, and a test holds that table to the code.
+  Taking quoting off a preset -- `dataclasses.replace(preset, quote_open="",
+  quote_close="")`, for a condition whose column is a placeholder -- is documented and
+  tested.
+
+### Changed
+
+- **Changes answers.** A month with no year is in the year in progress on `year_basis`.
+  On a fiscal basis that is the fiscal year: with an April year, in November 2026
+  "January" is January 2027, inside FY2027 with "Q4", where it was January 2026, a year
+  apart from the quarter that holds it. Days, parts and weeks of such a month follow it
+  ("15 January", "mid March", "the 2nd week of January"), and so do spans and lists made
+  of them. "March last year" on that basis is FY2026's March, March 2026. The calendar
+  basis is unchanged.
+- **Changes answers.** "since" and a month or day with no year -- "since March", "since
+  15 March" -- takes the latest such month that has begun, on either basis, because
+  "since" points to the past: asked in February 2026, "since March" is from March 2025,
+  where it was March 2026, a start still to come. "from", "after", "on or after", "not
+  before", "by" and "until" may point ahead -- "the new price applies from 1 March" -- and
+  keep the year in progress.
+- **Changes answers.** A span ending on a period counted from today -- "15 March to last
+  month", "March to today", "June to Friday" -- starts a year back when it would
+  otherwise start after its end. It used to fall apart into two dates and a diagnostic,
+  on either basis.
+- A diagnostic or weekday note about such a month names the year it now falls in.
+
+### Fixed
+
+- **Changes answers.** Ordinals listed or run before one unit were read only at the
+  last: "the 2nd and 3rd weeks of January" was the 3rd week alone, confidently, and "the
+  2nd and 3rd Mondays of March" all of March. Each ordinal is now read exactly as its own
+  phrase would be, and they join as any dates do -- a list after "and", "&" or a comma, a
+  span after "to" or inside "between": "the 2nd, 3rd and 4th weeks of January", "the
+  first and second quarters of 2024", "the first and last weeks of March", "the 2nd week
+  and the 3rd week of January", "the 2nd to 4th weeks of January", "the 1st and 3rd months
+  of FY25". "Mondays" is read as "Monday" is.
+- A span from a period that says fiscal to a month -- "fiscal Q3 to August" -- was
+  refused as running backwards: the month took "fiscal" from its partner, was given a
+  calendar year to move on from, and read it as a fiscal label. It now runs forward to
+  the next August, on either basis. The same mix-up would have moved "December to last
+  fiscal quarter" back two years.
+- A holiday given as a `datetime` was silently ignored: it passed the configuration's
+  check but equals no `date`. `WranglerConfig` now keeps its day.
+
 ## 2.5.0 — 2026-11-17
 
 For AI agents: one tool, `resolve_dates`, offered three ways -- a definition to hand a

@@ -7,9 +7,10 @@ and ``end=None`` has an obvious meaning. Use :attr:`DateRange.end_inclusive` for
 
 from __future__ import annotations
 
+import calendar
 import re
 from collections.abc import Collection, Iterator, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from enum import Enum
 
@@ -117,6 +118,40 @@ def _advance(day: date, grain: Grain, periods: int) -> date:
         ) from exc
 
 
+def _reaches(start: date, grain: Grain, periods: int) -> date | None:
+    """``start`` moved ``periods`` units on, or None past the end of the calendar."""
+    try:
+        return _advance(start, grain, periods)
+    except DateRangeOverflow:
+        return None
+
+
+def _units(start: date, end: date, grain: Grain) -> int:
+    """How many units of ``grain`` from ``start`` it takes to reach ``end`` -- the number
+    of buckets :meth:`DateRange.split` cuts, counted rather than built, so a range over
+    centuries costs no more than a quarter."""
+    days = _DAYS_PER_GRAIN.get(grain)
+    if days is not None:
+        return -(-(end - start).days // days)
+    per = _MONTHS_PER_GRAIN[grain]
+    months = (end.year - start.year) * 12 + end.month - start.month
+    n = max(1, months // per)
+    while n > 1 and (_reaches(start, grain, n - 1) or date.max) >= end:
+        n -= 1
+    while (_reaches(start, grain, n) or date.max) < end:
+        n += 1
+    return n
+
+
+def _last_back(last: date, grain: Grain, periods: int) -> date:
+    """An inclusive last day moved back ``periods`` units. A month's last day stays a
+    month's last day, so the end of February 2025 a year back is 29 February 2024."""
+    moved = _advance(last, grain, -periods)
+    if grain in _MONTHS_PER_GRAIN and last.day == calendar.monthrange(last.year, last.month)[1]:
+        moved = moved.replace(day=calendar.monthrange(moved.year, moved.month)[1])
+    return moved
+
+
 #: A name needing no quotes anywhere: a letter or underscore, then word characters.
 _PLAIN_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -156,7 +191,7 @@ class SqlDialect:
     #: "plain" -> '2026-07-01'; "date" -> DATE '2026-07-01'; "cast" -> CAST(... AS DATE).
     literal: str = "plain"
     #: Which case the engine stores an *unquoted* identifier in: "upper" for Oracle,
-    #: Snowflake, HANA and DB2, "lower" for Postgres, "none" for the rest.
+    #: Snowflake, HANA and DB2, "lower" for Postgres and Redshift, "none" for the rest.
     folds: str = "none"
     #: Quote identifiers "always", or only when "needed". Needed is the safe default --
     #: see :meth:`identifier`.
@@ -243,9 +278,24 @@ class SqlDialect:
         return cls('"', '"', "date", folds="upper")
 
     @classmethod
+    def redshift(cls) -> SqlDialect:
+        """Postgres's rules: Redshift stores every name in lower case, quoted or not."""
+        return cls('"', '"', "date", folds="lower")
+
+    @classmethod
     def tsql(cls) -> SqlDialect:
         """SQL Server and Fabric. Brackets, and CAST rather than a DATE literal."""
         return cls("[", "]", "cast")
+
+    @classmethod
+    def fabric(cls) -> SqlDialect:
+        """A Fabric Warehouse or SQL analytics endpoint, which speak T-SQL: :meth:`tsql`.
+
+        Its default collation is case-sensitive, and T-SQL never folds a name, so a name
+        quoted here keeps the case it was given. Spark SQL in a Fabric notebook is
+        :meth:`databricks`.
+        """
+        return cls.tsql()
 
     @classmethod
     def mysql(cls) -> SqlDialect:
@@ -254,6 +304,21 @@ class SqlDialect:
     @classmethod
     def bigquery(cls) -> SqlDialect:
         return cls("`", "`", "date")
+
+    @classmethod
+    def databricks(cls) -> SqlDialect:
+        """Databricks and Spark SQL: backticks, and names matched in any case."""
+        return cls("`", "`", "date")
+
+    @classmethod
+    def hana(cls) -> SqlDialect:
+        """SAP HANA: names stored in upper case, as on Oracle, and a CAST literal.
+
+        HANA documents its typed literal only as ``DATE'2026-07-01'``, with no space, so
+        the standard CAST is written instead, with the string in HANA's default date
+        format, YYYY-MM-DD.
+        """
+        return cls('"', '"', "cast", folds="upper")
 
     @classmethod
     def sqlite(cls) -> SqlDialect:
@@ -310,6 +375,13 @@ class DateRange:
     #: Only meaningful for a relative period; an absolute one like "March 2024" is always
     #: ANCHORED, since it names its own edges.
     anchor: Anchor = Anchor.ANCHORED
+    #: True for units counted from the first day of a period -- "week 3 of FY25", "the 2nd
+    #: week of January", "the first 2 months of FY25" -- rather than on the calendar's own
+    #: grid, as "W12" and "last week" are. Both kinds of week are Monday to Sunday often
+    #: enough to look alike, but a year earlier they part: :meth:`year_earlier` takes the
+    #: same position in the earlier period for this one, 52 weeks back for the other.
+    #: Left out of equality, so ranges on the same days stay equal whichever they are.
+    counted_in_period: bool = field(default=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.start is not None and self.end is not None and self.end < self.start:
@@ -538,6 +610,82 @@ class DateRange:
             end=None if self.end is None else _advance(self.end, step, periods),
         )
 
+    def previous(self) -> DateRange:
+        """The period just before this one, as long, for a period-over-period comparison.
+
+        A range of whole units steps back by its own length in its own units, and ends
+        where this one starts: Q1 FY26 gives Q4 FY25, "last 3 months" the three before
+        them, "last 30 days" the thirty before.
+
+            >>> q1 = DateRange(date(2025, 4, 1), date(2025, 7, 1), Grain.QUARTER, Basis.FISCAL)
+            >>> str(q1.previous())
+            '2025-01-01 .. 2025-03-31 (90 days)'
+
+        A period cut short -- month, quarter or year to date -- gives the same stretch of
+        the one before, the usual like-for-like: 1-17 November gives 1-17 October, and
+        1-30 March gives all of February, the days February has. Anything else, such as
+        "15 March to last month", gives as many days again, just before it.
+
+        Raises ValueError for a range with an open end, which has no period of the same
+        length before it, and for an empty one, which has no length.
+        """
+        if self.start is None or self.end is None:
+            raise ValueError("an open-ended DateRange has no period before it; clamp() it first")
+        if self.start >= self.end:
+            raise ValueError("an empty DateRange has no period before it")
+        units = _units(self.start, self.end, self.grain)
+        if _reaches(self.start, self.grain, units) == self.end:
+            return replace(self, start=_advance(self.start, self.grain, -units), end=self.start)
+        if units == 1:
+            last = self.end - timedelta(days=1)
+            return replace(
+                self,
+                start=_advance(self.start, self.grain, -1),
+                end=_last_back(last, self.grain, 1) + timedelta(days=1),
+            )
+        length = self.end - self.start
+        try:
+            start = self.start - length
+        except OverflowError as exc:
+            raise DateRangeOverflow(f"the {length.days} days before {self.start} start "
+                                    "outside the supported year range") from exc
+        return replace(self, start=start, end=self.start, grain=Grain.DAY)
+
+    def year_earlier(self) -> DateRange:
+        """The same period a year before, for a year-on-year comparison.
+
+        A week on the calendar's grid -- "last week", "W12 2026", "week ending 6 March" --
+        goes back 52 weeks, so it is still a week from the same weekday: the one a report
+        grouping by weeks has. Everything else takes the same dates a year back, and that
+        includes a week counted from a period's first day (see :attr:`counted_in_period`):
+        "week 3 of FY25" gives week 3 of FY24. The first and last days move a year each:
+        29 February becomes the 28th, 28 February 2028 stays the 28th, and a month's last
+        day stays its month's last, so all of February 2025 gives all of February 2024.
+
+            >>> w = DateRange(date(2026, 3, 16), date(2026, 3, 23), Grain.WEEK)
+            >>> str(w.year_earlier())
+            '2025-03-17 .. 2025-03-23 (7 days)'
+
+        Raises ValueError for a range with an open end, as :meth:`previous` does.
+        """
+        if self.start is None or self.end is None:
+            raise ValueError("an open-ended DateRange has no year-earlier period; clamp() it first")
+        if (
+            self.grain is Grain.WEEK
+            and self.anchor is Anchor.ANCHORED
+            and not self.counted_in_period
+        ):
+            return self.shift(-52, Grain.WEEK)
+        if self.start >= self.end:
+            return self.shift(-1, Grain.YEAR)
+        # The inclusive last day, not the exclusive end: a range ending on 28 February 2028
+        # ends before 29 February, and moving that a year back gave 28 February 2027 -- a
+        # day short, and an empty range for the 28th alone.
+        last = _last_back(self.end - timedelta(days=1), Grain.YEAR, 1)
+        return replace(
+            self, start=_advance(self.start, Grain.YEAR, -1), end=last + timedelta(days=1)
+        )
+
     def split(self, grain: Grain) -> list[DateRange]:
         """This range cut into consecutive buckets of ``grain``, for a GROUP BY axis.
 
@@ -649,7 +797,7 @@ class DateRange:
         round-tripping has to be exact. ``end_inclusive`` is alongside it for anything
         that will be shown to a person, so neither side has to recompute it.
         """
-        return {
+        out: dict[str, object] = {
             "start": self.start.isoformat() if self.start else None,
             "end": self.end.isoformat() if self.end else None,
             "end_inclusive": self.end_inclusive.isoformat() if self.end_inclusive else None,
@@ -659,6 +807,9 @@ class DateRange:
             "mod": self.mod.value if self.mod else None,
             "anchor": self.anchor.value,
         }
+        if self.counted_in_period:
+            out["counted_in_period"] = True  # only where it is, so every other dict is as before
+        return out
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> DateRange:
@@ -675,6 +826,7 @@ class DateRange:
             basis=Basis(data.get("basis", Basis.CALENDAR)),
             mod=None if data.get("mod") is None else Mod(data["mod"]),
             anchor=Anchor(data.get("anchor", Anchor.ANCHORED)),
+            counted_in_period=data.get("counted_in_period") is True,
         )
 
     def __str__(self) -> str:

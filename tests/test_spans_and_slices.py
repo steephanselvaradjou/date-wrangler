@@ -28,7 +28,7 @@ def bounds(text):
 # Runs of days inside a month
 # ---------------------------------------------------------------------------
 
-MAR_1_15 = (date(2026, 3, 1), date(2026, 3, 16))
+MAR_1_15 = (date(2027, 3, 1), date(2027, 3, 16))
 
 
 @pytest.mark.parametrize(
@@ -45,7 +45,7 @@ def test_a_run_of_days_with_a_year():
 
 
 def test_a_run_across_two_months_is_still_a_range():
-    assert bounds("March 1 to 15 April") == (date(2026, 3, 1), date(2026, 4, 16))
+    assert bounds("March 1 to 15 April") == (date(2027, 3, 1), date(2027, 4, 16))
 
 
 def test_impossible_runs_are_refused():
@@ -104,8 +104,8 @@ def test_a_countdown_is_not_a_period(text):
     [
         ("the first week of April", date(2026, 4, 1), date(2026, 4, 8)),
         ("first week of next month", date(2026, 11, 1), date(2026, 11, 8)),
-        ("the last week of March", date(2026, 3, 25), date(2026, 4, 1)),
-        ("the last 10 days of March", date(2026, 3, 22), date(2026, 4, 1)),
+        ("the last week of March", date(2027, 3, 25), date(2027, 4, 1)),
+        ("the last 10 days of March", date(2027, 3, 22), date(2027, 4, 1)),
         ("the first 2 weeks of next month", date(2026, 11, 1), date(2026, 11, 15)),
         ("the first 3 months of 2024", date(2023, 4, 1), date(2023, 7, 1)),  # FY2024
         ("the last 6 months of the year", date(2026, 10, 1), date(2027, 4, 1)),
@@ -123,11 +123,11 @@ def test_the_nth_unit_of_a_period(text, start, end):
 
 def test_a_last_week_is_counted_back_from_the_end_not_aligned_to_a_weekday():
     """Its final seven days, whatever day the week is set to begin on."""
-    assert bounds("the last week of March") == (date(2026, 3, 25), date(2026, 4, 1))
+    assert bounds("the last week of March") == (date(2027, 3, 25), date(2027, 4, 1))
 
 
 def test_a_fifth_week_is_cut_at_the_end_of_the_month_or_refused():
-    assert bounds("the fifth week of March") == (date(2026, 3, 29), date(2026, 4, 1))
+    assert bounds("the fifth week of March") == (date(2027, 3, 29), date(2027, 4, 1))
     assert parse("the fifth week of February", today=TODAY) == []
 
 

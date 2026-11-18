@@ -8,7 +8,7 @@ names the field it came from instead of failing later inside ``date()``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
@@ -211,6 +211,12 @@ class WranglerConfig:
             object.__setattr__(self, "holidays", frozenset(self.holidays))
         if not all(isinstance(d, date) for d in self.holidays):
             raise TypeError("WranglerConfig.holidays must hold datetime.date values")
+        if any(isinstance(d, datetime) for d in self.holidays):
+            # A datetime is a date to isinstance() but never equal to one, so it matched no
+            # day and the holiday was silently ignored. Its day is what was meant.
+            object.__setattr__(self, "holidays", frozenset(
+                d.date() if isinstance(d, datetime) else d for d in self.holidays
+            ))
         if not 0 <= self.two_digit_pivot <= 99:
             raise ValueError(
                 f"WranglerConfig.two_digit_pivot must be 0-99, got {self.two_digit_pivot}"

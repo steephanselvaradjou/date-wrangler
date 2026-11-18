@@ -16,9 +16,16 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from date_wrangler import DateMatch, parse, tool
+from date_wrangler import DateMatch, diagnose, parse, tool
 from date_wrangler.__main__ import main
-from date_wrangler.config import DEFAULT_CONFIG, DateOrder, MonthNumber, YearLabel
+from date_wrangler.config import (
+    DEFAULT_CONFIG,
+    DateOrder,
+    FiscalCalendar,
+    MonthNumber,
+    WranglerConfig,
+    YearLabel,
+)
 from date_wrangler.types import Anchor, Basis
 
 TODAY = "2026-11-16"
@@ -97,7 +104,7 @@ def test_the_schema_and_the_function_take_the_same_arguments():
     """A property the function does not take would fail every call that used it, and a
     parameter the schema leaves out could never be set by a model."""
     params = set(inspect.signature(tool.resolve_dates).parameters)
-    python_only = {"strictness", "min_confidence"}
+    python_only = {"config", "strictness", "min_confidence", "comparisons"}
     assert params - python_only == set(tool.INPUT_SCHEMA["properties"])
 
 
@@ -123,7 +130,11 @@ def test_the_assumption_notes_describe_the_library_defaults():
 
 def test_every_setting_has_a_default_and_an_entry_in_the_answer():
     assert set(tool._DEFAULTS) == set(tool.INPUT_SCHEMA["properties"]) - {"text", "today"}
-    assert set(tool.OUTPUT_SCHEMA["properties"]["settings"]["properties"]) == set(tool._DEFAULTS)
+    # of_year_basis is no argument: it is echoed so a host's config can be seen in force.
+    assert set(tool.OUTPUT_SCHEMA["properties"]["settings"]["properties"]) == (
+        set(tool._DEFAULTS) | {"of_year_basis"}
+    )
+    assert set(tool._settings_of(DEFAULT_CONFIG)) == set(tool._DEFAULTS)
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +190,7 @@ def test_the_settings_used_are_echoed():
         "date_order": "DMY", "month_number": "day", "two_digit_pivot": 68,
         "week_starts_on": "sunday", "anchor": "anchored", "weekend": ["saturday", "sunday"],
         "holidays": ["2026-01-01", "2026-12-25"], "timezone": None,
+        "of_year_basis": "calendar",
     }
 
 
@@ -603,6 +615,107 @@ def test_python_callers_may_pass_dates_and_enums():
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# A host's whole configuration
+# ---------------------------------------------------------------------------
+
+#: A finance workspace: April years, fiscal unless said, but a half or quarter "of" a year
+#: is the calendar one -- a rule the tool's arguments cannot express.
+FINANCE = WranglerConfig(fiscal=FiscalCalendar(start_month=4), bare_period_basis=Basis.FISCAL,
+                         year_basis=Basis.FISCAL, of_year_basis=Basis.CALENDAR)
+
+HOST_CONFIGS = [
+    FINANCE,
+    WranglerConfig(bare_period_basis=Basis.FISCAL),  # an old config, fiscal by its old name
+    WranglerConfig(fiscal=FiscalCalendar(10, YearLabel.START_YEAR), date_order=DateOrder.MDY,
+                   week_starts_on=6, of_year_basis=Basis.FISCAL),
+    WranglerConfig(weekend=(4, 5), holidays=frozenset({date(2026, 11, 12)}),
+                   anchor=Anchor.ROLLING, month_number=MonthNumber.YEAR, two_digit_pivot=29),
+    WranglerConfig(strictness="strict", week_starts_on=5),
+]
+
+HOST_TEXTS = [
+    "H1 of 2022", "Q1 of 2024", "the second half of 2024", "2024", "Q1", "last quarter",
+    "YTD", "03/04/2024", "jan 24", "'45 and '85", "last week", "this Friday", "September",
+    "5 business days ago", "the last working day of the month", "since March", "FY24 Q3",
+    "week 3 of FY25", "2024-25", "Revenue in March vs the previous month",
+]
+
+
+@pytest.mark.parametrize("cfg", HOST_CONFIGS, ids=range(len(HOST_CONFIGS)))
+@pytest.mark.parametrize("text", HOST_TEXTS)
+def test_under_a_host_config_the_tool_reads_what_diagnose_reads(cfg, text):
+    """The point of passing a config: the tool and the host's own parsing never disagree,
+    so nothing has to translate one into the other or skip where they differ."""
+    found, diags = diagnose(text, today=date.fromisoformat(TODAY), config=cfg)
+    result = tool.resolve_dates(text, today=TODAY, config=cfg)
+    assert [(m["text"], m["span"], m["range"]) for m in result["matches"]] == [
+        (m.text, list(m.span), m.range.to_dict()) for m in found
+    ]
+    assert result["diagnostics"] == [
+        {"text": d.text, "span": list(d.span), "rule": d.rule, "reason": d.reason}
+        for d in diags
+    ]
+    # Every setting was the host's, and today was given: nothing was assumed.
+    assert result["assumptions"] == []
+
+
+def test_the_finance_example():
+    result = tool.resolve_dates("H1 of 2022 and H1 2022", today=TODAY, config=FINANCE)
+    assert [(m["first_day"], m["last_day"]) for m in result["matches"]] == [
+        ("2022-01-01", "2022-06-30"),  # "of" a year: the calendar half
+        ("2021-04-01", "2021-09-30"),  # otherwise the fiscal one, FY2022's first half
+    ]
+    assert result["settings"]["year_basis"] == "fiscal"
+    assert result["settings"]["of_year_basis"] == "calendar"
+
+
+def test_an_argument_overrides_the_config_for_one_call():
+    """The model's argument wins over the organisation's setting, and only that one."""
+    result = tool.call({"text": "Q1. H1 of 2022.", "today": TODAY, "fiscal_start_month": 7},
+                       config=FINANCE)
+    assert result["settings"]["fiscal_start_month"] == 7
+    assert result["settings"]["of_year_basis"] == "calendar"
+    assert [(m["first_day"], m["last_day"]) for m in result["matches"]] == [
+        ("2026-07-01", "2026-09-30"),  # this fiscal year's Q1, on a July year
+        ("2022-01-01", "2022-06-30"),  # still the calendar half: the rest of the config holds
+    ]
+    assert result["assumptions"] == []
+
+
+def test_today_left_out_is_still_reported_under_a_config():
+    result = tool.resolve_dates("last month", config=FINANCE)
+    assert [a["setting"] for a in result["assumptions"]] == ["today"]
+
+
+def test_strictness_comes_from_the_config_unless_passed():
+    text = "We met in May about it"
+    strict = WranglerConfig(strictness="strict")
+    assert tool.resolve_dates(text, today=TODAY, config=strict)["matches"] == [
+        tool._match(m, [], False) for m in parse(text, today=date.fromisoformat(TODAY),
+                                                  config=strict)
+    ]
+    assert tool.resolve_dates(text, today=TODAY, config=strict, strictness="greedy")[
+        "matches"
+    ] == tool.resolve_dates(text, today=TODAY, strictness="greedy")["matches"]
+
+
+def test_a_holiday_given_as_a_datetime_is_its_day():
+    """REGRESSION: a datetime passed the config's check but equals no date, so the library
+    ignored the holiday, and the tool, writing it out and reading it back, raised."""
+    cfg = WranglerConfig(holidays=frozenset({datetime(2026, 11, 16, 9, 30)}))
+    assert cfg.holidays == frozenset({date(2026, 11, 16)})
+    result = tool.resolve_dates("3 business days ago", today="2026-11-18", config=cfg)
+    assert result["matches"][0]["first_day"] == "2026-11-12"  # Monday the 16th skipped
+    found, _ = diagnose("3 business days ago", today=date(2026, 11, 18), config=cfg)
+    assert found[0].range.start == date(2026, 11, 12)
+
+
+def test_a_config_that_is_not_one_is_refused():
+    with pytest.raises(TypeError, match="WranglerConfig"):
+        tool.resolve_dates("Q1", config={"year_basis": "fiscal"})  # type: ignore[arg-type]
+
+
 def test_cli_json_is_the_tool_answer(capsys):
     assert main(["--json", "--today", TODAY, "--fiscal-start", "7", "Q3", "FY24"]) == 0
     printed = json.loads(capsys.readouterr().out)
@@ -622,6 +735,7 @@ def test_cli_flags_map_onto_the_tool_settings(capsys):
         "date_order": "MDY", "month_number": "year", "two_digit_pivot": 30,
         "week_starts_on": "sunday", "anchor": "rolling", "weekend": ["friday", "saturday"],
         "holidays": ["2026-11-20", "2026-12-25"], "timezone": "Asia/Kolkata",
+        "of_year_basis": "fiscal",
     }
 
 

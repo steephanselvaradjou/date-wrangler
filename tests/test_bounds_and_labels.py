@@ -14,6 +14,7 @@ import pytest
 from date_wrangler import Basis, FiscalCalendar, WranglerConfig, YearLabel, parse, parse_one
 
 TODAY = date(2026, 10, 8)  # Thursday; FY27 Q3 on an April start
+#: A month with no year is in the fiscal year in progress, FY27: April 2026 to March 2027.
 FISCAL = WranglerConfig(bare_period_basis=Basis.FISCAL)
 CALENDAR = WranglerConfig()
 
@@ -35,9 +36,9 @@ def bounds(text, cfg=FISCAL):
         ("on or after 1 April", date(2026, 4, 1), None),
         ("not before 1 April", date(2026, 4, 1), None),
         ("no earlier than 1 April", date(2026, 4, 1), None),
-        ("on or before 31 March", None, date(2026, 4, 1)),
-        ("not after 31 March", None, date(2026, 4, 1)),
-        ("up to and including 31 March", None, date(2026, 4, 1)),
+        ("on or before 31 March", None, date(2027, 4, 1)),
+        ("not after 31 March", None, date(2027, 4, 1)),
+        ("up to and including 31 March", None, date(2027, 4, 1)),
     ],
 )
 def test_inclusive_and_negated_bounds_keep_the_boundary_day(text, start, end):
@@ -49,16 +50,16 @@ def test_inclusive_and_negated_bounds_keep_the_boundary_day(text, start, end):
 
 def test_plain_before_and_after_are_still_strict():
     assert bounds("after 1 April") == (date(2026, 4, 2), None)
-    assert bounds("before 31 March") == (None, date(2026, 3, 31))
+    assert bounds("before 31 March") == (None, date(2027, 3, 31))
 
 
 @pytest.mark.parametrize(
     "text,end",
     [
-        ("by 31 March", date(2026, 4, 1)),
-        ("through 31 March", date(2026, 4, 1)),
-        ("by March", date(2026, 4, 1)),
-        ("before the end of March", date(2026, 4, 1)),
+        ("by 31 March", date(2027, 4, 1)),
+        ("through 31 March", date(2027, 4, 1)),
+        ("by March", date(2027, 4, 1)),
+        ("before the end of March", date(2027, 4, 1)),
         ("by the end of the quarter", date(2027, 1, 1)),
         ("by end of year", date(2027, 4, 1)),
     ],
@@ -77,7 +78,7 @@ def test_no_later_than_a_weekday():
 
 def test_late_still_means_the_last_third():
     """Only "end of" became a deadline. "late March" is still Mar 21-31."""
-    assert bounds("before late March") == (None, date(2026, 3, 21))
+    assert bounds("before late March") == (None, date(2027, 3, 21))
 
 
 @pytest.mark.parametrize("text,start", [
@@ -90,7 +91,7 @@ def test_from_a_single_day_starts_an_open_range(text, start):
 
 @pytest.mark.parametrize("text,start,end", [
     ("the figures from Q1", date(2026, 4, 1), date(2026, 7, 1)),
-    ("revenue from March", date(2026, 3, 1), date(2026, 4, 1)),
+    ("revenue from March", date(2027, 3, 1), date(2027, 4, 1)),
 ])
 def test_from_a_period_names_a_source_not_a_start(text, start, end):
     """"the figures from Q1" are Q1's figures. Only a single day after "from" opens a range."""
@@ -99,7 +100,7 @@ def test_from_a_period_names_a_source_not_a_start(text, start, end):
 
 def test_ranges_are_untouched_by_the_new_prefixes():
     assert bounds("from 1 April to 30 June") == (date(2026, 4, 1), date(2026, 7, 1))
-    assert bounds("Jan through Mar") == (date(2026, 1, 1), date(2026, 4, 1))
+    assert bounds("Jan through Mar") == (date(2027, 1, 1), date(2027, 4, 1))
 
 
 # ---------------------------------------------------------------------------

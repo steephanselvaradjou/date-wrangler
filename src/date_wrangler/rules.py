@@ -1477,7 +1477,7 @@ def _p_nth_weekday(text: str, cfg: WranglerConfig) -> Spec | None:
     month, giving a date three weeks out.
     """
     m = re.match(
-        rf"\s*(?:the\s+)?({_NTH})\s+({_WEEKDAY_ALT})\.?{_NTH_OF}(.+)$", text, re.IGNORECASE
+        rf"\s*(?:the\s+)?({_NTH})\s+({_WEEKDAY_ALT})s?\.?{_NTH_OF}(.+)$", text, re.IGNORECASE
     )
     if not m:
         return None
@@ -2722,7 +2722,8 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         "nth_weekday",
-        rf"\b(?:the\s+)?{_NTH}\s+(?:{_WEEKDAY_ALT})\.?{_NTH_OF}{_NTH_TARGET}\b",
+        # "Mondays" too, for a list of them: "the 2nd and 3rd Mondays of March".
+        rf"\b(?:the\s+)?{_NTH}\s+(?:{_WEEKDAY_ALT})s?\.?{_NTH_OF}{_NTH_TARGET}\b",
         _p_nth_weekday,
     ),
     # After edge_day, which keeps "the last day of", and ahead of relative, fiscal_month
